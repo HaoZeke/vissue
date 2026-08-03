@@ -26,6 +26,7 @@ serde_json = "1"
 tempfile = "3"
 toml = "0.8"
 walkdir = "2"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
 # cargo-dist builds with --profile=dist
 [profile.dist]

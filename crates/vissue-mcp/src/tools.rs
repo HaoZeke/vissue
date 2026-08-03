@@ -92,6 +92,20 @@ pub struct MirrorArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ClaimArgs {
+    /// Issue id.
+    pub issue_id: String,
+    /// Take over a claim held by another identity.
+    pub force: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct HygieneArgs {
+    /// Days a claim may be held before it counts as stale.
+    pub stale_days: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct EventsArgs {
     /// Only events with a sequence above this value.
     pub since: Option<u64>,

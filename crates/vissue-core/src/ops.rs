@@ -146,6 +146,7 @@ pub fn update(
 ) -> Result<UpdateOutcome> {
     let (_h0, path, project) =
         find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
+    let identity = crate::config::identity(layout);
 
     let (final_state, changed) = with_issues_lock(&path, || {
         let mut doc = IssueDoc::parse_file(&project, &path)?;
@@ -165,6 +166,9 @@ pub fn update(
                 let from = h.state.clone();
                 h.record_state_change(s);
                 changed.push(format!("state {from} -> {s}"));
+                for note in settle_claim(h, &from, s, &identity) {
+                    changed.push(note);
+                }
             }
         }
 
@@ -245,6 +249,82 @@ pub fn update(
         report: format!("{id}: {}\n", changed.join(", ")),
         hints,
     })
+}
+
+/// States that keep a claim: someone still holds the issue even when it is
+/// waiting on something else. Leaving for TODO, DONE, or CANCELLED gives it up.
+fn keeps_claim(state: &str) -> bool {
+    matches!(state, "STARTED" | "BLOCKED")
+}
+
+/// Take or give up the claim as the state moves.
+///
+/// Entering STARTED unclaimed stamps the identity; leaving for a state that
+/// holds no claim releases it, and the logbook keeps who held it and since
+/// when.
+fn settle_claim(h: &mut IssueHeading, from: &str, to: &str, identity: &str) -> Vec<String> {
+    let mut notes = Vec::new();
+    if to == "STARTED" && h.claimed_by().is_none() {
+        h.set_claim(identity);
+        notes.push(format!("claimed by {identity}"));
+    } else if keeps_claim(from) && !keeps_claim(to) {
+        if let Some((who, _when)) = h.release_claim() {
+            notes.push(format!("claim released ({who})"));
+        }
+    }
+    notes
+}
+
+/// Take an issue: move it to STARTED and stamp the claim.
+///
+/// A claim held by another identity is refused unless `force`, which records
+/// the takeover in the logbook rather than losing it.
+pub fn claim(layout: &Layout, id: &str, force: bool) -> Result<String> {
+    let (_h0, path, project) =
+        find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
+    let identity = crate::config::identity(layout);
+
+    let report = with_issues_lock(&path, || {
+        let mut doc = IssueDoc::parse_file(&project, &path)?;
+        let h = doc
+            .headings
+            .iter_mut()
+            .find(|x| x.id == id)
+            .ok_or_else(|| anyhow!("issue {id} not found"))?;
+
+        if h.state == "DONE" || h.state == "CANCELLED" {
+            bail!("{id} is already {}; cannot claim", h.state);
+        }
+        if let Some(holder) = h.claimed_by() {
+            if holder != identity && !force {
+                bail!(
+                    "{id} is claimed by {holder} since {}; pass --force to take it over",
+                    h.claimed_at().unwrap_or("an unknown time")
+                );
+            }
+            if holder != identity {
+                let previous = holder.to_string();
+                h.release_claim();
+                h.set_claim(&identity);
+                h.record_state_change("STARTED");
+                doc.write()?;
+                return Ok(format!("claimed {id} (taken over from {previous})\n"));
+            }
+        }
+
+        let was = h.state.clone();
+        h.record_state_change("STARTED");
+        if h.claimed_by().is_none() {
+            h.set_claim(&identity);
+        }
+        doc.write()?;
+        if was == "STARTED" {
+            Ok(format!("claimed {id} by {identity}\n"))
+        } else {
+            Ok(format!("claimed {id} by {identity} ({was} -> STARTED)\n"))
+        }
+    })?;
+    Ok(report)
 }
 
 /// What an update changed, plus advice about issues left dangling by it.

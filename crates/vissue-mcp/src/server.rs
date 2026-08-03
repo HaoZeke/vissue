@@ -130,12 +130,16 @@ impl VissueServer {
         }))
     }
 
-    #[tool(description = "Claim an issue: move it to STARTED. Fails on a closed issue.")]
+    #[tool(description = "Claim an issue: move it to STARTED and stamp the claiming identity.")]
     async fn vissue_claim(
         &self,
-        Parameters(args): Parameters<IdArgs>,
+        Parameters(args): Parameters<ClaimArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(agent::claim(&self.layout, &args.issue_id))
+        text(agent::claim(
+            &self.layout,
+            &args.issue_id,
+            args.force.unwrap_or(false),
+        ))
     }
 
     #[tool(description = "Count issues, optionally filtered by project, state, or readiness.")]
@@ -237,8 +241,11 @@ impl VissueServer {
     }
 
     #[tool(description = "Checklist for agents and CI: stalled claims plus corpus validation.")]
-    async fn vissue_hygiene(&self) -> Result<CallToolResult, McpError> {
-        text(agent::hygiene(&self.layout))
+    async fn vissue_hygiene(
+        &self,
+        Parameters(args): Parameters<HygieneArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(agent::hygiene(&self.layout, args.stale_days))
     }
 
     #[tool(description = "Render a read-only projection of selected projects.")]

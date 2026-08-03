@@ -479,6 +479,120 @@ fn event_emission_can_be_switched_off() {
 }
 
 #[test]
+fn a_claimed_issue_shows_its_holder_and_age() {
+    let layout = fixture_layout();
+    let listed = report::list(&layout, Some("atlas"), Some("STARTED"), false).unwrap();
+    assert!(
+        listed.contains("(claimed") && listed.contains("by fixture-agent"),
+        "{listed}"
+    );
+
+    let shown = report::show(&layout, "atlas-1a2b").unwrap();
+    assert!(shown.contains("Claimed:  fixture-agent since"), "{shown}");
+
+    // An unclaimed issue renders exactly as it did before claims existed.
+    let unclaimed = report::list(&layout, Some("atlas"), Some("TODO"), false).unwrap();
+    assert!(!unclaimed.contains("claimed"), "{unclaimed}");
+    assert!(!report::show(&layout, "atlas-2c3d")
+        .unwrap()
+        .contains("Claimed:"));
+}
+
+#[test]
+fn claiming_stamps_the_identity_and_releasing_keeps_the_history() {
+    let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let (_dir, layout) = writable_copy();
+    std::env::set_var("VISSUE_AGENT", "test-runner-1");
+    let claimed = vissue_core::ops::claim(&layout, "atlas-2c3d", false);
+    std::env::remove_var("VISSUE_AGENT");
+    claimed.unwrap();
+
+    let h = store::find_by_id(&layout, "atlas-2c3d").unwrap().unwrap().0;
+    assert_eq!(h.state, "STARTED");
+    assert_eq!(h.claimed_by(), Some("test-runner-1"));
+    assert!(h.claimed_at().is_some(), "no claim timestamp written");
+    assert_eq!(h.claim_age_days(chrono::Local::now().date_naive()), Some(0));
+
+    // Closing gives the claim up, and the logbook keeps who held it.
+    vissue_core::ops::update(&layout, "atlas-2c3d", Some("DONE"), None, None, None).unwrap();
+    let h = store::find_by_id(&layout, "atlas-2c3d").unwrap().unwrap().0;
+    assert_eq!(h.claimed_by(), None, "claim survived the close");
+    assert_eq!(h.claimed_at(), None);
+    assert!(
+        h.logbook
+            .iter()
+            .any(|e| e.note.as_deref().unwrap_or("").contains("test-runner-1")),
+        "no logbook record of who held it: {:?}",
+        h.logbook
+    );
+}
+
+#[test]
+fn a_block_keeps_the_claim_but_a_reset_to_todo_gives_it_up() {
+    let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let (_dir, layout) = writable_copy();
+
+    // atlas-1a2b arrives STARTED and claimed in the fixture.
+    vissue_core::ops::update(&layout, "atlas-1a2b", Some("BLOCKED"), None, None, None).unwrap();
+    let h = store::find_by_id(&layout, "atlas-1a2b").unwrap().unwrap().0;
+    assert_eq!(
+        h.claimed_by(),
+        Some("fixture-agent"),
+        "a blocked issue is still held"
+    );
+
+    vissue_core::ops::update(&layout, "atlas-1a2b", Some("TODO"), None, None, None).unwrap();
+    let h = store::find_by_id(&layout, "atlas-1a2b").unwrap().unwrap().0;
+    assert_eq!(h.claimed_by(), None, "returning to TODO gives the claim up");
+}
+
+#[test]
+fn a_claim_held_by_another_identity_needs_force() {
+    let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let (_dir, layout) = writable_copy();
+    std::env::set_var("VISSUE_AGENT", "someone-else");
+    let refused = vissue_core::ops::claim(&layout, "atlas-1a2b", false);
+    let forced = vissue_core::ops::claim(&layout, "atlas-1a2b", true);
+    std::env::remove_var("VISSUE_AGENT");
+
+    let err = refused.unwrap_err().to_string();
+    assert!(err.contains("claimed by fixture-agent"), "{err}");
+    assert!(err.contains("--force"), "{err}");
+
+    assert!(forced.unwrap().contains("taken over from fixture-agent"));
+    let h = store::find_by_id(&layout, "atlas-1a2b").unwrap().unwrap().0;
+    assert_eq!(h.claimed_by(), Some("someone-else"));
+    assert!(
+        h.logbook
+            .iter()
+            .any(|e| e.note.as_deref().unwrap_or("").contains("fixture-agent")),
+        "the takeover lost the previous holder"
+    );
+}
+
+#[test]
+fn hygiene_reports_a_claim_that_has_gone_stale() {
+    let layout = fixture_layout();
+    // The fixture claim was taken in January, so any small threshold trips it.
+    let text = vissue_core::agent::hygiene(&layout, Some(7)).unwrap();
+    assert!(text.contains("claim held"), "{text}");
+    assert!(text.contains("atlas-1a2b by fixture-agent"), "{text}");
+    assert!(text.contains("stale_claims=1"), "{text}");
+
+    // A threshold wider than the claim age reports nothing stale.
+    let wide = vissue_core::agent::hygiene(&layout, Some(100_000)).unwrap();
+    assert!(wide.contains("stale_claims=0"), "{wide}");
+}
+
+#[test]
+fn the_mirror_carries_the_claimant() {
+    let layout = fixture_layout();
+    let org = mirror::render(&layout, &["atlas".to_string()], Format::Org, None).unwrap();
+    assert!(org.contains(":CLAIMED_BY: fixture-agent"), "{org}");
+    assert!(org.contains(":CLAIMED_AT: [2026-01-14 Wed 09:12]"), "{org}");
+}
+
+#[test]
 fn a_configured_prefix_finds_no_projects_where_there_are_none() {
     let layout = Layout::new(fixture_root(), "Elsewhere");
     assert!(store::list_projects(&layout).unwrap().is_empty());

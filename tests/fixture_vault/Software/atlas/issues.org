@@ -11,6 +11,8 @@
 :CREATED:    [2026-01-12 Mon]
 :TYPE:       feature
 :TAGS:       parser,core
+:CLAIMED_BY: fixture-agent
+:CLAIMED_AT: [2026-01-14 Wed 09:12]
 :END:
 :LOGBOOK:
 - State "STARTED" from "TODO" [2026-01-14 Wed 09:12]

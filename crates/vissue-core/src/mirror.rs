@@ -113,22 +113,68 @@ pub fn render(
     Ok(out)
 }
 
+/// Issues render at level two, so a body heading has to sit at level three or
+/// deeper. Without the shift, a body that opens with `** Scope` becomes a
+/// sibling of the issues and the projection's outline is wrong.
+const ISSUE_LEVEL: usize = 2;
+
 fn render_org_issue(out: &mut String, h: &IssueHeading) -> Result<()> {
     writeln!(out, "** {} [#{}] {}", h.state, h.priority, h.title)?;
     writeln!(out, ":PROPERTIES:")?;
-    writeln!(out, ":ID:         {}", h.id)?;
+    writeln!(out, "{}", property_line("ID", &h.id))?;
     for key in ["PARENT", "BLOCKED_BY", "TAGS", "DEADLINE", "TYPE"] {
         if let Some(val) = h.properties.get(key) {
-            writeln!(out, ":{key}: {val}")?;
+            writeln!(out, "{}", property_line(key, val))?;
         }
     }
     writeln!(out, ":END:")?;
-    let body = compact_body(&h.body);
+    let body = demote_headings(&compact_body(&h.body));
     if !body.is_empty() {
         writeln!(out)?;
         writeln!(out, "{body}")?;
     }
     Ok(())
+}
+
+/// `:KEY:` padded to the column the tracker's own writer uses.
+fn property_line(key: &str, value: &str) -> String {
+    let name = format!(":{key}:");
+    let pad = 13usize.saturating_sub(name.len()).max(1);
+    format!("{name}{}{value}", " ".repeat(pad))
+}
+
+/// Push every heading in a body below the issue that owns it, preserving the
+/// relative nesting the author wrote.
+fn demote_headings(body: &str) -> String {
+    let shallowest = body
+        .lines()
+        .filter_map(heading_level)
+        .min()
+        .unwrap_or(usize::MAX);
+    if shallowest > ISSUE_LEVEL {
+        return body.to_string();
+    }
+    let shift = ISSUE_LEVEL + 1 - shallowest;
+    body.lines()
+        .map(|line| {
+            if heading_level(line).is_some() {
+                format!("{}{}", "*".repeat(shift), line)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The number of leading stars, when the line is an org heading.
+fn heading_level(line: &str) -> Option<usize> {
+    let stars = line.chars().take_while(|c| *c == '*').count();
+    if stars > 0 && line.chars().nth(stars) == Some(' ') {
+        Some(stars)
+    } else {
+        None
+    }
 }
 
 fn render_markdown_issue(out: &mut String, h: &IssueHeading) -> Result<()> {
@@ -215,7 +261,7 @@ mod tests {
         assert!(text.contains("* alpha"), "{text}");
         assert!(!text.contains("* beta"), "{text}");
         assert!(text.contains("** TODO [#A] wire the parser"), "{text}");
-        assert!(text.contains(":TAGS: parser,core"), "{text}");
+        assert!(text.contains(":TAGS:       parser,core"), "{text}");
         assert!(text.contains("Scope: the front end."), "{text}");
     }
 
@@ -262,6 +308,59 @@ mod tests {
         assert!(compacted.ends_with("(...)"), "{compacted}");
         assert_eq!(compact_body("a\n\n\n\nb"), "a\n\nb");
         assert_eq!(compact_body("\n\n"), "");
+    }
+
+    #[test]
+    fn body_headings_sit_below_the_issue_that_owns_them() {
+        // A body written with level-two headings would otherwise render as a
+        // sibling of the issues, so the outline would claim Scope is an issue.
+        assert_eq!(
+            demote_headings("** Scope\ntext\n*** Detail"),
+            "*** Scope\ntext\n**** Detail"
+        );
+        assert_eq!(demote_headings("* Top\n** Under"), "*** Top\n**** Under");
+        assert_eq!(
+            demote_headings("**** Already deep"),
+            "**** Already deep",
+            "a body that is already nested is left alone"
+        );
+        assert_eq!(demote_headings("no headings here"), "no headings here");
+        assert_eq!(
+            demote_headings("*bold* not a heading"),
+            "*bold* not a heading",
+            "a star without a following space is not a heading"
+        );
+    }
+
+    #[test]
+    fn a_mirrored_body_heading_never_reparses_as_an_issue() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        create(
+            &layout,
+            "alpha",
+            "structured body",
+            CreateOpts {
+                body: Some("** Scope\nthe front end.\n** Done when\nit round-trips."),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let text = render(&layout, &[], Format::Org, None).unwrap();
+        assert!(text.contains("*** Scope"), "{text}");
+        assert!(text.contains("*** Done when"), "{text}");
+        assert!(
+            !text.contains("\n** Scope"),
+            "a body heading kept issue level: {text}"
+        );
+    }
+
+    #[test]
+    fn property_lines_line_up_with_the_tracker_format() {
+        assert_eq!(property_line("ID", "alpha-1a2b"), ":ID:         alpha-1a2b");
+        assert_eq!(property_line("PARENT", "alpha-9z8y"), ":PARENT:     alpha-9z8y");
+        assert_eq!(property_line("BLOCKED_BY", "alpha-1"), ":BLOCKED_BY: alpha-1");
     }
 
     #[test]

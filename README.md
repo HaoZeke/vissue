@@ -152,6 +152,36 @@ $ vissue check
 $ vissue hygiene
 ```
 
+**See who is holding what.** Claiming an issue stamps an identity and a
+timestamp onto it, so a backlog worked by several agents shows who took what
+and when:
+
+```console
+$ vissue whoami
+rgoswami@workstation
+$ VISSUE_AGENT=grind-worker-3 vissue claim parser-k29f
+claimed parser-k29f by grind-worker-3 (TODO -> STARTED)
+$ vissue list --state STARTED
+parser-k29f            STARTED   [#C]  Reject a manifest…  (claimed 0d by grind-worker-3)
+```
+
+The identity comes from `VISSUE_AGENT`, then `agent` in `vissue.toml`, then
+`user@host`. It is an opaque string: an agent should set `VISSUE_AGENT` to
+something stable enough to recognise across sessions, such as a model and
+session tag.
+
+Moving to STARTED by any route takes the claim if no one holds it, so
+`vissue update <id> --state STARTED` stamps it too. BLOCKED keeps the claim,
+because the holder is still on the issue. Returning to TODO, or closing as
+DONE or CANCELLED, gives it up and writes a logbook note naming who held it
+and since when, so the history outlives the properties. A claim held by
+another identity is refused unless you pass `--force`, which records the
+takeover rather than losing it.
+
+`hygiene` reports claims held longer than `stale_claim_days` (default 7,
+settable in `vissue.toml` or per run with `--stale-days`), and STARTED issues
+that nobody has claimed.
+
 **Watch for changes without re-reading everything.** A write advances a
 generation counter and appends to a log, both beside the project directories.
 A poller compares the counter, then reads only what is new:
@@ -191,6 +221,7 @@ may be omitted.
 | `create`, `q` | Add an issue; `q` prints only the new id |
 | `list`, `show` | Rows of issues; one issue's metadata and file range |
 | `update`, `claim`, `refile` | Change state, priority, or blockers; take an issue; move it between projects |
+| `whoami` | The identity a claim would record |
 | `ready`, `count`, `search`, `children`, `stale` | Query the corpus |
 | `export` | JSONL, one object per issue |
 | `tree`, `graph`, `cycles`, `backlinks` | Relationships |
@@ -209,8 +240,9 @@ to `C`.
 ### Properties
 
 `:ID:` is required and generated. `:CREATED:` is set on create. `:PARENT:`,
-`:BLOCKED_BY:`, `:TAGS:`, `:TYPE:`, `:DEADLINE:`, `:SCHEDULED:`, and
-`:DISCOVERED_FROM:` are read by the query verbs; any other property is preserved
+`:BLOCKED_BY:`, `:TAGS:`, `:TYPE:`, `:DEADLINE:`, `:SCHEDULED:`,
+`:CLAIMED_BY:`, `:CLAIMED_AT:`, and `:DISCOVERED_FROM:` are read by the query
+verbs; any other property is preserved
 untouched, in the order it appears on disk. `:BLOCKED_BY:` accepts commas,
 whitespace, or both. `:PARENT:` may name another issue or any org heading with
 an `:ID:` under the tracker prefix, so a design document can head a work

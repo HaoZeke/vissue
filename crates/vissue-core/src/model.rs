@@ -20,9 +20,16 @@ const DEFAULT_PROPERTY_ORDER: &[&str] = &[
     "DEADLINE",
     "SCHEDULED",
     "TAGS",
+    "CLAIMED_BY",
+    "CLAIMED_AT",
     "FILES",
     "VERIFY",
 ];
+
+/// Property naming the identity that holds a STARTED issue.
+pub const CLAIMED_BY: &str = "CLAIMED_BY";
+/// Property recording when that claim was taken.
+pub const CLAIMED_AT: &str = "CLAIMED_AT";
 
 /// One line of an issue's `:LOGBOOK:` drawer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -181,6 +188,48 @@ impl IssueHeading {
         self.properties.get("PARENT").map(|s| s.as_str())
     }
 
+    /// The identity holding this issue, when one has claimed it.
+    pub fn claimed_by(&self) -> Option<&str> {
+        self.properties.get(CLAIMED_BY).map(|s| s.as_str())
+    }
+
+    /// When the claim was taken, as the stored org timestamp.
+    pub fn claimed_at(&self) -> Option<&str> {
+        self.properties.get(CLAIMED_AT).map(|s| s.as_str())
+    }
+
+    /// Whole days the claim has been held, when it parses as a date.
+    pub fn claim_age_days(&self, today: chrono::NaiveDate) -> Option<i64> {
+        let taken = parse_stamp_date(self.claimed_at()?)?;
+        Some((today - taken).num_days())
+    }
+
+    /// Record the claim. Stores the identity verbatim: it is an opaque tag.
+    pub fn set_claim(&mut self, identity: &str) {
+        self.properties
+            .insert(CLAIMED_BY.to_string(), identity.to_string());
+        self.properties
+            .insert(CLAIMED_AT.to_string(), LogEntry::now());
+    }
+
+    /// Drop the claim, leaving a logbook note so the history survives the
+    /// properties being cleared.
+    pub fn release_claim(&mut self) -> Option<(String, String)> {
+        let who = self.properties.remove(CLAIMED_BY)?;
+        let when = self.properties.remove(CLAIMED_AT).unwrap_or_default();
+        self.logbook.insert(
+            0,
+            LogEntry {
+                timestamp: LogEntry::now(),
+                from_state: None,
+                to_state: None,
+                note: Some(format!("claim released: {who} held since {when}")),
+                raw: None,
+            },
+        );
+        Some((who, when))
+    }
+
     pub fn render(&self) -> String {
         let mut out = format!("* {} [#{}] {}\n", self.state, self.priority, self.title);
         out.push_str(":PROPERTIES:\n");
@@ -268,6 +317,17 @@ fn render_property(key: &str, val: &str) -> String {
 /// Today as an inactive org timestamp.
 pub fn today_inactive_bracket() -> String {
     Local::now().format("[%Y-%m-%d %a]").to_string()
+}
+
+/// The date inside an org timestamp, active or inactive, with or without a
+/// time of day.
+pub fn parse_stamp_date(s: &str) -> Option<chrono::NaiveDate> {
+    let inner = s
+        .trim()
+        .trim_start_matches(['<', '['])
+        .trim_end_matches(['>', ']']);
+    let token = inner.split_whitespace().next()?;
+    chrono::NaiveDate::parse_from_str(token, "%Y-%m-%d").ok()
 }
 
 #[cfg(test)]

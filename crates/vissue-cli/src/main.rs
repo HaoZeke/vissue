@@ -119,10 +119,21 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Take an issue: move it to STARTED.
-    Claim { id: String },
+    /// Take an issue: move it to STARTED and stamp the claim.
+    Claim {
+        id: String,
+        /// Take over a claim held by another identity
+        #[arg(long)]
+        force: bool,
+    },
     /// Checklist for agents and CI: stalled claims plus corpus validation.
-    Hygiene,
+    Hygiene {
+        /// Days a claim may be held before it counts as stale
+        #[arg(long)]
+        stale_days: Option<i64>,
+    },
+    /// Print the identity this tracker would record on a claim.
+    Whoami,
     /// Issues waiting on this one.
     #[command(name = "waiting-on")]
     WaitingOn { id: String },
@@ -357,8 +368,9 @@ fn run() -> Result<()> {
                 print!("{}", report::ready(&layout, project.as_deref())?);
             }
         }
-        Command::Claim { id } => print!("{}", agent::claim(&layout, &id)?),
-        Command::Hygiene => print!("{}", agent::hygiene(&layout)?),
+        Command::Claim { id, force } => print!("{}", agent::claim(&layout, &id, force)?),
+        Command::Hygiene { stale_days } => print!("{}", agent::hygiene(&layout, stale_days)?),
+        Command::Whoami => println!("{}", vissue_core::config::identity(&layout)),
         Command::WaitingOn { id } => print!("{}", agent::waiting_on(&layout, &id)?),
         Command::BodyExcerpt { id } => print!("{}", agent::body_excerpt(&layout, &id)?),
         Command::Search { query, limit } => {

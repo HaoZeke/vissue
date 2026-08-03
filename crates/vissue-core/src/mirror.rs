@@ -122,7 +122,15 @@ fn render_org_issue(out: &mut String, h: &IssueHeading) -> Result<()> {
     writeln!(out, "** {} [#{}] {}", h.state, h.priority, h.title)?;
     writeln!(out, ":PROPERTIES:")?;
     writeln!(out, "{}", property_line("ID", &h.id))?;
-    for key in ["PARENT", "BLOCKED_BY", "TAGS", "DEADLINE", "TYPE"] {
+    for key in [
+        "PARENT",
+        "BLOCKED_BY",
+        "TAGS",
+        "DEADLINE",
+        "TYPE",
+        "CLAIMED_BY",
+        "CLAIMED_AT",
+    ] {
         if let Some(val) = h.properties.get(key) {
             writeln!(out, "{}", property_line(key, val))?;
         }
@@ -181,7 +189,15 @@ fn render_markdown_issue(out: &mut String, h: &IssueHeading) -> Result<()> {
     writeln!(out, "### {} [#{}] {}", h.state, h.priority, h.title)?;
     writeln!(out)?;
     writeln!(out, "- id: `{}`", h.id)?;
-    for key in ["PARENT", "BLOCKED_BY", "TAGS", "DEADLINE", "TYPE"] {
+    for key in [
+        "PARENT",
+        "BLOCKED_BY",
+        "TAGS",
+        "DEADLINE",
+        "TYPE",
+        "CLAIMED_BY",
+        "CLAIMED_AT",
+    ] {
         if let Some(val) = h.properties.get(key) {
             writeln!(out, "- {}: {}", key.to_lowercase(), val)?;
         }
@@ -359,8 +375,14 @@ mod tests {
     #[test]
     fn property_lines_line_up_with_the_tracker_format() {
         assert_eq!(property_line("ID", "alpha-1a2b"), ":ID:         alpha-1a2b");
-        assert_eq!(property_line("PARENT", "alpha-9z8y"), ":PARENT:     alpha-9z8y");
-        assert_eq!(property_line("BLOCKED_BY", "alpha-1"), ":BLOCKED_BY: alpha-1");
+        assert_eq!(
+            property_line("PARENT", "alpha-9z8y"),
+            ":PARENT:     alpha-9z8y"
+        );
+        assert_eq!(
+            property_line("BLOCKED_BY", "alpha-1"),
+            ":BLOCKED_BY: alpha-1"
+        );
     }
 
     #[test]

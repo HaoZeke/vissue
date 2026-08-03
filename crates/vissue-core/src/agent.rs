@@ -1,14 +1,14 @@
 //! Verbs shaped for agents: structured rows, claiming, a body excerpt, and a
 //! hygiene checklist.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
 use std::fs;
 
 use crate::config::Layout;
 use crate::model::READY_STATES;
-use crate::ops::{update, UpdateOutcome};
+use crate::ops;
 use crate::report;
 use crate::store::{find_by_id, list_projects, load_all};
 
@@ -60,6 +60,8 @@ pub fn issues_json(
                 "title": h.title,
                 "project": project,
                 "blocked_by": h.blocked_by(),
+                "claimed_by": h.claimed_by(),
+                "claimed_at": h.claimed_at(),
             }),
         ));
     }
@@ -84,22 +86,19 @@ pub fn show_json(layout: &Layout, id: &str) -> Result<Value> {
         "properties": h.properties,
         "blocked_by": h.blocked_by(),
         "parent": h.parent(),
+        "claimed_by": h.claimed_by(),
+        "claimed_at": h.claimed_at(),
         "file": format!("{}:{}-{}", path.display(), h.line_start, h.line_end),
         "line_start": h.line_start,
         "line_end": h.line_end,
     }))
 }
 
-/// Take an issue: move it to STARTED. A closed issue cannot be claimed.
-pub fn claim(layout: &Layout, id: &str) -> Result<String> {
-    let (h, _path, _project) =
-        find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
-    if h.state == "DONE" || h.state == "CANCELLED" {
-        bail!("{id} is already {}; cannot claim", h.state);
-    }
-    let UpdateOutcome { report, .. } = update(layout, id, Some("STARTED"), None, None, None)?;
+/// Take an issue: move it to STARTED and stamp the claim.
+pub fn claim(layout: &Layout, id: &str, force: bool) -> Result<String> {
+    let report = ops::claim(layout, id, force)?;
     let detail = report::show(layout, id)?;
-    Ok(format!("claimed {id}\n{report}{detail}"))
+    Ok(format!("{report}{detail}"))
 }
 
 /// The first lines of an issue's file range, capped and screened for secrets.
@@ -140,9 +139,11 @@ pub fn waiting_on(layout: &Layout, id: &str) -> Result<String> {
     report::backlinks(layout, id)
 }
 
-/// The agent and CI checklist: issues claimed but not actionable, plus the
-/// corpus validation summary.
-pub fn hygiene(layout: &Layout) -> Result<String> {
+/// The agent and CI checklist: issues claimed but not actionable, claims that
+/// have gone stale, plus the corpus validation summary.
+///
+/// `stale_days` overrides the configured threshold when given.
+pub fn hygiene(layout: &Layout, stale_days: Option<i64>) -> Result<String> {
     let mut out = String::new();
     writeln!(out, "=== vissue hygiene ===")?;
 
@@ -160,6 +161,41 @@ pub fn hygiene(layout: &Layout) -> Result<String> {
         }
     }
 
+    let threshold = match stale_days {
+        Some(d) => d,
+        None => {
+            crate::config::VissueConfig::load(layout)?
+                .issues
+                .stale_claim_days
+        }
+    };
+    let today = chrono::Local::now().date_naive();
+    let mut stale_claims = 0usize;
+    let mut unclaimed_started = 0usize;
+    for (project, h) in load_all(layout)? {
+        if h.state != "STARTED" {
+            continue;
+        }
+        match h.claimed_by() {
+            None => {
+                unclaimed_started += 1;
+                writeln!(out, "[warn] STARTED with no claimant: {} ({project})", h.id)?;
+            }
+            Some(who) => {
+                if let Some(days) = h.claim_age_days(today) {
+                    if days > threshold {
+                        stale_claims += 1;
+                        writeln!(
+                            out,
+                            "[warn] claim held {days}d (over {threshold}d): {} by {who} ({project})",
+                            h.id
+                        )?;
+                    }
+                }
+            }
+        }
+    }
+
     let check = report::check(layout)?;
     if check.errors == 0 {
         writeln!(out, "[ok] check passed")?;
@@ -171,7 +207,7 @@ pub fn hygiene(layout: &Layout) -> Result<String> {
     }
     writeln!(
         out,
-        "summary: started_not_ready={started_not_ready} projects={} errors={} warnings={}",
+        "summary: started_not_ready={started_not_ready} stale_claims={stale_claims} unclaimed_started={unclaimed_started} projects={} errors={} warnings={}",
         list_projects(layout)?.len(),
         check.errors,
         check.warnings
@@ -183,7 +219,7 @@ pub fn hygiene(layout: &Layout) -> Result<String> {
 mod tests {
     use super::*;
     use crate::config::DEFAULT_PREFIX;
-    use crate::ops::{create, CreateOpts};
+    use crate::ops::{create, update, CreateOpts};
     use crate::store::IssueDoc;
 
     fn layout_with_two_issues() -> (tempfile::TempDir, Layout, String, String) {
@@ -201,7 +237,7 @@ mod tests {
     #[test]
     fn claim_moves_an_open_issue_to_started() {
         let (_dir, layout, first, _blocker) = layout_with_two_issues();
-        let text = claim(&layout, &first).unwrap();
+        let text = claim(&layout, &first, false).unwrap();
         assert!(text.starts_with(&format!("claimed {first}")), "{text}");
         assert!(text.contains("State:    STARTED"), "{text}");
     }
@@ -210,7 +246,7 @@ mod tests {
     fn claim_refuses_a_closed_issue() {
         let (_dir, layout, first, _blocker) = layout_with_two_issues();
         update(&layout, &first, Some("DONE"), None, None, None).unwrap();
-        let err = claim(&layout, &first).unwrap_err();
+        let err = claim(&layout, &first, false).unwrap_err();
         assert!(err.to_string().contains("cannot claim"), "{err}");
     }
 
@@ -255,7 +291,7 @@ mod tests {
             .insert("BLOCKED_BY".into(), blocker.clone());
         doc.write().unwrap();
 
-        let text = hygiene(&layout).unwrap();
+        let text = hygiene(&layout, None).unwrap();
         assert!(text.contains("STARTED but not ready"), "{text}");
         assert!(text.contains("started_not_ready=1"), "{text}");
         assert!(text.contains("[ok] check passed"), "{text}");

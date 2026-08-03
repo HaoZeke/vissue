@@ -57,7 +57,7 @@ pub fn list(
                 h.id.clone(),
                 h.state.clone(),
                 h.priority,
-                h.title.clone(),
+                format!("{}{}", h.title, claim_suffix(h)),
             ));
         }
     }
@@ -73,6 +73,19 @@ pub fn list(
         let _ = writeln!(out, "{id:<22} {state:<9} [#{prio}]  {title}");
     }
     Ok(out)
+}
+
+/// ` (claimed 3d by <identity>)`, or nothing when no one holds the issue.
+/// Only a claimed issue grows the suffix, so an unclaimed corpus renders
+/// exactly as it did before claims existed.
+pub(crate) fn claim_suffix(h: &IssueHeading) -> String {
+    let Some(who) = h.claimed_by() else {
+        return String::new();
+    };
+    match h.claim_age_days(Local::now().date_naive()) {
+        Some(days) => format!("  (claimed {days}d by {who})"),
+        None => format!("  (claimed by {who})"),
+    }
 }
 
 /// Actionable issues: TODO or STARTED with no open blocker.
@@ -91,6 +104,16 @@ pub fn show(layout: &Layout, id: &str) -> Result<String> {
     writeln!(out, "Title:    {}", h.title)?;
     writeln!(out, "State:    {}", h.state)?;
     writeln!(out, "Priority: [#{}]", h.priority)?;
+    if let Some(who) = h.claimed_by() {
+        match h.claim_age_days(Local::now().date_naive()) {
+            Some(days) => writeln!(
+                out,
+                "Claimed:  {who} since {} ({days}d)",
+                h.claimed_at().unwrap_or("?")
+            )?,
+            None => writeln!(out, "Claimed:  {who}")?,
+        }
+    }
     if h.properties.iter().any(|(k, _)| k != "ID") {
         writeln!(out, "Properties:")?;
         for (k, v) in &h.properties {

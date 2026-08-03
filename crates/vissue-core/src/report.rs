@@ -537,8 +537,7 @@ fn tree_dot(
 /// Cycles in the blocker graph, one per line, or a line saying there are none.
 pub fn cycles(layout: &Layout) -> Result<String> {
     let all = load_all(layout)?;
-    let by_id: HashMap<&str, &IssueHeading> =
-        all.iter().map(|(_, h)| (h.id.as_str(), h)).collect();
+    let by_id: HashMap<&str, &IssueHeading> = all.iter().map(|(_, h)| (h.id.as_str(), h)).collect();
 
     // Colored depth-first search over BLOCKED_BY edges. Grey marks the
     // current stack, black a finished node, so a shared blocker reached

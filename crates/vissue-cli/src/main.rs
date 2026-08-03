@@ -422,9 +422,8 @@ fn run() -> Result<()> {
             report::claims(&layout, by.as_deref(), project.as_deref(), json)?
         ),
         Command::Fold { file, project } => {
-            let project = project.ok_or_else(|| {
-                anyhow::anyhow!("fold needs a target project (-p/--project)")
-            })?;
+            let project = project
+                .ok_or_else(|| anyhow::anyhow!("fold needs a target project (-p/--project)"))?;
             print!("{}", ops::fold(&layout, &file, &project)?)
         }
         Command::Hygiene { stale_days } => print!("{}", agent::hygiene(&layout, stale_days)?),

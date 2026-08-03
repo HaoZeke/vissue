@@ -152,9 +152,7 @@ impl VissueServer {
         text(ops::note(&self.layout, &args.issue_id, &args.text))
     }
 
-    #[tool(
-        description = "Every live claim, oldest first: who holds what issue, and for how long."
-    )]
+    #[tool(description = "Every live claim, oldest first: who holds what issue, and for how long.")]
     async fn vissue_claims(
         &self,
         Parameters(args): Parameters<ClaimsArgs>,

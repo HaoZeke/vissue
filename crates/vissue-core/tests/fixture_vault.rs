@@ -390,6 +390,94 @@ fn show_reports_the_file_range_without_the_body() {
     );
 }
 
+/// `VISSUE_EVENTS` is process-global, so the two tests that depend on its value
+/// take turns rather than racing each other inside the shared test binary.
+static EVENTS_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn a_create_and_an_update_announce_themselves_to_pollers() {
+    let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let (_dir, layout) = writable_copy();
+    let events_dir = layout.projects_dir();
+    assert!(
+        !vissue_core::events::log_path(&events_dir).exists(),
+        "the fixture copy starts with no event stream"
+    );
+    let before = vissue_core::events::generation(&layout);
+
+    let created = vissue_core::ops::create(
+        &layout,
+        "atlas",
+        "an issue that should wake a poller",
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let id = created.trim().to_string();
+
+    let log = vissue_core::events::log_path(&events_dir);
+    assert!(
+        log.is_file(),
+        "create wrote no event log at {}",
+        log.display()
+    );
+    assert!(
+        vissue_core::events::gen_path(&events_dir).is_file(),
+        "create wrote no generation file"
+    );
+    let after_create = vissue_core::events::generation(&layout);
+    assert!(
+        after_create > before,
+        "generation did not advance: {before} -> {after_create}"
+    );
+
+    let events = vissue_core::events::since(&layout, before, 10).unwrap();
+    assert!(!events.is_empty(), "no events recorded for the create");
+    let write = events
+        .iter()
+        .find(|e| e.kind == "issues_write")
+        .expect("a create records an issues_write event");
+    assert_eq!(write.project.as_deref(), Some("atlas"));
+    assert!(
+        write.path.as_deref().unwrap().ends_with("atlas/issues.org"),
+        "{write:?}"
+    );
+
+    // The debounce window suppresses a second log line but must still move the
+    // generation, so a poller cannot sleep through the update.
+    vissue_core::ops::update(&layout, &id, Some("STARTED"), None, None, None).unwrap();
+    let after_update = vissue_core::events::generation(&layout);
+    assert!(
+        after_update > after_create,
+        "update did not advance the generation: {after_create} -> {after_update}"
+    );
+}
+
+#[test]
+fn event_emission_can_be_switched_off() {
+    let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let (_dir, layout) = writable_copy();
+    std::env::set_var("VISSUE_EVENTS", "0");
+    let result = vissue_core::ops::create(
+        &layout,
+        "atlas",
+        "a quiet issue",
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            ..Default::default()
+        },
+    );
+    std::env::remove_var("VISSUE_EVENTS");
+    result.unwrap();
+
+    assert!(
+        !vissue_core::events::log_path(&layout.projects_dir()).exists(),
+        "an event log appeared despite VISSUE_EVENTS=0"
+    );
+}
+
 #[test]
 fn a_configured_prefix_finds_no_projects_where_there_are_none() {
     let layout = Layout::new(fixture_root(), "Elsewhere");

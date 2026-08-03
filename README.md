@@ -212,6 +212,13 @@ id_length = 5
 carrying `[project] name = "..."` in or above the current directory, `--project`
 may be omitted.
 
+**Know which tracker you are writing to.** `create`, `update`, `claim`, and
+`refile` all write, and claiming counts as a write because it stamps the
+holder onto the issue. When a wrapper or the environment sets `VISSUE_ROOT`,
+a bare `vissue` writes to that tracker from any directory. Pass `--root`
+explicitly for a scratch tracker, and `vissue identity` reports which binary
+and which root are in play before you commit to a mutation.
+
 ## Reference
 
 ### Commands

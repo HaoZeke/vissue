@@ -150,10 +150,7 @@ fn claims_lists_only_claimed_issues_and_honors_filters() {
     let all = report::claims(&layout, None, None, false).unwrap();
     assert!(all.contains("atlas-1a2b"), "{all}");
     assert!(all.contains("fixture-agent"), "{all}");
-    assert!(
-        !all.contains("atlas-2c3d"),
-        "unclaimed issue listed: {all}"
-    );
+    assert!(!all.contains("atlas-2c3d"), "unclaimed issue listed: {all}");
 
     let by_holder = report::claims(&layout, Some("fixture-agent"), None, false).unwrap();
     assert!(by_holder.contains("atlas-1a2b"), "{by_holder}");

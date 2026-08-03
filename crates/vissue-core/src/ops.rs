@@ -449,8 +449,7 @@ pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<S
     if text.ends_with('\n') {
         rendered.push('\n');
     }
-    std::fs::write(inbox, rendered)
-        .with_context(|| format!("write inbox {}", inbox.display()))?;
+    std::fs::write(inbox, rendered).with_context(|| format!("write inbox {}", inbox.display()))?;
     Ok(format!("folded {}: {}\n", created.len(), created.join(" ")))
 }
 
@@ -743,11 +742,7 @@ mod tests {
         let h = issue_at(&layout, "sample", &id);
         assert_eq!(h.state, "TODO");
         assert!(h.claimed_by().is_none());
-        let notes: Vec<&str> = h
-            .logbook
-            .iter()
-            .filter_map(|e| e.note.as_deref())
-            .collect();
+        let notes: Vec<&str> = h.logbook.iter().filter_map(|e| e.note.as_deref()).collect();
         // Whitespace collapses to single spaces; double quotes become single.
         assert_eq!(notes, vec!["first pass done, 'quoted' bit next"]);
     }
@@ -781,8 +776,7 @@ mod tests {
         let out = fold(&layout, &inbox, "sample").unwrap();
         assert!(out.starts_with("folded 2: "), "got: {out}");
 
-        let doc =
-            IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
         let titles: Vec<&str> = doc.headings.iter().map(|h| h.title.as_str()).collect();
         assert!(titles.contains(&"first discovered thing"));
         assert!(titles.contains(&"second discovered thing"));
@@ -802,8 +796,7 @@ mod tests {
         // Second fold finds nothing unstamped and creates nothing.
         let again = fold(&layout, &inbox, "sample").unwrap();
         assert_eq!(again, "folded 0 (nothing unstamped)\n");
-        let doc2 =
-            IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let doc2 = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
         assert_eq!(doc2.headings.len(), doc.headings.len());
     }
 }

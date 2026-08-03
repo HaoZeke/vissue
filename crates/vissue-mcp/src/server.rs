@@ -9,7 +9,7 @@ use vissue_core::config::Layout;
 use vissue_core::mirror::{self, Format};
 use vissue_core::ops::{self, CreateOpts};
 use vissue_core::store;
-use vissue_core::{agent, report};
+use vissue_core::{agent, events, report};
 
 use crate::tools::*;
 
@@ -256,6 +256,33 @@ impl VissueServer {
             format,
             args.state.as_deref(),
         ))
+    }
+
+    #[tool(
+        description = "Change events with a sequence above `since`, plus the current generation."
+    )]
+    async fn vissue_events(
+        &self,
+        Parameters(args): Parameters<EventsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(events::since_report(
+            &self.layout,
+            args.since.unwrap_or(0),
+            args.limit.unwrap_or(50),
+        ))
+    }
+
+    #[tool(description = "Append a manual event, waking pollers without editing an issue.")]
+    async fn vissue_ping(
+        &self,
+        Parameters(args): Parameters<PingArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(events::ping_report(&self.layout, args.detail.as_deref()))
+    }
+
+    #[tool(description = "The generation counter. Compare against the last value seen.")]
+    async fn vissue_gen(&self) -> Result<CallToolResult, McpError> {
+        text(Ok(format!("{}\n", events::generation(&self.layout))))
     }
 
     #[tool(description = "Report the server version and the resolved root and prefix.")]

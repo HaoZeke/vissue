@@ -9,7 +9,7 @@ use vissue_core::config::Layout;
 use vissue_core::mirror::{self, Format};
 use vissue_core::ops::{self, CreateOpts};
 use vissue_core::store;
-use vissue_core::{agent, report};
+use vissue_core::{agent, events, report};
 
 #[derive(Parser)]
 #[command(
@@ -204,6 +204,31 @@ enum Command {
         #[arg(short, long)]
         state: Option<String>,
     },
+    /// Change events with a sequence above --since.
+    Events {
+        /// Only events newer than this sequence
+        #[arg(long, default_value_t = 0)]
+        since: u64,
+        /// Maximum events returned
+        #[arg(short = 'n', long, default_value_t = 50)]
+        limit: usize,
+    },
+    /// Append a manual event, waking pollers without editing an issue.
+    Ping {
+        #[arg(long)]
+        detail: Option<String>,
+    },
+    /// Block until the generation passes --last. Exits 2 on timeout.
+    Wait {
+        #[arg(long, default_value_t = 0)]
+        last: u64,
+        #[arg(long, default_value_t = 200)]
+        poll_ms: u64,
+        #[arg(long, default_value_t = 10_000)]
+        timeout_ms: u64,
+    },
+    /// Print the current generation counter.
+    Gen,
     /// List the projects found under the layout prefix.
     Projects,
     /// Print the resolved binary, root, and prefix.
@@ -393,6 +418,26 @@ fn run() -> Result<()> {
                 writeln!(stdout, "wrote {}", path.display())?;
             }
         }
+        Command::Events { since, limit } => {
+            print!("{}", events::since_report(&layout, since, limit)?)
+        }
+        Command::Ping { detail } => {
+            print!("{}", events::ping_report(&layout, detail.as_deref())?)
+        }
+        Command::Wait {
+            last,
+            poll_ms,
+            timeout_ms,
+        } => {
+            let generation = events::wait_generation(&layout, last, poll_ms, timeout_ms)?;
+            println!("{generation}");
+            if generation <= last {
+                // Unchanged: a polling script tells timeout from progress by
+                // the exit status rather than by parsing the number.
+                std::process::exit(2);
+            }
+        }
+        Command::Gen => println!("{}", events::generation(&layout)),
         Command::Projects => {
             for project in store::list_projects(&layout)? {
                 println!("{project}");

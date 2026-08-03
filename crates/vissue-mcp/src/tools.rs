@@ -91,6 +91,20 @@ pub struct MirrorArgs {
     pub state: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct EventsArgs {
+    /// Only events with a sequence above this value.
+    pub since: Option<u64>,
+    /// Maximum events returned.
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct PingArgs {
+    /// Note recorded on the event.
+    pub detail: Option<String>,
+}
+
 /// Parse a single-character priority cookie from the wire representation.
 pub fn priority_char(raw: Option<&String>) -> Option<char> {
     raw.and_then(|s| s.trim().chars().next())

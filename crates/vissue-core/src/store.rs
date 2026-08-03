@@ -207,7 +207,22 @@ impl IssueDoc {
             return Err(e)
                 .with_context(|| format!("rename {} -> {}", tmp.display(), self.path.display()));
         }
+        self.announce_write();
         Ok(())
+    }
+
+    /// Tell pollers the file moved. The event files live beside the project
+    /// directories, which is this file's grandparent. Failure here is not a
+    /// failed write: the issue is already on disk.
+    fn announce_write(&self) {
+        if !crate::events::enabled() {
+            return;
+        }
+        let Some(dir) = self.path.parent().and_then(|p| p.parent()) else {
+            return;
+        };
+        let _ = crate::events::emit_issues_write(dir, &self.project, &self.path);
+        let _ = crate::events::ensure_gitignore_hint(dir);
     }
 
     pub fn known_ids(&self) -> Vec<String> {

@@ -152,6 +152,21 @@ $ vissue check
 $ vissue hygiene
 ```
 
+**Watch for changes without re-reading everything.** A write advances a
+generation counter and appends to a log, both beside the project directories.
+A poller compares the counter, then reads only what is new:
+
+```console
+$ vissue gen
+3167
+$ vissue events --since 3155 -n 5
+$ vissue wait --last 3167 --timeout-ms 30000   # exits 2 on timeout
+$ vissue ping --detail "external change"       # wake pollers by hand
+```
+
+Set `VISSUE_EVENTS=0` to suppress emission when the tracker must stay
+untouched.
+
 **Point at a different layout.** Use `--prefix`, `VISSUE_PREFIX`, or a
 `vissue.toml` at the root:
 
@@ -181,6 +196,7 @@ may be omitted.
 | `tree`, `graph`, `cycles`, `backlinks` | Relationships |
 | `roadmap`, `mirror` | Markdown roadmap; read-only org or markdown projection |
 | `check`, `hygiene` | Validation |
+| `gen`, `events`, `wait`, `ping` | Change stream for pollers |
 | `projects`, `identity` | Layout introspection |
 
 ### States and priorities

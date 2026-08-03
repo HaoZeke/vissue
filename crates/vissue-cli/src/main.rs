@@ -126,6 +126,35 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Append a dated note to an issue's logbook; state and claim untouched.
+    Note {
+        id: String,
+        /// The note. Multiple words are joined with spaces.
+        #[arg(required = true, num_args = 1..)]
+        text: Vec<String>,
+    },
+    /// Every live claim, oldest first: who holds what, and for how long.
+    Claims {
+        /// Only claims held by this identity
+        #[arg(long)]
+        by: Option<String>,
+        /// Only claims in this project
+        #[arg(short = 'p', short_alias = 'P', long)]
+        project: Option<String>,
+        /// Machine-readable output
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fold an inbox org file: each unstamped `* TODO <title>` heading
+    /// becomes an issue, then the heading is stamped with the id and flipped
+    /// to DONE in place. Already-stamped headings are skipped.
+    Fold {
+        /// The inbox file to fold
+        file: PathBuf,
+        /// Project the folded issues are created in
+        #[arg(short = 'p', short_alias = 'P', long)]
+        project: Option<String>,
+    },
     /// Checklist for agents and CI: stalled claims plus corpus validation.
     Hygiene {
         /// Days a claim may be held before it counts as stale
@@ -385,6 +414,19 @@ fn run() -> Result<()> {
             }
         }
         Command::Claim { id, force } => print!("{}", agent::claim(&layout, &id, force)?),
+        Command::Note { id, text } => {
+            print!("{}", ops::note(&layout, &id, &text.join(" "))?)
+        }
+        Command::Claims { by, project, json } => print!(
+            "{}",
+            report::claims(&layout, by.as_deref(), project.as_deref(), json)?
+        ),
+        Command::Fold { file, project } => {
+            let project = project.ok_or_else(|| {
+                anyhow::anyhow!("fold needs a target project (-p/--project)")
+            })?;
+            print!("{}", ops::fold(&layout, &file, &project)?)
+        }
         Command::Hygiene { stale_days } => print!("{}", agent::hygiene(&layout, stale_days)?),
         Command::Whoami => println!("{}", vissue_core::config::identity(&layout)),
         Command::WaitingOn { id } => print!("{}", agent::waiting_on(&layout, &id)?),

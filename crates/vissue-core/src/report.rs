@@ -573,7 +573,7 @@ pub fn cycles(layout: &Layout) -> Result<String> {
                         let min = cycle
                             .iter()
                             .enumerate()
-                            .min_by_key(|(_, s)| s.clone())
+                            .min_by(|a, b| a.1.cmp(b.1))
                             .map(|(i, _)| i)
                             .unwrap();
                         cycle.rotate_left(min);

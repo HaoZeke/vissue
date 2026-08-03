@@ -242,6 +242,89 @@ pub fn stale(layout: &Layout, days: i64, project_filter: Option<&str>) -> Result
     Ok(out)
 }
 
+/// Every live claim, oldest first: the who-holds-what view. A claim is live
+/// while its issue is STARTED or BLOCKED (release happens on TODO, DONE, or
+/// CANCELLED), so this is the working set, not history.
+pub fn claims(
+    layout: &Layout,
+    holder_filter: Option<&str>,
+    project_filter: Option<&str>,
+    json: bool,
+) -> Result<String> {
+    let today = Local::now().date_naive();
+    let mut rows: Vec<(String, IssueHeading, i64)> = Vec::new();
+    for (project, h) in load_all(layout)? {
+        if let Some(p) = project_filter {
+            if !project.eq_ignore_ascii_case(p) {
+                continue;
+            }
+        }
+        let Some(holder) = h.claimed_by() else {
+            continue;
+        };
+        if let Some(f) = holder_filter {
+            if holder != f {
+                continue;
+            }
+        }
+        let age = h
+            .claimed_at()
+            .and_then(parse_org_date)
+            .map(|d| (today - d).num_days())
+            .unwrap_or(-1);
+        rows.push((project, h, age));
+    }
+    // Oldest claim first, so staleness sits at the top of the screen.
+    rows.sort_by(|a, b| {
+        a.1.claimed_at()
+            .unwrap_or("")
+            .cmp(b.1.claimed_at().unwrap_or(""))
+    });
+
+    if json {
+        let arr: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|(project, h, age)| {
+                serde_json::json!({
+                    "id": h.id,
+                    "project": project,
+                    "state": h.state,
+                    "priority": h.priority.to_string(),
+                    "holder": h.claimed_by(),
+                    "claimed_at": h.claimed_at(),
+                    "age_days": age,
+                    "title": h.title,
+                })
+            })
+            .collect();
+        return Ok(format!("{}\n", serde_json::Value::Array(arr)));
+    }
+
+    let mut out = String::new();
+    for (project, h, age) in &rows {
+        let age_txt = if *age < 0 {
+            "?d".to_string()
+        } else {
+            format!("{age}d")
+        };
+        let _ = writeln!(
+            out,
+            "{:<22} {:<9} [#{}]  {:>4}  {}  {} ({})",
+            h.id,
+            h.state,
+            h.priority,
+            age_txt,
+            h.claimed_by().unwrap_or("?"),
+            h.title,
+            project
+        );
+    }
+    if rows.is_empty() {
+        out.push_str("no live claims\n");
+    }
+    Ok(out)
+}
+
 pub(crate) fn parse_org_date(s: &str) -> Option<NaiveDate> {
     let inner = s
         .trim_start_matches(['<', '['])

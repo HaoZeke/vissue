@@ -145,6 +145,34 @@ fn ready_hides_blocked_and_closed_work() {
 }
 
 #[test]
+fn claims_lists_only_claimed_issues_and_honors_filters() {
+    let layout = fixture_layout();
+    let all = report::claims(&layout, None, None, false).unwrap();
+    assert!(all.contains("atlas-1a2b"), "{all}");
+    assert!(all.contains("fixture-agent"), "{all}");
+    assert!(
+        !all.contains("atlas-2c3d"),
+        "unclaimed issue listed: {all}"
+    );
+
+    let by_holder = report::claims(&layout, Some("fixture-agent"), None, false).unwrap();
+    assert!(by_holder.contains("atlas-1a2b"), "{by_holder}");
+    let by_other = report::claims(&layout, Some("nobody"), None, false).unwrap();
+    assert_eq!(by_other, "no live claims\n");
+    let by_project = report::claims(&layout, None, Some("beacon"), false).unwrap();
+    assert_eq!(by_project, "no live claims\n");
+
+    let json = report::claims(&layout, None, None, true).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let rows = parsed.as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["id"], "atlas-1a2b");
+    assert_eq!(rows[0]["holder"], "fixture-agent");
+    assert_eq!(rows[0]["claimed_at"], "[2026-01-14 Wed 09:12]");
+    assert!(rows[0]["age_days"].as_i64().unwrap() >= 0);
+}
+
+#[test]
 fn counts_respect_project_and_state_filters() {
     let layout = fixture_layout();
     assert_eq!(report::count(&layout, None, None, false).unwrap(), "6\n");

@@ -221,9 +221,42 @@ and since when, so the history outlives the properties. A claim held by
 another identity is refused unless you pass `--force`, which records the
 takeover rather than losing it.
 
+`claims` is the standing answer to "who is on what": every live claim, oldest
+first, with the holder and the age in days. `--by` and `--project` narrow it,
+and `--json` emits the rows as an array for an orchestrator polling agent
+state:
+
+```console
+$ vissue claims
+parser-k29f            STARTED   [#C]    0d  grind-worker-3  Reject a manifest… (parser)
+$ vissue claims --by grind-worker-3 --json | jq -r '.[0].claimed_at'
+[2026-08-03 Mon 12:52]
+```
+
 `hygiene` reports claims held longer than `stale_claim_days` (default 7,
 settable in `vissue.toml` or per run with `--stale-days`), and STARTED issues
 that nobody has claimed.
+
+**Report progress without taking over.** `note` appends a dated entry to an
+issue's logbook and touches nothing else, so an agent can leave a trail on an
+issue someone else holds:
+
+```console
+$ vissue note parser-k29f "grammar table regenerated; fuzz corpus next"
+parser-k29f: noted
+```
+
+**Fold discovered work in from outside the tracker.** An agent without write
+access to the tracker appends plain `* TODO <title>` headings (body prose
+below) to an inbox org file on whatever shared surface it can reach. `fold`
+turns each unstamped heading into a tracked issue, then flips the heading to
+DONE and stamps it with the assigned id in place, so the inbox doubles as its
+own receipt and folding twice creates nothing:
+
+```console
+$ vissue fold inbox.org --project parser
+folded 2: parser-x1a2 parser-y3b4
+```
 
 **Watch for changes without re-reading everything.** A write advances a
 generation counter and appends to a log, both beside the project directories.
@@ -271,6 +304,9 @@ and which root are in play before you commit to a mutation.
 | `create`, `q` | Add an issue; `q` prints only the new id |
 | `list`, `show` | Rows of issues; one issue's metadata and file range |
 | `update`, `claim`, `refile` | Change state, priority, or blockers; take an issue; move it between projects |
+| `note` | Append a dated logbook entry; state and claim untouched |
+| `claims` | Every live claim, oldest first: who holds what, for how long |
+| `fold` | Turn an inbox org file's unstamped `* TODO` headings into issues, stamping in place |
 | `whoami` | The identity a claim would record |
 | `ready`, `count`, `search`, `children`, `stale` | Query the corpus |
 | `export` | JSONL, one object per issue |

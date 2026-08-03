@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 use std::collections::BTreeMap;
 
 use crate::config::{Layout, VissueConfig};
-use crate::model::{today_inactive_bracket, IssueHeading, TODO_KEYWORDS};
+use crate::model::{today_inactive_bracket, IssueHeading, LogEntry, TODO_KEYWORDS};
 use crate::store::{
     collect_org_ids, detect_project_from_ctx, find_by_id, generate_id, load_all,
     resolve_existing_project_case, with_issues_lock, with_issues_locks, IssueDoc,
@@ -334,6 +334,126 @@ pub struct UpdateOutcome {
     pub hints: Vec<String>,
 }
 
+/// Append a dated note to an issue's logbook. State, claim, and properties
+/// stay untouched, so an agent can record progress without owning the issue.
+pub fn note(layout: &Layout, id: &str, text: &str) -> Result<String> {
+    // One line in the drawer: fold internal whitespace, and swap double
+    // quotes for singles so the rendered `- Note: "..."` line re-parses.
+    let text = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace('"', "'");
+    if text.is_empty() {
+        bail!("note text is empty");
+    }
+    let (_h0, path, project) =
+        find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
+    with_issues_lock(&path, || {
+        let mut doc = IssueDoc::parse_file(&project, &path)?;
+        let h = doc
+            .headings
+            .iter_mut()
+            .find(|x| x.id == id)
+            .ok_or_else(|| anyhow!("issue {id} not found"))?;
+        h.logbook.push(LogEntry {
+            timestamp: LogEntry::now(),
+            from_state: None,
+            to_state: None,
+            note: Some(text.clone()),
+            raw: None,
+        });
+        doc.write()?;
+        Ok(format!("{id}: noted\n"))
+    })
+}
+
+/// Fold an inbox-convention org file into tracked issues.
+///
+/// Each top-level `* TODO <title>` heading that does not already carry a
+/// `:VISSUE_ID:` line becomes an issue in `project` (body = the heading's
+/// text up to the next heading). The heading is then flipped to DONE and
+/// stamped with the assigned id in place, which is what makes a second run
+/// a no-op: stamped headings are skipped, so folding is idempotent.
+pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<String> {
+    let project = resolve_existing_project_case(layout, project)?;
+    let text = std::fs::read_to_string(inbox)
+        .with_context(|| format!("read inbox {}", inbox.display()))?;
+    let lines: Vec<String> = text.lines().map(str::to_string).collect();
+
+    struct Entry {
+        line: usize,
+        title: String,
+        body: String,
+        stamped: bool,
+    }
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if let Some(title) = lines[i].strip_prefix("* TODO ") {
+            let start = i + 1;
+            let end = lines[start..]
+                .iter()
+                .position(|l| l.starts_with("* "))
+                .map(|off| start + off)
+                .unwrap_or(lines.len());
+            let stamped = lines[start..end]
+                .iter()
+                .any(|l| l.trim_start().starts_with(":VISSUE_ID:"));
+            let body = lines[start..end].join("\n").trim().to_string();
+            entries.push(Entry {
+                line: i,
+                title: title.trim().to_string(),
+                body,
+                stamped,
+            });
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+
+    // Stamping inserts lines, so rewrite from the bottom up to keep the
+    // recorded line numbers valid.
+    let mut out = lines.clone();
+    let mut created: Vec<String> = Vec::new();
+    for e in entries.iter().rev() {
+        if e.stamped {
+            continue;
+        }
+        let printed = create(
+            layout,
+            &project,
+            &e.title,
+            CreateOpts {
+                quiet: true,
+                body: if e.body.is_empty() {
+                    None
+                } else {
+                    Some(&e.body)
+                },
+                ..CreateOpts::default()
+            },
+        )?;
+        let id = printed.trim().to_string();
+        out[e.line] = format!("* DONE {}", e.title);
+        out.insert(e.line + 1, format!(":VISSUE_ID: {id}"));
+        created.push(id);
+    }
+    created.reverse();
+
+    if created.is_empty() {
+        return Ok("folded 0 (nothing unstamped)\n".into());
+    }
+    let mut rendered = out.join("\n");
+    if text.ends_with('\n') {
+        rendered.push('\n');
+    }
+    std::fs::write(inbox, rendered)
+        .with_context(|| format!("write inbox {}", inbox.display()))?;
+    Ok(format!("folded {}: {}\n", created.len(), created.join(" ")))
+}
+
 /// Move one issue's heading to another project's file. The id is not
 /// regenerated, so cross-project blocker edges keep resolving.
 pub fn refile(layout: &Layout, id: &str, to_project: &str) -> Result<String> {
@@ -608,5 +728,82 @@ mod tests {
         let mut on_disk: Vec<String> = doc.headings.iter().map(|h| h.id.clone()).collect();
         on_disk.sort();
         assert_eq!(on_disk, ids);
+    }
+
+    #[test]
+    fn note_appends_to_the_logbook_and_leaves_state_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "carries a note", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        let out = note(&layout, &id, "first pass done,\n  \"quoted\" bit next").unwrap();
+        assert_eq!(out, format!("{id}: noted\n"));
+
+        let h = issue_at(&layout, "sample", &id);
+        assert_eq!(h.state, "TODO");
+        assert!(h.claimed_by().is_none());
+        let notes: Vec<&str> = h
+            .logbook
+            .iter()
+            .filter_map(|e| e.note.as_deref())
+            .collect();
+        // Whitespace collapses to single spaces; double quotes become single.
+        assert_eq!(notes, vec!["first pass done, 'quoted' bit next"]);
+    }
+
+    #[test]
+    fn note_rejects_empty_text_and_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "target", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        assert!(note(&layout, &id, "   ").is_err());
+        assert!(note(&layout, "sample-zzz9", "text").is_err());
+    }
+
+    #[test]
+    fn fold_creates_issues_and_stamps_the_inbox_idempotently() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "seed", CreateOpts::default()).unwrap();
+
+        let inbox = dir.path().join("inbox.org");
+        fs::write(
+            &inbox,
+            "#+TITLE: inbox\n\n\
+             * TODO first discovered thing\nSome body line.\nAnother line.\n\
+             * DONE already handled elsewhere\n\
+             * TODO second discovered thing\n",
+        )
+        .unwrap();
+
+        let out = fold(&layout, &inbox, "sample").unwrap();
+        assert!(out.starts_with("folded 2: "), "got: {out}");
+
+        let doc =
+            IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let titles: Vec<&str> = doc.headings.iter().map(|h| h.title.as_str()).collect();
+        assert!(titles.contains(&"first discovered thing"));
+        assert!(titles.contains(&"second discovered thing"));
+        let folded = doc
+            .headings
+            .iter()
+            .find(|h| h.title == "first discovered thing")
+            .unwrap();
+        assert!(folded.body.contains("Some body line."));
+
+        // Headings flipped to DONE and stamped with the assigned id.
+        let stamped = fs::read_to_string(&inbox).unwrap();
+        assert_eq!(stamped.matches("* DONE ").count(), 3);
+        assert_eq!(stamped.matches(":VISSUE_ID: sample-").count(), 2);
+        assert!(!stamped.contains("* TODO "));
+
+        // Second fold finds nothing unstamped and creates nothing.
+        let again = fold(&layout, &inbox, "sample").unwrap();
+        assert_eq!(again, "folded 0 (nothing unstamped)\n");
+        let doc2 =
+            IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        assert_eq!(doc2.headings.len(), doc.headings.len());
     }
 }

@@ -4,10 +4,13 @@
 //! the backlog. It carries a banner naming it as generated output, because the
 //! next run overwrites it and hand edits are lost.
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
+use chrono::Local;
 use std::fmt::Write as _;
+use std::path::Path;
 
 use crate::config::Layout;
+use crate::digest::{corpus_digest, CorpusDigest};
 use crate::model::{today_inactive_bracket, IssueHeading, TODO_HEADER};
 use crate::store::{list_projects, IssueDoc};
 
@@ -34,6 +37,186 @@ impl Format {
     }
 }
 
+/// What a mirror was generated against, written into its header so a reader
+/// can tell whether the file still matches the tracker.
+///
+/// Every field but `at` is a function of the corpus, so two runs over an
+/// unchanged tracker differ only in the timestamp.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncStamp {
+    pub digest: String,
+    pub generation: u64,
+    pub issues: usize,
+    /// Project name paired with its sub-digest, so a staleness check can name
+    /// which project moved rather than only that something did.
+    pub projects: Vec<(String, String)>,
+    pub at: String,
+}
+
+impl SyncStamp {
+    pub fn from_digest(digest: &CorpusDigest, at: String) -> Self {
+        Self {
+            digest: digest.combined.clone(),
+            generation: digest.generation,
+            issues: digest.issues,
+            projects: digest
+                .projects
+                .iter()
+                .map(|p| (p.project.clone(), p.digest.clone()))
+                .collect(),
+            at,
+        }
+    }
+
+    /// The stamp body, without the comment markers a format wraps it in.
+    ///
+    /// Written without spaces inside any field so the line splits on
+    /// whitespace.
+    pub fn render(&self) -> String {
+        let projects = self
+            .projects
+            .iter()
+            .map(|(name, digest)| format!("{name}:{digest}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            "SYNC: digest={} generation={} issues={} at={} projects={}",
+            self.digest, self.generation, self.issues, self.at, projects
+        )
+    }
+
+    /// Read a stamp from a line of a mirror, whatever comment syntax wraps it.
+    pub fn parse(line: &str) -> Option<Self> {
+        let body = line
+            .trim()
+            .trim_start_matches("<!--")
+            .trim_end_matches("-->")
+            .trim()
+            .trim_start_matches('#')
+            .trim();
+        let rest = body.strip_prefix("SYNC:")?;
+
+        let mut digest = None;
+        let mut generation = None;
+        let mut issues = None;
+        let mut at = None;
+        let mut projects = Vec::new();
+        for field in rest.split_whitespace() {
+            let (key, value) = field.split_once('=')?;
+            match key {
+                "digest" => digest = Some(value.to_string()),
+                "generation" => generation = value.parse().ok(),
+                "issues" => issues = value.parse().ok(),
+                "at" => at = Some(value.to_string()),
+                "projects" => {
+                    for entry in value.split(',').filter(|e| !e.is_empty()) {
+                        let (name, sub) = entry.split_once(':')?;
+                        projects.push((name.to_string(), sub.to_string()));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Some(Self {
+            digest: digest?,
+            generation: generation?,
+            issues: issues?,
+            projects,
+            at: at?,
+        })
+    }
+
+    /// Find the stamp in a whole mirror file.
+    pub fn find(text: &str) -> Option<Self> {
+        text.lines().find_map(Self::parse)
+    }
+}
+
+/// The stamp for the current state of the named projects.
+pub fn stamp_for(layout: &Layout, projects: &[String]) -> Result<SyncStamp> {
+    let digest = corpus_digest(layout, projects)?;
+    Ok(SyncStamp::from_digest(
+        &digest,
+        Local::now().format("%Y-%m-%dT%H:%M").to_string(),
+    ))
+}
+
+/// The verdict of comparing a mirror's stamp against the tracker.
+#[derive(Debug, Clone)]
+pub struct Freshness {
+    pub fresh: bool,
+    pub report: String,
+}
+
+/// Compare the stamp inside `path` against the corpus it claims to mirror.
+///
+/// With no explicit `projects`, the stamp's own project list is used: the file
+/// records what it covered, so a caller need not repeat it.
+pub fn check(layout: &Layout, path: &Path, projects: &[String]) -> Result<Freshness> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let Some(stamped) = SyncStamp::find(&text) else {
+        return Ok(Freshness {
+            fresh: false,
+            report: format!(
+                "stale: {} carries no SYNC stamp; regenerate it with `vissue mirror`\n",
+                path.display()
+            ),
+        });
+    };
+
+    let selected: Vec<String> = if projects.is_empty() {
+        stamped.projects.iter().map(|(n, _)| n.clone()).collect()
+    } else {
+        projects.to_vec()
+    };
+    let current = corpus_digest(layout, &selected)?;
+
+    if current.combined == stamped.digest {
+        return Ok(Freshness {
+            fresh: true,
+            report: format!(
+                "fresh: digest={} issues={} generation={} (stamped {})\n",
+                current.combined, current.issues, current.generation, stamped.at
+            ),
+        });
+    }
+
+    let mut report = format!(
+        "stale: {}\n  stamped digest={} at={} issues={}\n  current digest={} issues={} generation={}\n",
+        path.display(),
+        stamped.digest,
+        stamped.at,
+        stamped.issues,
+        current.combined,
+        current.issues,
+        current.generation
+    );
+    for (name, was) in &stamped.projects {
+        match current.digest_of(name) {
+            Some(now) if now == was => {}
+            Some(now) => {
+                let _ = writeln!(report, "  moved: {name} {was} -> {now}");
+            }
+            None => {
+                let _ = writeln!(report, "  gone:  {name} was {was}");
+            }
+        }
+    }
+    for name in current.project_names() {
+        if !stamped.projects.iter().any(|(n, _)| n == &name) {
+            let _ = writeln!(
+                report,
+                "  added: {name} {}",
+                current.digest_of(&name).unwrap_or("?")
+            );
+        }
+    }
+    Ok(Freshness {
+        fresh: false,
+        report,
+    })
+}
+
 /// Project the named projects into one document. An empty `projects` list
 /// covers every project in the layout.
 pub fn render(
@@ -51,6 +234,8 @@ pub fn render(
         v
     };
 
+    let stamp = stamp_for(layout, &selected)?.render();
+
     let mut out = String::new();
     match format {
         Format::Org => {
@@ -60,6 +245,7 @@ pub fn render(
             writeln!(out, "{TODO_HEADER}")?;
             writeln!(out, "# {BANNER}")?;
             writeln!(out, "# Projects: {}", selected.join(", "))?;
+            writeln!(out, "# {stamp}")?;
             writeln!(out)?;
         }
         Format::Markdown => {
@@ -73,6 +259,8 @@ pub fn render(
                 today_inactive_bracket(),
                 selected.join(", ")
             )?;
+            writeln!(out)?;
+            writeln!(out, "<!-- {stamp} -->")?;
             writeln!(out)?;
         }
     }
@@ -383,6 +571,60 @@ mod tests {
             property_line("BLOCKED_BY", "alpha-1"),
             ":BLOCKED_BY: alpha-1"
         );
+    }
+
+    #[test]
+    fn a_stamp_round_trips_through_its_rendered_form() {
+        let stamp = SyncStamp {
+            digest: "0123456789abcdef".into(),
+            generation: 3167,
+            issues: 13,
+            projects: vec![
+                ("alpha".into(), "aaaaaaaaaaaaaaaa".into()),
+                ("beta".into(), "bbbbbbbbbbbbbbbb".into()),
+            ],
+            at: "2026-08-03T09:30".into(),
+        };
+        let line = stamp.render();
+        assert!(line.starts_with("SYNC: digest=0123456789abcdef"), "{line}");
+        assert!(
+            line.contains("projects=alpha:aaaaaaaaaaaaaaaa,beta:bbbbbbbbbbbbbbbb"),
+            "{line}"
+        );
+
+        // The comment wrappers each format uses must both parse back.
+        assert_eq!(SyncStamp::parse(&format!("# {line}")).unwrap(), stamp);
+        assert_eq!(
+            SyncStamp::parse(&format!("<!-- {line} -->")).unwrap(),
+            stamp
+        );
+        assert_eq!(SyncStamp::parse(&line).unwrap(), stamp);
+    }
+
+    #[test]
+    fn a_line_that_is_not_a_stamp_parses_as_nothing() {
+        for line in [
+            "# MIRROR: generated by `vissue mirror`.",
+            "# Projects: alpha, beta",
+            "* alpha",
+            "",
+        ] {
+            assert!(SyncStamp::parse(line).is_none(), "{line}");
+        }
+    }
+
+    #[test]
+    fn the_stamp_is_found_in_a_rendered_mirror() {
+        let (_dir, layout) = seeded_layout();
+        let text = render(&layout, &[], Format::Org, None).unwrap();
+        let stamp = SyncStamp::find(&text).expect("no stamp in the mirror header");
+        let current = crate::digest::corpus_digest(&layout, &[]).unwrap();
+        assert_eq!(stamp.digest, current.combined);
+        assert_eq!(stamp.issues, current.issues);
+        assert_eq!(stamp.projects.len(), 2);
+
+        let markdown = render(&layout, &[], Format::Markdown, None).unwrap();
+        assert_eq!(SyncStamp::find(&markdown).unwrap().digest, current.combined);
     }
 
     #[test]

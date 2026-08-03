@@ -200,14 +200,30 @@ enum Command {
     },
     /// Validate the corpus. Exits non-zero on any error.
     Check,
+    /// A content digest of the corpus, for telling whether a copy is current.
+    Digest {
+        /// Project to include; repeat for several. Omit for every project.
+        #[arg(short = 'p', short_alias = 'P', long = "project")]
+        projects: Vec<String>,
+        /// Emit a JSON object instead of text
+        #[arg(long)]
+        json: bool,
+        /// Print only the combined digest
+        #[arg(short, long)]
+        quiet: bool,
+    },
     /// Write a read-only projection of one or more projects to a file.
     Mirror {
         /// Project to include; repeat for several. Omit for every project.
         #[arg(short = 'p', short_alias = 'P', long = "project")]
         projects: Vec<String>,
         /// Destination file; `-` writes to standard output.
-        #[arg(short, long)]
-        out: String,
+        #[arg(short, long, required_unless_present = "check")]
+        out: Option<String>,
+        /// Compare an existing mirror's stamp against the tracker instead of
+        /// writing. Exits 0 when fresh, 1 when stale.
+        #[arg(long, conflicts_with = "out")]
+        check: Option<PathBuf>,
         /// org or markdown
         #[arg(short, long, default_value = "org")]
         format: String,
@@ -402,12 +418,38 @@ fn run() -> Result<()> {
                 bail!("{} validation error(s)", out.errors);
             }
         }
+        Command::Digest {
+            projects,
+            json,
+            quiet,
+        } => {
+            let digest = vissue_core::digest::corpus_digest(&layout, &projects)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&digest.to_json())?);
+            } else if quiet {
+                println!("{}", digest.combined);
+            } else {
+                print!("{}", digest.render());
+            }
+        }
         Command::Mirror {
             projects,
             out,
+            check,
             format,
             state,
         } => {
+            if let Some(path) = check {
+                let verdict = mirror::check(&layout, &path, &projects)?;
+                print!("{}", verdict.report);
+                if !verdict.fresh {
+                    // A stale mirror is a normal answer, not a failure to run,
+                    // so it reports on stdout and signals through the status.
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
+            let out = out.expect("clap requires --out unless --check is given");
             let text = mirror::render(
                 &layout,
                 &projects,

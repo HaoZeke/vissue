@@ -340,12 +340,133 @@ fn the_mirror_covers_both_projects_by_default() {
     }
 }
 
+/// The sync stamp carries a wall-clock field, which is the only part of a
+/// mirror that may differ between two runs over an unchanged tracker.
+fn without_stamp_time(text: &str) -> String {
+    text.lines()
+        .map(|l| match l.find(" at=") {
+            Some(i) if l.contains("SYNC:") => {
+                let tail = l[i + 4..].find(' ').map(|j| &l[i + 4 + j..]).unwrap_or("");
+                format!("{} at=<time>{}", &l[..i], tail)
+            }
+            _ => l.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
-fn the_mirror_is_deterministic() {
+fn the_mirror_is_deterministic_apart_from_the_stamp_time() {
     let layout = fixture_layout();
     let once = mirror::render(&layout, &[], Format::Org, None).unwrap();
     let twice = mirror::render(&layout, &[], Format::Org, None).unwrap();
-    assert_eq!(once, twice);
+    assert_eq!(without_stamp_time(&once), without_stamp_time(&twice));
+}
+
+#[test]
+fn the_fixture_digest_is_stable_and_moves_only_with_the_corpus() {
+    let layout = fixture_layout();
+    let first = vissue_core::digest::corpus_digest(&layout, &[]).unwrap();
+    let second = vissue_core::digest::corpus_digest(&layout, &[]).unwrap();
+    assert_eq!(first.combined, second.combined, "digest is not stable");
+    assert_eq!(first.issues, 6);
+    assert_eq!(first.projects.len(), 2);
+
+    let (_dir, writable) = writable_copy();
+    let before = vissue_core::digest::corpus_digest(&writable, &[]).unwrap();
+    vissue_core::ops::update(&writable, "atlas-2c3d", Some("DONE"), None, None, None).unwrap();
+    let after = vissue_core::digest::corpus_digest(&writable, &[]).unwrap();
+
+    assert_ne!(
+        before.combined, after.combined,
+        "an edit did not move the digest"
+    );
+    assert_ne!(
+        before.digest_of("atlas"),
+        after.digest_of("atlas"),
+        "the edited project did not move"
+    );
+    assert_eq!(
+        before.digest_of("beacon"),
+        after.digest_of("beacon"),
+        "an untouched project moved"
+    );
+}
+
+#[test]
+fn a_mirror_is_fresh_when_written_and_stale_once_the_corpus_moves() {
+    let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let (dir, layout) = writable_copy();
+    let path = dir.path().join("issues-mirror.org");
+
+    let text = mirror::render(&layout, &["atlas".to_string()], Format::Org, None).unwrap();
+    fs::write(&path, &text).unwrap();
+
+    let stamp = mirror::SyncStamp::find(&text).expect("no stamp written");
+    assert_eq!(stamp.projects.len(), 1);
+    assert_eq!(stamp.projects[0].0, "atlas");
+
+    let fresh = mirror::check(&layout, &path, &[]).unwrap();
+    assert!(fresh.fresh, "{}", fresh.report);
+    assert!(
+        fresh.report.starts_with("fresh: digest="),
+        "{}",
+        fresh.report
+    );
+
+    // Move the mirrored project; the file on disk is now behind.
+    vissue_core::ops::update(&layout, "atlas-2c3d", Some("DONE"), None, None, None).unwrap();
+    let stale = mirror::check(&layout, &path, &[]).unwrap();
+    assert!(!stale.fresh, "{}", stale.report);
+    assert!(stale.report.contains("stale:"), "{}", stale.report);
+    assert!(stale.report.contains("moved: atlas"), "{}", stale.report);
+    assert!(
+        stale.report.contains(&stamp.digest),
+        "the report does not quote the stamped digest: {}",
+        stale.report
+    );
+
+    // Regenerating makes it fresh again.
+    fs::write(
+        &path,
+        mirror::render(&layout, &["atlas".to_string()], Format::Org, None).unwrap(),
+    )
+    .unwrap();
+    assert!(mirror::check(&layout, &path, &[]).unwrap().fresh);
+}
+
+#[test]
+fn a_change_outside_the_mirrored_projects_leaves_it_fresh() {
+    let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
+    let (dir, layout) = writable_copy();
+    let path = dir.path().join("atlas-only.org");
+    fs::write(
+        &path,
+        mirror::render(&layout, &["atlas".to_string()], Format::Org, None).unwrap(),
+    )
+    .unwrap();
+
+    vissue_core::ops::update(&layout, "beacon-5j6k", Some("DONE"), None, None, None).unwrap();
+    let verdict = mirror::check(&layout, &path, &[]).unwrap();
+    assert!(
+        verdict.fresh,
+        "an unrelated project moved the mirror's verdict: {}",
+        verdict.report
+    );
+}
+
+#[test]
+fn a_file_without_a_stamp_reads_as_stale() {
+    let (dir, layout) = writable_copy();
+    let path = dir.path().join("unstamped.org");
+    fs::write(&path, "#+TITLE: hand written\n\n* alpha\n").unwrap();
+    let verdict = mirror::check(&layout, &path, &["atlas".to_string()]).unwrap();
+    assert!(!verdict.fresh);
+    assert!(
+        verdict.report.contains("no SYNC stamp"),
+        "{}",
+        verdict.report
+    );
 }
 
 #[test]

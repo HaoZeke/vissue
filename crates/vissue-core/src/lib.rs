@@ -8,6 +8,7 @@
 
 pub mod agent;
 pub mod config;
+pub mod digest;
 pub mod events;
 pub mod mirror;
 pub mod model;

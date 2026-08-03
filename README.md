@@ -152,6 +152,49 @@ $ vissue check
 $ vissue hygiene
 ```
 
+**Tell whether a copy of the backlog is current.** `digest` hashes the corpus,
+combined and per project, so a consumer can compare two points in time without
+reading every issue:
+
+```console
+$ vissue digest -P ebstack -P surf
+combined=7f91ad67512010d0 issues=109 generation=3167 projects=2
+6cdab6af46e1c979      12  ebstack
+671d99c6181c1494      97  surf
+$ vissue digest -P ebstack --quiet
+d2ee07c7f585330b
+```
+
+The per-project lines are the point: a changed combined digest says something
+moved, and the sub-digests say which project. The hash is xxh3 over the JSONL
+export, so it tracks issue content and ignores formatting that changes nothing.
+`--json` gives the same data as an object.
+
+Every mirror carries that digest in its header as a SYNC stamp:
+
+```
+# SYNC: digest=d2ee07c7f585330b generation=3167 issues=12 at=2026-08-03T09:53 projects=ebstack:6cdab6af46e1c979
+```
+
+Which makes freshness a single command, exiting 0 when current and 1 when not:
+
+```console
+$ vissue mirror --check Software/ebstack/issues-mirror.org
+fresh: digest=d2ee07c7f585330b issues=12 generation=3167 (stamped 2026-08-03T09:53)
+
+$ vissue mirror --check stale-copy.org
+stale: stale-copy.org
+  stamped digest=0000000000000000 at=2026-08-03T09:53 issues=12
+  current digest=d2ee07c7f585330b issues=12 generation=3167
+  moved: ebstack 1111111111111111 -> 6cdab6af46e1c979
+```
+
+The check reads the projects from the stamp, so a caller need not repeat them,
+and a mirror with no stamp reads as stale. This is what lets a collaborator who
+cannot reach the tracker still know whether the copy they hold is behind: run
+the check where the tracker lives and share the verdict, or compare stamps
+across pulls on their side.
+
 **See who is holding what.** Claiming an issue stamps an identity and a
 timestamp onto it, so a backlog worked by several agents shows who took what
 and when:
@@ -233,6 +276,7 @@ and which root are in play before you commit to a mutation.
 | `export` | JSONL, one object per issue |
 | `tree`, `graph`, `cycles`, `backlinks` | Relationships |
 | `roadmap`, `mirror` | Markdown roadmap; read-only org or markdown projection |
+| `digest`, `mirror --check` | Corpus digest; whether a mirror is still current |
 | `check`, `hygiene` | Validation |
 | `gen`, `events`, `wait`, `ping` | Change stream for pollers |
 | `projects`, `identity` | Layout introspection |

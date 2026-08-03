@@ -248,6 +248,34 @@ impl VissueServer {
         text(agent::hygiene(&self.layout, args.stale_days))
     }
 
+    #[tool(
+        description = "Content digest of the corpus: combined, per-project, issue count, generation."
+    )]
+    async fn vissue_digest(
+        &self,
+        Parameters(args): Parameters<DigestArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        json(
+            vissue_core::digest::corpus_digest(&self.layout, &args.projects.unwrap_or_default())
+                .map(|d| d.to_json()),
+        )
+    }
+
+    #[tool(description = "Check whether a mirror file's SYNC stamp still matches the tracker.")]
+    async fn vissue_mirror_check(
+        &self,
+        Parameters(args): Parameters<MirrorCheckArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(
+            mirror::check(
+                &self.layout,
+                std::path::Path::new(&args.path),
+                &args.projects.unwrap_or_default(),
+            )
+            .map(|v| v.report),
+        )
+    }
+
     #[tool(description = "Render a read-only projection of selected projects.")]
     async fn vissue_mirror(
         &self,

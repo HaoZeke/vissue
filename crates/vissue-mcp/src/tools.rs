@@ -92,6 +92,20 @@ pub struct MirrorArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct DigestArgs {
+    /// Projects to digest. Omit to cover every project.
+    pub projects: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct MirrorCheckArgs {
+    /// Path to the mirror file to check.
+    pub path: String,
+    /// Projects to compare. Omit to use the ones the stamp names.
+    pub projects: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct ClaimArgs {
     /// Issue id.
     pub issue_id: String,

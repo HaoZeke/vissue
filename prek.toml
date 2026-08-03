@@ -1,0 +1,30 @@
+# Git hooks via prek (https://prek.j178.dev). Install: prek install
+#:schema https://www.schemastore.org/prek.json
+
+exclude = """(?x)(
+    ^target/|
+    ^Cargo\\.lock$|
+    ^tests/fixture_vault/
+)"""
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+  { id = "check-yaml" },
+  { id = "check-toml" },
+  { id = "check-merge-conflict" },
+  { id = "check-added-large-files", args = ["--maxkb=1500"] },
+  { id = "detect-private-key" },
+]
+
+[[repos]]
+repo = "https://github.com/codespell-project/codespell"
+rev = "v2.4.1"
+hooks = [
+  {
+    id = "codespell",
+    args = ["--skip=*.lock,Cargo.lock", "-L", "unparseable,unparsable"],
+  },
+]

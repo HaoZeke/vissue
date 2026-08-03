@@ -1,0 +1,305 @@
+//! Verbs shaped for agents: structured rows, claiming, a body excerpt, and a
+//! hygiene checklist.
+
+use anyhow::{anyhow, bail, Result};
+use serde_json::{json, Value};
+use std::fmt::Write as _;
+use std::fs;
+
+use crate::config::Layout;
+use crate::model::READY_STATES;
+use crate::ops::{update, UpdateOutcome};
+use crate::report;
+use crate::store::{find_by_id, list_projects, load_all};
+
+const BODY_EXCERPT_MAX_LINES: usize = 40;
+const BODY_EXCERPT_MAX_CHARS: usize = 4000;
+
+/// Issue rows as JSON, filtered the same way [`report::list`] filters them.
+pub fn issues_json(
+    layout: &Layout,
+    project_filter: Option<&str>,
+    state_filter: Option<&str>,
+    ready_only: bool,
+) -> Result<Value> {
+    let all = load_all(layout)?;
+    let active_blockers: std::collections::HashSet<String> = all
+        .iter()
+        .filter(|(_, h)| h.state != "DONE" && h.state != "CANCELLED")
+        .map(|(_, h)| h.id.clone())
+        .collect();
+
+    let mut rows: Vec<(char, String, String, Value)> = Vec::new();
+    for (project, h) in &all {
+        if let Some(p) = project_filter {
+            if project != p {
+                continue;
+            }
+        }
+        if let Some(s) = state_filter {
+            if h.state != s {
+                continue;
+            }
+        }
+        if ready_only {
+            if !READY_STATES.contains(&h.state.as_str()) {
+                continue;
+            }
+            if h.blocked_by().iter().any(|b| active_blockers.contains(b)) {
+                continue;
+            }
+        }
+        rows.push((
+            h.priority,
+            h.state.clone(),
+            h.id.clone(),
+            json!({
+                "id": h.id,
+                "state": h.state,
+                "priority": h.priority.to_string(),
+                "title": h.title,
+                "project": project,
+                "blocked_by": h.blocked_by(),
+            }),
+        ));
+    }
+    rows.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    Ok(Value::Array(rows.into_iter().map(|r| r.3).collect()))
+}
+
+/// One issue as JSON, including its file and line range.
+pub fn show_json(layout: &Layout, id: &str) -> Result<Value> {
+    let (h, path, project) =
+        find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
+    Ok(json!({
+        "id": h.id,
+        "project": project,
+        "title": h.title,
+        "state": h.state,
+        "priority": h.priority.to_string(),
+        "properties": h.properties,
+        "blocked_by": h.blocked_by(),
+        "parent": h.parent(),
+        "file": format!("{}:{}-{}", path.display(), h.line_start, h.line_end),
+        "line_start": h.line_start,
+        "line_end": h.line_end,
+    }))
+}
+
+/// Take an issue: move it to STARTED. A closed issue cannot be claimed.
+pub fn claim(layout: &Layout, id: &str) -> Result<String> {
+    let (h, _path, _project) =
+        find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
+    if h.state == "DONE" || h.state == "CANCELLED" {
+        bail!("{id} is already {}; cannot claim", h.state);
+    }
+    let UpdateOutcome { report, .. } = update(layout, id, Some("STARTED"), None, None, None)?;
+    let detail = report::show(layout, id)?;
+    Ok(format!("claimed {id}\n{report}{detail}"))
+}
+
+/// The first lines of an issue's file range, capped and screened for secrets.
+pub fn body_excerpt(layout: &Layout, id: &str) -> Result<String> {
+    let (h, path, _project) =
+        find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
+    let content = fs::read_to_string(&path)?;
+    let lines: Vec<&str> = content.lines().collect();
+    let from = h.line_start.saturating_sub(1).min(lines.len());
+    let to = h
+        .line_end
+        .min(lines.len())
+        .min(from + BODY_EXCERPT_MAX_LINES);
+    let mut excerpt = lines[from..to].join("\n");
+    if excerpt.len() > BODY_EXCERPT_MAX_CHARS {
+        excerpt.truncate(BODY_EXCERPT_MAX_CHARS);
+        excerpt.push_str("\n...");
+    }
+    let lower = excerpt.to_lowercase();
+    if lower.contains("private_key") || lower.contains("begin rsa") || lower.contains("api_key=") {
+        return Ok(format!(
+            "(excerpt suppressed: possible secret material; open {} directly)\n",
+            path.display()
+        ));
+    }
+    Ok(format!(
+        "id: {id}\nfile: {}:{}-{}\n--- excerpt (lines {}-{}) ---\n{excerpt}\n",
+        path.display(),
+        h.line_start,
+        h.line_end,
+        from + 1,
+        to
+    ))
+}
+
+/// Issues waiting on this one.
+pub fn waiting_on(layout: &Layout, id: &str) -> Result<String> {
+    report::backlinks(layout, id)
+}
+
+/// The agent and CI checklist: issues claimed but not actionable, plus the
+/// corpus validation summary.
+pub fn hygiene(layout: &Layout) -> Result<String> {
+    let mut out = String::new();
+    writeln!(out, "=== vissue hygiene ===")?;
+
+    let ready = report::ready(layout, None)?;
+    let started = report::list(layout, None, Some("STARTED"), false)?;
+    let mut started_not_ready = 0usize;
+    for line in started.lines() {
+        let id = line.split_whitespace().next().unwrap_or("");
+        if id.is_empty() {
+            continue;
+        }
+        if !ready.lines().any(|r| r.starts_with(id)) {
+            started_not_ready += 1;
+            writeln!(out, "[warn] STARTED but not ready (blockers?): {line}")?;
+        }
+    }
+
+    let check = report::check(layout)?;
+    if check.errors == 0 {
+        writeln!(out, "[ok] check passed")?;
+    } else {
+        writeln!(out, "[fail] check found {} error(s)", check.errors)?;
+        for line in check.text.lines().filter(|l| l.starts_with("[err]")) {
+            writeln!(out, "{line}")?;
+        }
+    }
+    writeln!(
+        out,
+        "summary: started_not_ready={started_not_ready} projects={} errors={} warnings={}",
+        list_projects(layout)?.len(),
+        check.errors,
+        check.warnings
+    )?;
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::DEFAULT_PREFIX;
+    use crate::ops::{create, CreateOpts};
+    use crate::store::IssueDoc;
+
+    fn layout_with_two_issues() -> (tempfile::TempDir, Layout, String, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        create(&layout, "sample", "first", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "blocker", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let first = doc.headings[0].id.clone();
+        let blocker = doc.headings[1].id.clone();
+        (dir, layout, first, blocker)
+    }
+
+    #[test]
+    fn claim_moves_an_open_issue_to_started() {
+        let (_dir, layout, first, _blocker) = layout_with_two_issues();
+        let text = claim(&layout, &first).unwrap();
+        assert!(text.starts_with(&format!("claimed {first}")), "{text}");
+        assert!(text.contains("State:    STARTED"), "{text}");
+    }
+
+    #[test]
+    fn claim_refuses_a_closed_issue() {
+        let (_dir, layout, first, _blocker) = layout_with_two_issues();
+        update(&layout, &first, Some("DONE"), None, None, None).unwrap();
+        let err = claim(&layout, &first).unwrap_err();
+        assert!(err.to_string().contains("cannot claim"), "{err}");
+    }
+
+    #[test]
+    fn ready_json_drops_blocked_issues() {
+        let (_dir, layout, first, blocker) = layout_with_two_issues();
+        update(&layout, &first, None, None, Some(&blocker), None).unwrap();
+        let rows = issues_json(&layout, None, None, true).unwrap();
+        let ids: Vec<&str> = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, vec![blocker.as_str()], "{rows}");
+    }
+
+    #[test]
+    fn show_json_carries_the_file_range() {
+        let (_dir, layout, first, _blocker) = layout_with_two_issues();
+        let row = show_json(&layout, &first).unwrap();
+        assert_eq!(row["id"].as_str(), Some(first.as_str()));
+        assert_eq!(row["project"].as_str(), Some("sample"));
+        assert!(
+            row["file"].as_str().unwrap().contains("issues.org:"),
+            "{row}"
+        );
+    }
+
+    #[test]
+    fn hygiene_flags_a_started_issue_that_is_blocked() {
+        let (_dir, layout, first, blocker) = layout_with_two_issues();
+        update(&layout, &first, Some("STARTED"), None, None, None).unwrap();
+        // Blocking would flip the state, so write the edge without the state move.
+        let path = layout.project_issues_path("sample");
+        let mut doc = IssueDoc::parse_file("sample", &path).unwrap();
+        doc.headings
+            .iter_mut()
+            .find(|h| h.id == first)
+            .unwrap()
+            .properties
+            .insert("BLOCKED_BY".into(), blocker.clone());
+        doc.write().unwrap();
+
+        let text = hygiene(&layout).unwrap();
+        assert!(text.contains("STARTED but not ready"), "{text}");
+        assert!(text.contains("started_not_ready=1"), "{text}");
+        assert!(text.contains("[ok] check passed"), "{text}");
+    }
+
+    #[test]
+    fn body_excerpt_returns_the_heading_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        create(
+            &layout,
+            "sample",
+            "documented",
+            CreateOpts {
+                body: Some("Scope: the excerpt path.\nDone-when: it reads back."),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let text = body_excerpt(&layout, &doc.headings[0].id).unwrap();
+        assert!(text.contains("Scope: the excerpt path."), "{text}");
+        assert!(text.contains("Done-when: it reads back."), "{text}");
+    }
+
+    #[test]
+    fn body_excerpt_suppresses_apparent_secrets() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        create(
+            &layout,
+            "sample",
+            "leaky",
+            CreateOpts {
+                body: Some("token: api_key=whatever-it-was"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let text = body_excerpt(&layout, &doc.headings[0].id).unwrap();
+        assert!(text.contains("excerpt suppressed"), "{text}");
+        assert!(!text.contains("whatever-it-was"), "{text}");
+    }
+}

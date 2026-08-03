@@ -107,10 +107,39 @@ fn an_unknown_mirror_format_fails_loudly() {
 }
 
 #[test]
-fn identity_reports_the_resolved_root_and_prefix() {
+fn whoami_prints_the_identity_a_claim_would_record() {
+    let out = vissue(&["whoami"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = stdout(&out);
+    assert!(!text.trim().is_empty(), "no identity printed");
+}
+
+#[test]
+fn identity_reports_the_resolved_binary_root_and_prefix() {
+    // `identity` answers the wrapper's old question, "which binary and which
+    // tracker", and is distinct from `whoami`, which names the claimant.
     let text = stdout(&vissue(&["identity"]));
     assert!(text.contains("prefix: Software"), "{text}");
     assert!(text.contains("fixture_vault"), "{text}");
+    assert!(text.contains("binary:"), "{text}");
+}
+
+#[test]
+fn the_environment_can_name_the_claiming_identity() {
+    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .args(["--root", fixture_root().to_str().unwrap()])
+        .env("VISSUE_AGENT", "grind-worker-3")
+        .arg("whoami")
+        .output()
+        .expect("run vissue");
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap().trim(),
+        "grind-worker-3"
+    );
 }
 
 #[test]

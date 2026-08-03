@@ -537,30 +537,67 @@ fn tree_dot(
 /// Cycles in the blocker graph, one per line, or a line saying there are none.
 pub fn cycles(layout: &Layout) -> Result<String> {
     let all = load_all(layout)?;
-    let by_id: HashMap<String, &IssueHeading> =
-        all.iter().map(|(_, h)| (h.id.clone(), h)).collect();
+    let by_id: HashMap<&str, &IssueHeading> =
+        all.iter().map(|(_, h)| (h.id.as_str(), h)).collect();
 
+    // Colored depth-first search over BLOCKED_BY edges. Grey marks the
+    // current stack, black a finished node, so a shared blocker reached
+    // from two branches (a diamond) is never mistaken for a cycle.
+    const WHITE: u8 = 0;
+    const GREY: u8 = 1;
+    const BLACK: u8 = 2;
+    let mut color: HashMap<&str, u8> = HashMap::new();
     let mut found: Vec<Vec<String>> = Vec::new();
-    for (_, start) in &all {
-        let mut path: Vec<String> = vec![start.id.clone()];
-        let mut frontier = start.blocked_by();
-        while let Some(b) = frontier.pop() {
-            if path.contains(&b) {
-                let cycle_start = path.iter().position(|x| x == &b).unwrap();
-                let mut cycle = path[cycle_start..].to_vec();
-                cycle.push(b.clone());
-                cycle.sort();
-                if !found.iter().any(|c| c == &cycle) {
-                    found.push(cycle);
+
+    fn dfs<'a>(
+        id: &'a str,
+        by_id: &HashMap<&'a str, &'a IssueHeading>,
+        color: &mut HashMap<&'a str, u8>,
+        path: &mut Vec<&'a str>,
+        found: &mut Vec<Vec<String>>,
+    ) {
+        color.insert(id, GREY);
+        path.push(id);
+        if let Some(h) = by_id.get(id) {
+            for b in h.blocked_by() {
+                let Some((&b, _)) = by_id.get_key_value(b.as_str()) else {
+                    continue; // a broken edge cannot close a loop; `check` reports it
+                };
+                match color.get(b).copied().unwrap_or(WHITE) {
+                    GREY => {
+                        let start = path.iter().position(|&x| x == b).unwrap();
+                        let mut cycle: Vec<String> =
+                            path[start..].iter().map(|s| s.to_string()).collect();
+                        // Rotate so the smallest id leads: one canonical form
+                        // per cycle no matter where the walk entered it.
+                        let min = cycle
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, s)| s.clone())
+                            .map(|(i, _)| i)
+                            .unwrap();
+                        cycle.rotate_left(min);
+                        cycle.push(cycle[0].clone());
+                        if !found.contains(&cycle) {
+                            found.push(cycle);
+                        }
+                    }
+                    WHITE => dfs(b, by_id, color, path, found),
+                    _ => {}
                 }
-                break;
-            }
-            path.push(b.clone());
-            if let Some(h) = by_id.get(&b) {
-                frontier.extend(h.blocked_by());
             }
         }
+        path.pop();
+        color.insert(id, BLACK);
     }
+
+    for (_, start) in &all {
+        if color.get(start.id.as_str()).copied().unwrap_or(WHITE) == WHITE {
+            let mut path = Vec::new();
+            dfs(start.id.as_str(), &by_id, &mut color, &mut path, &mut found);
+        }
+    }
+
     let mut out = String::new();
     if found.is_empty() {
         let _ = writeln!(out, "no cycles");

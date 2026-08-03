@@ -251,6 +251,54 @@ fn check_passes_and_counts_the_corpus() {
 }
 
 #[test]
+fn cycles_reports_a_real_loop_once_in_edge_order() {
+    let (_dir, layout) = writable_copy();
+    let path = layout.project_issues_path("atlas");
+    let mut doc = IssueDoc::parse_file("atlas", &path).unwrap();
+    // atlas-1a2b -> atlas-2c3d -> atlas-1a2b is a genuine blocker loop.
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-1a2b")
+        .unwrap()
+        .properties
+        .insert("BLOCKED_BY".into(), "atlas-2c3d".into());
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-2c3d")
+        .unwrap()
+        .properties
+        .insert("BLOCKED_BY".into(), "atlas-1a2b".into());
+    doc.write().unwrap();
+
+    let out = report::cycles(&layout).unwrap();
+    assert_eq!(out, "atlas-1a2b -> atlas-2c3d -> atlas-1a2b\n");
+}
+
+#[test]
+fn cycles_ignores_a_shared_blocker_diamond() {
+    let (_dir, layout) = writable_copy();
+    let path = layout.project_issues_path("atlas");
+    let mut doc = IssueDoc::parse_file("atlas", &path).unwrap();
+    // 1a2b and 2c3d both wait on 3e4f: a diamond, not a loop.
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-1a2b")
+        .unwrap()
+        .properties
+        .insert("BLOCKED_BY".into(), "atlas-3e4f".into());
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-2c3d")
+        .unwrap()
+        .properties
+        .insert("BLOCKED_BY".into(), "atlas-3e4f,atlas-1a2b".into());
+    doc.write().unwrap();
+
+    let out = report::cycles(&layout).unwrap();
+    assert_eq!(out, "no cycles\n");
+}
+
+#[test]
 fn check_reports_a_broken_blocker_edge() {
     let (_dir, layout) = writable_copy();
     let path = layout.project_issues_path("atlas");

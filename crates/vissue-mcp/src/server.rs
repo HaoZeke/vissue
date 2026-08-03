@@ -142,6 +142,45 @@ impl VissueServer {
         ))
     }
 
+    #[tool(
+        description = "Append a dated note to an issue's logbook without touching state or claim."
+    )]
+    async fn vissue_note(
+        &self,
+        Parameters(args): Parameters<NoteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(ops::note(&self.layout, &args.issue_id, &args.text))
+    }
+
+    #[tool(
+        description = "Every live claim, oldest first: who holds what issue, and for how long."
+    )]
+    async fn vissue_claims(
+        &self,
+        Parameters(args): Parameters<ClaimsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(report::claims(
+            &self.layout,
+            args.holder.as_deref(),
+            args.project.as_deref(),
+            args.json.unwrap_or(false),
+        ))
+    }
+
+    #[tool(
+        description = "Fold an inbox org file: each unstamped `* TODO` heading becomes an issue and the heading is stamped with the id in place."
+    )]
+    async fn vissue_fold(
+        &self,
+        Parameters(args): Parameters<FoldArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(ops::fold(
+            &self.layout,
+            std::path::Path::new(&args.file),
+            &args.project,
+        ))
+    }
+
     #[tool(description = "Count issues, optionally filtered by project, state, or readiness.")]
     async fn vissue_count(
         &self,

@@ -114,6 +114,32 @@ pub struct ClaimArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct NoteArgs {
+    /// Issue id.
+    pub issue_id: String,
+    /// Note text; appended to the logbook with a timestamp.
+    pub text: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ClaimsArgs {
+    /// Only claims held by this identity.
+    pub holder: Option<String>,
+    /// Only claims in this project.
+    pub project: Option<String>,
+    /// Machine-readable JSON array instead of text rows.
+    pub json: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct FoldArgs {
+    /// Absolute path of the inbox org file to fold.
+    pub file: String,
+    /// Project the folded issues are created in.
+    pub project: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct HygieneArgs {
     /// Days a claim may be held before it counts as stale.
     pub stale_days: Option<i64>,

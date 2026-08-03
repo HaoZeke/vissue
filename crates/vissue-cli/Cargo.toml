@@ -1,0 +1,27 @@
+[package]
+name = "vissue-cli"
+description = "vissue command line: plain-text issue tracking over per-project orgmode files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "vissue"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+vissue-core.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true

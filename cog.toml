@@ -1,0 +1,23 @@
+from_latest_tag = false
+ignore_merge_commits = true
+disable_changelog = false
+tag_prefix = "v"
+
+pre_bump_hooks = [
+    "sed -i '0,/^version = /s/^version = \".*\"/version = \"{{version}}\"/' Cargo.toml",
+    "cargo generate-lockfile",
+]
+
+[commit_types]
+feat = { changelog_title = "Added" }
+fix = { changelog_title = "Fixed" }
+docs = { changelog_title = "Documentation" }
+chore = { changelog_title = "Maintenance" }
+refactor = { changelog_title = "Changed" }
+test = { changelog_title = "Tests" }
+style = { changelog_title = "Style" }
+perf = { changelog_title = "Performance" }
+
+[changelog]
+path = "CHANGELOG.md"
+authors = [{ username = "HaoZeke", signature = "Rohit Goswami" }]

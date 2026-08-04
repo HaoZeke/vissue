@@ -325,6 +325,55 @@ pub fn claims(
     Ok(out)
 }
 
+/// Dated open work in the next `days` days, plus anything already overdue.
+/// One line per (issue, date kind): deadlines first within a day, soonest day
+/// first, overdue on top with a negative day count.
+pub fn agenda(layout: &Layout, days: i64, project_filter: Option<&str>) -> Result<String> {
+    let today = Local::now().date_naive();
+    let horizon = today + chrono::Duration::days(days);
+    // kind sorts D before S so a same-day deadline outranks a scheduled start.
+    let mut rows: Vec<(NaiveDate, char, String, IssueHeading)> = Vec::new();
+    for (project, h) in load_all(layout)? {
+        if let Some(p) = project_filter {
+            if !project.eq_ignore_ascii_case(p) {
+                continue;
+            }
+        }
+        if !READY_STATES.contains(&h.state.as_str()) && h.state != "BLOCKED" {
+            continue;
+        }
+        for (kind, value) in [('D', h.deadline()), ('S', h.scheduled())] {
+            let Some(parsed) = value.and_then(parse_org_date) else {
+                continue;
+            };
+            if parsed <= horizon {
+                rows.push((parsed, kind, project.clone(), h.clone()));
+            }
+        }
+    }
+    rows.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.3.id.cmp(&b.3.id)));
+
+    let mut out = String::new();
+    for (date, kind, project, h) in rows {
+        let delta = (date - today).num_days();
+        let when = match delta {
+            d if d < 0 => format!("{}d overdue", -d),
+            0 => "today".to_string(),
+            d => format!("in {d}d"),
+        };
+        let label = if kind == 'D' { "deadline" } else { "scheduled" };
+        let _ = writeln!(
+            out,
+            "{date}  {label:<9} {when:<11} {:<22} {:<9} [#{}]  {}  ({})",
+            h.id, h.state, h.priority, h.title, project
+        );
+    }
+    if out.is_empty() {
+        out.push_str("nothing dated in range\n");
+    }
+    Ok(out)
+}
+
 pub(crate) fn parse_org_date(s: &str) -> Option<NaiveDate> {
     let inner = s
         .trim_start_matches(['<', '['])

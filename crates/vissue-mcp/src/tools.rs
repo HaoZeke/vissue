@@ -132,6 +132,14 @@ pub struct ClaimsArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct AgendaArgs {
+    /// Days ahead to include (default 14). Overdue items always appear.
+    pub days: Option<i64>,
+    /// Only issues in this project.
+    pub project: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct FoldArgs {
     /// Absolute path of the inbox org file to fold.
     pub file: String,

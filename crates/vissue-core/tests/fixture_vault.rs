@@ -251,6 +251,47 @@ fn check_passes_and_counts_the_corpus() {
 }
 
 #[test]
+fn agenda_orders_overdue_then_soonest_and_respects_the_horizon() {
+    let (_dir, layout) = writable_copy();
+    let path = layout.project_issues_path("atlas");
+    let mut doc = IssueDoc::parse_file("atlas", &path).unwrap();
+    let today = chrono::Local::now().date_naive();
+    let stamp = |d: chrono::NaiveDate| format!("<{}>", d.format("%Y-%m-%d %a"));
+    // 1a2b: deadline three days ago (overdue). 2c3d: scheduled in two days.
+    // 3e4f: deadline far past the horizon, must not appear.
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-1a2b")
+        .unwrap()
+        .properties
+        .insert("DEADLINE".into(), stamp(today - chrono::Duration::days(3)));
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-2c3d")
+        .unwrap()
+        .properties
+        .insert("SCHEDULED".into(), stamp(today + chrono::Duration::days(2)));
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-3e4f")
+        .unwrap()
+        .properties
+        .insert("DEADLINE".into(), stamp(today + chrono::Duration::days(90)));
+    doc.write().unwrap();
+
+    let out = report::agenda(&layout, 14, Some("atlas")).unwrap();
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    assert!(lines[0].contains("atlas-1a2b") && lines[0].contains("3d overdue"), "{out}");
+    assert!(lines[1].contains("atlas-2c3d") && lines[1].contains("in 2d"), "{out}");
+    assert!(!out.contains("atlas-3e4f"), "{out}");
+
+    // A 100-day horizon pulls the far deadline in.
+    let wide = report::agenda(&layout, 100, Some("atlas")).unwrap();
+    assert!(wide.contains("atlas-3e4f"), "{wide}");
+}
+
+#[test]
 fn cycles_reports_a_real_loop_once_in_edge_order() {
     let (_dir, layout) = writable_copy();
     let path = layout.project_issues_path("atlas");

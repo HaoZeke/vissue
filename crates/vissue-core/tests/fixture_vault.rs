@@ -282,8 +282,14 @@ fn agenda_orders_overdue_then_soonest_and_respects_the_horizon() {
     let out = report::agenda(&layout, 14, Some("atlas")).unwrap();
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines.len(), 2, "{out}");
-    assert!(lines[0].contains("atlas-1a2b") && lines[0].contains("3d overdue"), "{out}");
-    assert!(lines[1].contains("atlas-2c3d") && lines[1].contains("in 2d"), "{out}");
+    assert!(
+        lines[0].contains("atlas-1a2b") && lines[0].contains("3d overdue"),
+        "{out}"
+    );
+    assert!(
+        lines[1].contains("atlas-2c3d") && lines[1].contains("in 2d"),
+        "{out}"
+    );
     assert!(!out.contains("atlas-3e4f"), "{out}");
 
     // A 100-day horizon pulls the far deadline in.

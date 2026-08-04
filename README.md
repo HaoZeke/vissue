@@ -258,6 +258,19 @@ $ vissue fold inbox.org --project parser
 folded 2: parser-x1a2 parser-y3b4
 ```
 
+Like `create`, `fold` auto-detects the project from `.project-ctx.toml`
+when `--project` is omitted.
+
+**See what is due.** `agenda` lists open and blocked issues whose
+`:DEADLINE:` or `:SCHEDULED:` falls inside a horizon (default 14 days),
+overdue first; a blocked issue still appears, because its date does not
+stop mattering while it waits:
+
+```console
+$ vissue agenda -d 30
+2026-07-23  deadline  12d overdue parser-k29f  STARTED  [#A]  Reject a manifest… (parser)
+```
+
 **Watch for changes without re-reading everything.** A write advances a
 generation counter and appends to a log, both beside the project directories.
 A poller compares the counter, then reads only what is new:
@@ -309,6 +322,7 @@ and which root are in play before you commit to a mutation.
 | `fold` | Turn an inbox org file's unstamped `* TODO` headings into issues, stamping in place |
 | `whoami` | The identity a claim would record |
 | `ready`, `count`, `search`, `children`, `stale` | Query the corpus |
+| `agenda` | Deadlines and scheduled starts inside a horizon, overdue first |
 | `export` | JSONL, one object per issue |
 | `tree`, `graph`, `cycles`, `backlinks` | Relationships |
 | `roadmap`, `mirror` | Markdown roadmap; read-only org or markdown projection |

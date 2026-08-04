@@ -151,7 +151,17 @@ enum Command {
     Fold {
         /// The inbox file to fold
         file: PathBuf,
-        /// Project the folded issues are created in
+        /// Project the folded issues are created in. Auto-detected from
+        /// .project-ctx.toml when omitted.
+        #[arg(short = 'p', short_alias = 'P', long)]
+        project: Option<String>,
+    },
+    /// Dated open work: deadlines and scheduled starts inside a horizon,
+    /// overdue first.
+    Agenda {
+        /// Days ahead to include
+        #[arg(short, long, default_value = "14")]
+        days: i64,
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
     },
@@ -422,9 +432,11 @@ fn run() -> Result<()> {
             report::claims(&layout, by.as_deref(), project.as_deref(), json)?
         ),
         Command::Fold { file, project } => {
-            let project = project
-                .ok_or_else(|| anyhow::anyhow!("fold needs a target project (-p/--project)"))?;
+            let project = ops::resolve_project(&layout, project.as_deref())?;
             print!("{}", ops::fold(&layout, &file, &project)?)
+        }
+        Command::Agenda { days, project } => {
+            print!("{}", report::agenda(&layout, days, project.as_deref())?)
         }
         Command::Hygiene { stale_days } => print!("{}", agent::hygiene(&layout, stale_days)?),
         Command::Whoami => println!("{}", vissue_core::config::identity(&layout)),

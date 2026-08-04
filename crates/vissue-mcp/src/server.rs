@@ -166,6 +166,20 @@ impl VissueServer {
     }
 
     #[tool(
+        description = "Dated open work: deadlines and scheduled starts inside a horizon, overdue first."
+    )]
+    async fn vissue_agenda(
+        &self,
+        Parameters(args): Parameters<AgendaArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(report::agenda(
+            &self.layout,
+            args.days.unwrap_or(14),
+            args.project.as_deref(),
+        ))
+    }
+
+    #[tool(
         description = "Fold an inbox org file: each unstamped `* TODO` heading becomes an issue and the heading is stamped with the id in place."
     )]
     async fn vissue_fold(

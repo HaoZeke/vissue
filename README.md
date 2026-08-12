@@ -157,11 +157,11 @@ combined and per project, so a consumer can compare two points in time without
 reading every issue:
 
 ```console
-$ vissue digest -P ebstack -P surf
+$ vissue digest -P atlas -P beacon
 combined=7f91ad67512010d0 issues=109 generation=3167 projects=2
-6cdab6af46e1c979      12  ebstack
-671d99c6181c1494      97  surf
-$ vissue digest -P ebstack --quiet
+6cdab6af46e1c979      12  atlas
+671d99c6181c1494      97  beacon
+$ vissue digest -P atlas --quiet
 d2ee07c7f585330b
 ```
 
@@ -173,20 +173,20 @@ export, so it tracks issue content and ignores formatting that changes nothing.
 Every mirror carries that digest in its header as a SYNC stamp:
 
 ```
-# SYNC: digest=d2ee07c7f585330b generation=3167 issues=12 at=2026-08-03T09:53 projects=ebstack:6cdab6af46e1c979
+# SYNC: digest=d2ee07c7f585330b generation=3167 issues=12 at=2026-08-03T09:53 projects=atlas:6cdab6af46e1c979
 ```
 
 Which makes freshness a single command, exiting 0 when current and 1 when not:
 
 ```console
-$ vissue mirror --check Software/ebstack/issues-mirror.org
+$ vissue mirror --check Software/atlas/issues-mirror.org
 fresh: digest=d2ee07c7f585330b issues=12 generation=3167 (stamped 2026-08-03T09:53)
 
 $ vissue mirror --check stale-copy.org
 stale: stale-copy.org
   stamped digest=0000000000000000 at=2026-08-03T09:53 issues=12
   current digest=d2ee07c7f585330b issues=12 generation=3167
-  moved: ebstack 1111111111111111 -> 6cdab6af46e1c979
+  moved: atlas 1111111111111111 -> 6cdab6af46e1c979
 ```
 
 The check reads the projects from the stamp, so a caller need not repeat them,

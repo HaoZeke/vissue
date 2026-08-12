@@ -14,6 +14,12 @@ done
 grep -q '^## Ecosystem$' README.md
 grep -q 'https://github.com/HaoZeke/another tool' README.md
 grep -q 'another tool' CHANGELOG.md
+awk '
+  /^## \[0\.1\.0\]/ { release = 1; next }
+  /^## \[/ && release { exit }
+  release && /another tool/ { found = 1 }
+  END { exit !found }
+' CHANGELOG.md
 grep -q 'another tool' CITATION.cff
 
 test -s scripts/release-prepare.sh || {

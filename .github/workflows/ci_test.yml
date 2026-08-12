@@ -50,6 +50,22 @@ jobs:
       - name: Workspace tests
         run: cargo test --locked --workspace
 
+  coverage:
+    name: coverage report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate LCOV report
+        run: cargo llvm-cov --locked --workspace --all-targets --lcov --output-path lcov.info
+      - name: Upload LCOV artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vissue-lcov
+          path: lcov.info
+
   cli-smoke:
     name: CLI smoke over the fixture tracker
     runs-on: ubuntu-latest

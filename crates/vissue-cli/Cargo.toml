@@ -11,7 +11,9 @@ homepage.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
-lints.workspace = true
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "vissue"

@@ -438,4 +438,186 @@ mod tests {
             .unwrap_err();
         assert!(format!("{err:?}").contains("pdf"), "{err:?}");
     }
+
+    #[tokio::test]
+    async fn read_only_tools_cover_the_fixture_tracker_surface() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixture_vault");
+        let server = VissueServer::with_layout(Layout::new(&root, DEFAULT_PREFIX));
+
+        assert!(!server
+            .vissue_projects()
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_list(Parameters(ListArgs {
+                project: Some("atlas".into()),
+                state: Some("TODO".into()),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_ready(Parameters(ProjectArgs {
+                project: Some("atlas".into()),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_show(Parameters(IdArgs {
+                issue_id: "atlas-2c3d".into(),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_claims(Parameters(ClaimsArgs {
+                holder: None,
+                project: Some("atlas".into()),
+                json: Some(true),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_agenda(Parameters(AgendaArgs {
+                days: Some(7),
+                project: Some("atlas".into()),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_search(Parameters(SearchArgs {
+                query: "fixture".into(),
+                limit: Some(5),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_children(Parameters(IdArgs {
+                issue_id: "atlas-1a2b".into(),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_backlinks(Parameters(IdArgs {
+                issue_id: "atlas-1a2b".into(),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_waiting_on(Parameters(IdArgs {
+                issue_id: "atlas-1a2b".into(),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_body_excerpt(Parameters(IdArgs {
+                issue_id: "atlas-2c3d".into(),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_tree(Parameters(TreeArgs {
+                issue_id: "atlas-1a2b".into(),
+                format: Some("ascii".into()),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_graph(Parameters(ProjectArgs {
+                project: Some("atlas".into()),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_roadmap(Parameters(ProjectArgs {
+                project: Some("atlas".into()),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_export(Parameters(ProjectArgs {
+                project: Some("atlas".into()),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_check()
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_hygiene(Parameters(HygieneArgs {
+                stale_days: Some(30)
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_digest(Parameters(DigestArgs {
+                projects: Some(vec!["atlas".into()]),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_mirror(Parameters(MirrorArgs {
+                projects: Some(vec!["atlas".into()]),
+                format: Some("markdown".into()),
+                state: Some("TODO".into()),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_events(Parameters(EventsArgs {
+                since: Some(0),
+                limit: Some(10),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server.vissue_gen().await.unwrap().is_error.unwrap_or(false));
+        assert!(!server
+            .vissue_identity()
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        let info = server.get_info();
+        assert!(info.capabilities.tools.is_some());
+    }
 }

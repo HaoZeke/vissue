@@ -2,6 +2,12 @@
 resolver = "2"
 members = ["crates/vissue-core", "crates/vissue-cli", "crates/vissue-mcp"]
 
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"

@@ -29,3 +29,6 @@ changes under `Unreleased` in `CHANGELOG.md`. Security reports follow
 [another tool](https://github.com/HaoZeke/another tool) consumes the public command protocol.
 Changes to `identity`, `ready`, `list`, `export`, `show`, or `claim` output need
 an integration test against another tool before release.
+
+The maintainer release sequence, including the private publication arm and
+first-version crates.io bootstrap, is documented in `RELEASING.md`.

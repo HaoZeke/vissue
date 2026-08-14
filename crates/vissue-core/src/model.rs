@@ -325,9 +325,10 @@ impl IssueHeading {
             out.push_str(":END:\n");
         }
         if !self.body.is_empty() {
+            let body = escape_body_headlines(&self.body);
             out.push('\n');
-            out.push_str(&self.body);
-            if !self.body.ends_with('\n') {
+            out.push_str(&body);
+            if !body.ends_with('\n') {
                 out.push('\n');
             }
         }
@@ -411,6 +412,42 @@ pub fn align_tags(stem: &str, org_tags: &[String]) -> String {
 }
 
 /// `* STATE [#P] Title            :tag:tag:`.
+/// Indent body lines that would end the issue.
+///
+/// The parser splits issues on a line starting with `* `, so a body carrying
+/// one, which any markdown bullet list does, cuts the issue in two on the
+/// next read: the tail becomes a heading with no `:ID:`, the file stops
+/// parsing, and every issue in it drops out of `list`.
+///
+/// Deeper headings are left alone. `** Scope` under a level-one issue is a
+/// child of it, which is structure the body is meant to be able to carry and
+/// which [`crate::mirror`] demotes when it nests issues further down.
+///
+/// One leading space is enough, and reads the same to a person. Applying it
+/// again changes nothing, so a file written, read, and written again is
+/// stable.
+fn escape_body_headlines(body: &str) -> String {
+    if !body.lines().any(ends_the_issue) {
+        return body.to_string();
+    }
+    let mut out = String::with_capacity(body.len() + 8);
+    for (i, line) in body.split('\n').enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if ends_the_issue(line) {
+            out.push(' ');
+        }
+        out.push_str(line);
+    }
+    out
+}
+
+/// Whether the parser would read this body line as the next issue heading.
+fn ends_the_issue(line: &str) -> bool {
+    line.starts_with("* ")
+}
+
 fn render_heading_line(state: &str, priority: char, title: &str, org_tags: &[String]) -> String {
     let stem = format!("* {} [#{}] {}", state, priority, title);
     format!("{}\n", align_tags(&stem, org_tags))

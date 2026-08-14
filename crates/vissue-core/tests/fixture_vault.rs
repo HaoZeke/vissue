@@ -1582,3 +1582,85 @@ fn clearing_the_last_blocker_returns_a_blocked_issue_to_todo() {
         .unwrap();
     assert_eq!(detail.state, "TODO");
 }
+
+/// A markdown body must not split the issue in two.
+///
+/// An asterisk in the first column opens an org headline. A body carrying a
+/// bullet list used to be written straight through, so the next read saw a
+/// heading with no `:ID:`, stopped parsing the file, and dropped every issue
+/// in that project out of `list`.
+#[test]
+fn a_body_with_markdown_bullets_does_not_break_the_file() {
+    let (_dir, layout) = writable_copy();
+    let body = "Findings:\n\n* first bullet\n* second bullet\n\n** nested bullet";
+    let id = vissue_core::ops::create(
+        &layout,
+        "atlas",
+        "Carries a bullet list",
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            body: Some(body),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+
+    // Every issue that was there is still there, plus the new one.
+    let recs = load_recs(&layout).unwrap();
+    assert!(recs.iter().any(|r| r.heading.id == id), "the new issue");
+    assert!(
+        recs.iter().any(|r| r.heading.id == "atlas-1a2b"),
+        "the file still parses, so its other issues survive"
+    );
+    assert_eq!(report::check(&layout).unwrap().errors, 0);
+
+    // The text is kept, indented enough that org does not read a headline.
+    let detail = CatalogService::from_recs(&recs).detail(&id).unwrap();
+    assert!(detail.body.contains("first bullet"), "{}", detail.body);
+    assert!(detail.body.contains("nested bullet"), "{}", detail.body);
+    for line in detail.body.lines() {
+        assert!(
+            !line.starts_with("* "),
+            "a body line still ends the issue: {line:?}"
+        );
+    }
+    // A deeper heading is a child of the issue, not the end of it, so it is
+    // left as written.
+    assert!(
+        detail.body.lines().any(|l| l.starts_with("** ")),
+        "a nested heading was indented needlessly: {}",
+        detail.body
+    );
+}
+
+/// Writing what was read changes nothing.
+///
+/// The escape is applied on every write, so a file that has been through it
+/// once must not drift further on the next pass.
+#[test]
+fn rewriting_an_escaped_body_is_stable() {
+    let (_dir, layout) = writable_copy();
+    vissue_core::ops::create(
+        &layout,
+        "atlas",
+        "Carries a bullet list",
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            body: Some("* bullet one\n* bullet two"),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let path = layout.project_issues_path("atlas");
+    let once = fs::read_to_string(&path).unwrap();
+    // A no-op parse and write cycle.
+    IssueDoc::parse_file("atlas", &path)
+        .unwrap()
+        .write()
+        .unwrap();
+    let twice = fs::read_to_string(&path).unwrap();
+    assert_eq!(once, twice, "the escape moved the text on a second write");
+}

@@ -27,6 +27,28 @@ $ vissue export --project parser | jq -r '.id + " " + .state'
 The schema is in the [[file:reference.org][Reference]]. It is the seam other tools consume,
 so fields are added rather than repurposed.
 
+* Hand an issue to someone as the specification
+
+=show --org= writes the heading out whole: the property drawer, the
+logbook, and the body, exactly as the file holds them.
+
+#+begin_src console
+$ vissue show --org parser-1a2b > ISSUE.org
+#+end_src
+
+Use this rather than =body-excerpt= whenever the text is the thing being
+worked from. =body-excerpt= is a preview and stops at 40 lines, so a
+longer issue loses its tail without saying so. The logbook travels with
+the export, which is what carries the notes written when the work was
+handed over.
+
+An issue whose text looks like credential material is refused rather
+than exported, the same way a preview of it is.
+
+Plain =show= prints the metadata and then the body, and =show --json=
+carries both along with the logbook, so a caller that already fetched
+the issue does not need a second read to learn what it asks for.
+
 * Follow the graph
 
 =tree= walks children and blockers below an id; =graph= emits the whole thing

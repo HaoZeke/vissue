@@ -6,7 +6,7 @@
 | Command                                                                   | Purpose                                                                  |
 |---------------------------------------------------------------------------+--------------------------------------------------------------------------|
 | =create=, =q=                                                             | Add an issue; =q= prints only the new id                                 |
-| =list=, =show=                                                            | Rows of issues; one issue's metadata and file range                      |
+| =list=, =show=                                                            | Rows of issues; one issue's metadata and body (=--org= for the raw heading) |
 | =update=, =claim=, =refile=                                               | Change state, priority, or blockers; take an issue; move it              |
 | =note=                                                                    | Add a dated logbook entry; state and claim untouched                     |
 | =claims=                                                                  | Every live claim, oldest first: who holds what, for how long             |
@@ -159,7 +159,7 @@ library in process. It resolves its root from =VISSUE_ROOT= and
 =VISSUE_PREFIX=. Tools mirror the CLI verbs: =vissue_list=, =vissue_ready=,
 =vissue_show=, =vissue_create=, =vissue_update=, =vissue_claim=,
 =vissue_count=, =vissue_search=, =vissue_children=, =vissue_backlinks=,
-=vissue_related=, =vissue_waiting_on=, =vissue_body_excerpt=, =vissue_tree=,
+=vissue_related=, =vissue_waiting_on=, =vissue_body_excerpt=, =vissue_org=, =vissue_tree=,
 =vissue_graph=, =vissue_ancestors=, =vissue_impact=, =vissue_cycles=,
 =vissue_refile=, =vissue_wait=, =vissue_whoami=, =vissue_roadmap=,
 =vissue_export=, =vissue_check=, =vissue_hygiene=, =vissue_mirror=,

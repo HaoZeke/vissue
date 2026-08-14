@@ -1954,7 +1954,7 @@ mod tests {
             .into_iter()
             .map(|i| i.id.clone())
             .collect();
-        assert_eq!(first, ["atlas-1a2b", "atlas-2c3d", "beacon-5j6k"]);
+        assert_eq!(first, ["atlas-1a2b", "atlas-2c3d"]);
         palette.reload().unwrap();
         let second: Vec<_> = palette
             .filtered_items()

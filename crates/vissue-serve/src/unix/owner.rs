@@ -141,10 +141,59 @@ impl Owner {
 pub(super) fn prepare_socket_dir(socket: &Path) -> Result<()> {
     let parent = socket.parent().filter(|p| !p.as_os_str().is_empty());
     if let Some(dir) = parent {
+        let existed = dir.exists();
         fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
-        chmod_path(dir, 0o700)?;
+        if may_chmod_socket_parent(dir, existed) {
+            chmod_path(dir, 0o700)?;
+        }
     }
     Ok(())
+}
+
+/// Tighten only a dedicated leaf (`vissue` / `run`) that we just created.
+/// Shared parents (`/tmp`, `/var/tmp`, `/run`, `XDG_RUNTIME_DIR`) and
+/// directories that already existed are left alone.
+pub(super) fn may_chmod_socket_parent(dir: &Path, existed: bool) -> bool {
+    if existed || is_shared_parent(dir) || !is_dedicated_leaf(dir) {
+        return false;
+    }
+    dir_owned_by_current_uid(dir)
+}
+
+fn is_shared_parent(dir: &Path) -> bool {
+    const SHARED: &[&str] = &["/tmp", "/var/tmp", "/run", "/var/run", "/dev/shm"];
+    if SHARED.iter().any(|p| paths_equal(dir, Path::new(p))) {
+        return true;
+    }
+    match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(xdg) if !xdg.is_empty() => paths_equal(dir, Path::new(&xdg)),
+        _ => false,
+    }
+}
+
+fn is_dedicated_leaf(dir: &Path) -> bool {
+    matches!(
+        dir.file_name().and_then(|s| s.to_str()),
+        Some("vissue") | Some("run")
+    )
+}
+
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+fn dir_owned_by_current_uid(dir: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match fs::metadata(dir) {
+        Ok(meta) => meta.uid() == vissue_control::peercred::current_uid(),
+        Err(_) => false,
+    }
 }
 
 fn chmod_path(path: &Path, mode: u32) -> Result<()> {
@@ -530,6 +579,33 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o700);
+    }
+
+    #[test]
+    fn prepare_socket_dir_does_not_chmod_an_existing_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("vissue");
+        fs::create_dir(&parent).unwrap();
+        let mut perms = fs::metadata(&parent).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&parent, perms).unwrap();
+        let socket = parent.join("control.sock");
+        prepare_socket_dir(&socket).unwrap();
+        let mode = fs::metadata(&parent).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755);
+    }
+
+    #[test]
+    fn prepare_socket_dir_does_not_chmod_tmp() {
+        assert!(!may_chmod_socket_parent(Path::new("/tmp"), false));
+        assert!(!may_chmod_socket_parent(Path::new("/tmp"), true));
+        assert!(!may_chmod_socket_parent(Path::new("/var/tmp"), false));
+        assert!(!may_chmod_socket_parent(Path::new("/run"), false));
+        assert!(!may_chmod_socket_parent(Path::new("/var/run"), false));
+        assert!(!is_shared_parent(Path::new("/home/me/.vissue/run")));
+        assert!(is_dedicated_leaf(Path::new("/run/user/1000/vissue")));
+        assert!(is_dedicated_leaf(Path::new("/home/me/.vissue/run")));
+        assert!(!is_dedicated_leaf(Path::new("/tmp")));
     }
 
     #[test]

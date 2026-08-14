@@ -455,7 +455,6 @@ _arguments "${_arguments_options[@]}" : \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '-d[Detach after the socket accepts. The child is placed in its own process group (not a new session) and can still receive SIGHUP from the parent terminal]' \
 '--detach[Detach after the socket accepts. The child is placed in its own process group (not a new session) and can still receive SIGHUP from the parent terminal]' \
-'--foreground[Hidden supervisor flag for the detached child. Alias\: --no-detach]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ":: :_vissue__subcmd__serve_commands" \

@@ -170,6 +170,17 @@ pub fn stop(cfg: &ServeConfig) -> Result<i32> {
     let pid = read_pid_file(socket);
     let accepts = socket_accepts(socket);
 
+    if lock_is_free(socket) {
+        if accepts {
+            eprintln!("error: control socket is live but the ownership lock is free; not stopping");
+            return Ok(1);
+        }
+        unlink_stale_socket_if_lock_free(socket);
+        remove_pid_file(socket);
+        eprintln!("already stopped  socket={}", socket.display());
+        return Ok(0);
+    }
+
     if accepts {
         match pid {
             None => {
@@ -438,6 +449,37 @@ mod tests {
         let _listener = UnixListener::bind(&cfg.socket).unwrap();
         assert_eq!(stop(&cfg).unwrap(), 1);
         assert!(cfg.socket.exists());
+    }
+
+    #[test]
+    fn stop_does_not_signal_a_reused_pid_when_lock_is_free() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = cfg(dir.path());
+        prepare_socket_dir(&cfg.socket).unwrap();
+        let us = std::process::id();
+        write_pid_file(&cfg.socket, us).unwrap();
+        assert!(lock_is_free(&cfg.socket));
+        assert_eq!(stop(&cfg).unwrap(), 0);
+        assert!(
+            pid_is_alive(us),
+            "stop must not signal a pid-file number when the lock is free"
+        );
+        assert!(read_pid_file(&cfg.socket).is_none());
+    }
+
+    #[test]
+    fn stop_refuses_a_live_socket_when_lock_is_free() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = cfg(dir.path());
+        prepare_socket_dir(&cfg.socket).unwrap();
+        let _listener = UnixListener::bind(&cfg.socket).unwrap();
+        let us = std::process::id();
+        write_pid_file(&cfg.socket, us).unwrap();
+        assert!(lock_is_free(&cfg.socket));
+        assert_eq!(stop(&cfg).unwrap(), 1);
+        assert!(pid_is_alive(us));
+        assert!(cfg.socket.exists());
+        assert_eq!(read_pid_file(&cfg.socket), Some(us));
     }
 
     #[test]

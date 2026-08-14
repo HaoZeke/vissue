@@ -1976,7 +1976,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__serve)
-            opts="-d -s -h --detach --foreground --socket --root --prefix --help stop restart status help"
+            opts="-d -s -h --detach --socket --root --prefix --help stop restart status help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

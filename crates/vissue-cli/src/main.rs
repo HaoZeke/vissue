@@ -693,7 +693,10 @@ fn run() -> Result<()> {
                     clap_complete::generate(clap_complete::Shell::Zsh, &mut cmd, name, &mut buffer)
                 }
             }
-            emit!("{}", String::from_utf8_lossy(&buffer));
+            emit!(
+                "{}",
+                strip_hidden_serve_flags(&String::from_utf8_lossy(&buffer))
+            );
         }
         Command::Man => {
             let mut buffer: Vec<u8> = Vec::new();
@@ -740,6 +743,43 @@ fn run() -> Result<()> {
     // the caller as a status instead of being dropped on the way out.
     std::io::stdout().flush()?;
     Ok(())
+}
+
+/// clap_complete still emits `hide = true` flags. Drop the supervisor
+/// `--foreground` / `--no-detach` tokens so tab-complete does not advertise them.
+fn strip_hidden_serve_flags(script: &str) -> String {
+    let mut out = String::with_capacity(script.len());
+    for line in script.lines() {
+        if line_is_hidden_serve_flag(line) {
+            continue;
+        }
+        let cleaned = line
+            .replace(" --foreground", "")
+            .replace("--foreground ", "")
+            .replace(" --no-detach", "")
+            .replace("--no-detach ", "");
+        out.push_str(&cleaned);
+        out.push('\n');
+    }
+    if script.ends_with('\n') || script.is_empty() {
+        out
+    } else {
+        out.pop();
+        out
+    }
+}
+
+fn line_is_hidden_serve_flag(line: &str) -> bool {
+    let trimmed = line.trim();
+    let names_flag = trimmed.contains("--foreground")
+        || trimmed.contains("--no-detach")
+        || trimmed.contains("-l foreground")
+        || trimmed.contains("-l no-detach");
+    if !names_flag {
+        return false;
+    }
+    // Keep multi-option `opts=` lines; strip the token there instead.
+    !trimmed.contains("opts=")
 }
 
 fn read_body_file(path: &str) -> Result<String> {

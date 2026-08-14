@@ -42,7 +42,6 @@ impl Harness {
         let root = tmp.path().join("vault");
         copy_fixture(&root);
         let socket = tmp.path().join("run/control.sock");
-        fs::create_dir_all(socket.parent().unwrap()).unwrap();
         Self {
             _tmp: tmp,
             root,
@@ -268,6 +267,46 @@ fn serve_help_hides_foreground() {
     assert!(!text.contains("--no-detach"), "{text}");
     assert!(text.contains("stop"), "{text}");
     assert!(text.contains("status"), "{text}");
+}
+
+#[test]
+fn completions_omit_foreground() {
+    for shell in ["bash", "zsh", "fish"] {
+        let out = Command::new(bin())
+            .args(["completions", shell])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{shell}: {}", stderr(&out));
+        let text = stdout(&out);
+        assert!(
+            !text.contains("--foreground"),
+            "{shell} completions advertise --foreground"
+        );
+        assert!(
+            !text.contains("--no-detach"),
+            "{shell} completions advertise --no-detach"
+        );
+    }
+}
+
+#[test]
+fn committed_completions_omit_foreground() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for name in [
+        "completions/vissue.bash",
+        "completions/_vissue",
+        "completions/vissue.fish",
+    ] {
+        let text = fs::read_to_string(root.join(name)).unwrap();
+        assert!(
+            !text.contains("--foreground"),
+            "{name} still contains --foreground"
+        );
+        assert!(
+            !text.contains("--no-detach"),
+            "{name} still contains --no-detach"
+        );
+    }
 }
 
 #[test]

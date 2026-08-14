@@ -577,6 +577,7 @@ impl Palette {
                 self.message = report.trim().to_string();
                 self.add_draft.clear();
                 self.focus = Focus::List;
+                let _ = self.backend.refresh();
                 self.backend.invalidate_since();
                 let _ = self.reload();
             }

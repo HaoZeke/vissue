@@ -181,6 +181,10 @@ impl BoardBackend for CoreBackend {
         }
         Ok(gen)
     }
+
+    fn refresh(&self) -> Result<(), Error> {
+        self.reload()
+    }
 }
 
 #[cfg(test)]

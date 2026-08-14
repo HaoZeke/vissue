@@ -114,6 +114,12 @@ pub trait BoardBackend: Send + Sync {
     /// Drop `since_revision` on the next list/ready. Serve `unchanged` is
     /// catalog-wide, so a pane or project change must fetch a full page.
     fn invalidate_since(&self) {}
+
+    /// Re-read the files. Core uses this after an out-of-band write such as
+    /// `ops::create`. Control is a no-op; serve sees the file event.
+    fn refresh(&self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

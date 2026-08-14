@@ -387,3 +387,55 @@ fn a_reader_that_closes_the_pipe_is_not_a_failure() {
     assert!(out.status.success(), "exited {:?}: {stderr}", out.status);
     assert!(stderr.is_empty(), "{stderr}");
 }
+
+/// The one command that replaces reading the file by hand.
+///
+/// Recovering an issue's text used to mean parsing `path:start-end` out of
+/// `show` and running `sed` over the org file, because `show` printed the
+/// range and stopped.
+#[test]
+fn show_org_writes_the_whole_heading() {
+    let out = vissue(&["show", "--org", "atlas-1a2b"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = stdout(&out);
+    assert!(text.starts_with("* STARTED [#A]"), "{text}");
+    assert!(text.contains(":ID:         atlas-1a2b"), "{text}");
+    assert!(
+        text.contains(":LOGBOOK:"),
+        "the notes travel with it: {text}"
+    );
+    assert!(
+        text.contains("Scope: read the header block"),
+        "the body travels with it: {text}"
+    );
+    // Nothing but the heading, so the output can be redirected into a file.
+    assert!(!text.contains("File:"), "{text}");
+    assert!(!text.contains("excerpt"), "{text}");
+}
+
+#[test]
+fn show_prints_the_body_and_json_carries_it() {
+    let text = stdout(&vissue(&["show", "atlas-2c3d"]));
+    assert!(text.contains("Body:"), "{text}");
+    assert!(text.contains("Scope: one row per parsed record"), "{text}");
+
+    let row: serde_json::Value =
+        serde_json::from_str(&stdout(&vissue(&["show", "atlas-2c3d", "--json"]))).unwrap();
+    assert!(
+        row["body"]
+            .as_str()
+            .unwrap()
+            .contains("one row per parsed record"),
+        "{row}"
+    );
+}
+
+#[test]
+fn show_org_and_json_are_not_asked_for_together() {
+    let out = vissue(&["show", "--org", "--json", "atlas-1a2b"]);
+    assert!(!out.status.success(), "{}", stdout(&out));
+}

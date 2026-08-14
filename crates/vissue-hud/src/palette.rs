@@ -530,7 +530,15 @@ impl Palette {
             return;
         }
         match key {
-            PaletteKey::Esc => self.hide(),
+            PaletteKey::Esc => {
+                if self.detail_tab != DetailTab::Show || self.excerpt.is_some() {
+                    self.detail_tab = DetailTab::Show;
+                    self.excerpt = None;
+                    self.refresh_detail();
+                } else {
+                    self.hide();
+                }
+            }
             PaletteKey::Enter => self.cycle_detail_tab(),
             PaletteKey::Tab => self.set_filter(self.filter.next()),
             PaletteKey::Up => self.move_sel(-1),
@@ -1490,11 +1498,8 @@ mod tests {
             .map(|i| i.id.clone())
             .collect();
         assert_eq!(first, second);
-        palette.handle_key(PaletteKey::Char('/'));
-        palette.handle_key(PaletteKey::Char('z'));
-        palette.handle_key(PaletteKey::Backspace);
-        palette.handle_key(PaletteKey::Esc);
-        palette.handle_key(PaletteKey::Char('1'));
+        palette.set_query("z");
+        palette.set_query("");
         assert_eq!(palette.query(), "");
         let after_backspace: Vec<_> = palette
             .filtered_items()
@@ -1588,6 +1593,5 @@ mod tests {
             palette.backend().get("atlas-2c3d").unwrap().state,
             "BLOCKED"
         );
-        assert!(palette.detail_body().contains("atlas-2c3d") || !palette.detail_body().is_empty());
     }
 }

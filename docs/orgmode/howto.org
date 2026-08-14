@@ -227,7 +227,7 @@ Body edits stay in the file.
 * Summon the desktop palette
 
 =vissue hud= opens the iced task board: Ready, Mine, Upcoming, and All
-in a sidebar, checkbox rows with a priority pip, and a quick-add field.
+as chips, checkbox rows with a priority pip, and a quick-add field.
 Space marks done. Enter opens the excerpt. =c= claims. =n= notes. =a=
 adds. =/= finds. =1=--=4= switch lists.
 

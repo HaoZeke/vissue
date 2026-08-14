@@ -13,105 +13,9 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
         return Space::new().width(0).height(0).into();
     }
 
-    let body = row![sidebar(palette), main_pane(palette)]
-        .width(Fill)
-        .height(Fill);
-
-    container(body)
-        .width(Fill)
-        .height(Fill)
-        .style(|_| fill(theme::BASE))
-        .into()
-}
-
-fn sidebar(palette: &Palette) -> Element<'_, Message> {
-    let mut nav = column![
-        text("vissue")
-            .size(theme::SIZE_TITLE)
-            .color(theme::TEXT)
-            .font(theme::FACE),
-        text(status_chip(palette))
-            .size(theme::SIZE_HINT)
-            .color(theme::OVERLAY)
-            .font(theme::FACE),
-    ]
-    .spacing(10);
-
-    for (filter, label) in BoardFilter::ALL {
-        let count = palette.count(filter);
-        let active = palette.filter() == filter;
-        nav = nav.push(filter_btn(filter, label, count, active));
-    }
-
-    container(nav.spacing(8).padding(18).width(Fill).height(Fill))
-        .width(220)
-        .height(Fill)
-        .style(|_| fill(theme::MANTLE))
-        .into()
-}
-
-fn filter_btn(
-    filter: BoardFilter,
-    label: &'static str,
-    count: usize,
-    active: bool,
-) -> Element<'static, Message> {
-    let fg = if active { theme::TEXT } else { theme::SUBTEXT };
-    let label_row = row![
-        text(label)
-            .size(theme::SIZE_BODY)
-            .color(fg)
-            .font(theme::FACE),
-        Space::new().width(Fill),
-        text(format!("{count}"))
-            .size(theme::SIZE_META)
-            .color(if active { theme::BLUE } else { theme::OVERLAY })
-            .font(theme::FACE),
-    ]
-    .align_y(Alignment::Center);
-
-    button(label_row)
-        .on_press(Message::Filter(filter))
-        .padding([10, 12])
-        .width(Fill)
-        .style(move |_, status| {
-            let hovered = matches!(status, button::Status::Hovered);
-            button::Style {
-                background: Some(Background::Color(if active {
-                    theme::SURFACE0
-                } else if hovered {
-                    theme::SURFACE1
-                } else {
-                    Color::TRANSPARENT
-                })),
-                text_color: fg,
-                border: Border {
-                    radius: 8.0.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                ..button::Style::default()
-            }
-        })
-        .into()
-}
-
-fn main_pane(palette: &Palette) -> Element<'_, Message> {
-    let heading = format!(
-        "{}  {}",
-        palette.filter().label(),
-        palette.filtered_items().len()
-    );
-    let mut pane = column![
-        text(heading)
-            .size(theme::SIZE_TITLE)
-            .color(theme::TEXT)
-            .font(theme::FACE),
-        add_bar(palette),
-        search_bar(palette),
-    ]
-    .spacing(10)
-    .padding(18);
+    let mut pane = column![header(palette), chips(palette), add_bar(palette)]
+        .spacing(12)
+        .padding([16, 18]);
 
     let items = palette.filtered_items();
     if items.is_empty() {
@@ -122,7 +26,7 @@ fn main_pane(palette: &Palette) -> Element<'_, Message> {
                 .font(theme::FACE),
         );
     } else {
-        let mut list = column![].spacing(4);
+        let mut list = column![].spacing(2);
         for (i, item) in items.into_iter().enumerate() {
             list = list.push(task_row(item, i == palette.selected_index()));
         }
@@ -146,18 +50,139 @@ fn main_pane(palette: &Palette) -> Element<'_, Message> {
         );
     }
 
-    pane = pane.push(
-        text("space done   enter open   c claim   n note   a add   / find   1-4 lists   esc")
-            .size(theme::SIZE_HINT)
-            .color(theme::OVERLAY)
-            .font(theme::FACE),
-    );
-
-    container(pane.spacing(10).width(Fill).height(Fill))
+    container(pane.spacing(12).width(Fill).height(Fill))
         .width(Fill)
         .height(Fill)
         .style(|_| fill(theme::BASE))
         .into()
+}
+
+fn header(palette: &Palette) -> Element<'_, Message> {
+    let live = match palette.serve_status() {
+        vissue_tui::attach::ServeStatus::Live => theme::GREEN,
+        vissue_tui::attach::ServeStatus::Mismatch => theme::PEACH,
+        vissue_tui::attach::ServeStatus::Offline => theme::OVERLAY,
+    };
+    let dot = container(Space::new().width(8).height(8)).style(move |_| container::Style {
+        background: Some(Background::Color(live)),
+        border: Border {
+            radius: 4.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        ..container::Style::default()
+    });
+
+    let title = row![
+        text("vissue")
+            .size(theme::SIZE_TITLE)
+            .color(theme::TEXT)
+            .font(theme::FACE),
+        dot,
+        text(palette.filter().label())
+            .size(theme::SIZE_META)
+            .color(theme::SUBTEXT)
+            .font(theme::FACE),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    row![title, Space::new().width(Fill), find_control(palette)]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+fn find_control(palette: &Palette) -> Element<'_, Message> {
+    if palette.focus() == Focus::Search || !palette.query().is_empty() {
+        text_input("Find", palette.query())
+            .on_input(Message::QueryChanged)
+            .on_submit(Message::FocusList)
+            .size(theme::SIZE_META)
+            .padding([8, 10])
+            .font(theme::FACE)
+            .width(220)
+            .style(|_, _| input_style())
+            .into()
+    } else {
+        button(
+            text("Find")
+                .size(theme::SIZE_META)
+                .color(theme::SUBTEXT)
+                .font(theme::FACE),
+        )
+        .on_press(Message::FocusSearch)
+        .padding([8, 12])
+        .style(|_, status| {
+            let hovered = matches!(status, button::Status::Hovered);
+            button::Style {
+                background: Some(Background::Color(if hovered {
+                    theme::SURFACE0
+                } else {
+                    Color::TRANSPARENT
+                })),
+                text_color: theme::SUBTEXT,
+                border: Border {
+                    radius: 8.0.into(),
+                    width: 1.0,
+                    color: theme::SURFACE1,
+                },
+                ..button::Style::default()
+            }
+        })
+        .into()
+    }
+}
+
+fn chips(palette: &Palette) -> Element<'_, Message> {
+    let mut row = row![].spacing(6);
+    for (filter, label) in BoardFilter::ALL {
+        row = row.push(chip(
+            filter,
+            label,
+            palette.count(filter),
+            palette.filter() == filter,
+        ));
+    }
+    row.into()
+}
+
+fn chip(
+    filter: BoardFilter,
+    label: &'static str,
+    count: usize,
+    active: bool,
+) -> Element<'static, Message> {
+    let fg = if active { theme::BASE } else { theme::SUBTEXT };
+    let bg = if active { theme::BLUE } else { theme::SURFACE0 };
+    button(
+        text(format!("{label} {count}"))
+            .size(theme::SIZE_META)
+            .color(fg)
+            .font(theme::FACE),
+    )
+    .on_press(Message::Filter(filter))
+    .padding([6, 12])
+    .style(move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered);
+        button::Style {
+            background: Some(Background::Color(if active {
+                bg
+            } else if hovered {
+                theme::SURFACE1
+            } else {
+                bg
+            })),
+            text_color: fg,
+            border: Border {
+                radius: 14.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            ..button::Style::default()
+        }
+    })
+    .into()
 }
 
 fn add_bar(palette: &Palette) -> Element<'_, Message> {
@@ -166,19 +191,27 @@ fn add_bar(palette: &Palette) -> Element<'_, Message> {
             .on_input(Message::AddChanged)
             .on_submit(Message::AddSubmit)
             .size(theme::SIZE_BODY)
-            .padding(12)
+            .padding(14)
             .font(theme::FACE)
             .style(|_, _| input_style())
             .into()
     } else {
         button(
-            text("Add a task")
-                .size(theme::SIZE_BODY)
-                .color(theme::OVERLAY)
-                .font(theme::FACE),
+            row![
+                text("+")
+                    .size(theme::SIZE_TITLE)
+                    .color(theme::BLUE)
+                    .font(theme::FACE),
+                text("Add a task")
+                    .size(theme::SIZE_BODY)
+                    .color(theme::OVERLAY)
+                    .font(theme::FACE),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
         )
         .on_press(Message::FocusAdd)
-        .padding(12)
+        .padding([12, 14])
         .width(Fill)
         .style(|_, status| {
             let hovered = matches!(status, button::Status::Hovered);
@@ -190,46 +223,16 @@ fn add_bar(palette: &Palette) -> Element<'_, Message> {
                 })),
                 text_color: theme::OVERLAY,
                 border: Border {
-                    radius: 10.0.into(),
+                    radius: 12.0.into(),
                     width: 1.0,
-                    color: theme::SURFACE1,
+                    color: if hovered {
+                        theme::BLUE
+                    } else {
+                        theme::SURFACE1
+                    },
                 },
                 ..button::Style::default()
             }
-        })
-        .into()
-    }
-}
-
-fn search_bar(palette: &Palette) -> Element<'_, Message> {
-    if palette.focus() == Focus::Search || !palette.query().is_empty() {
-        text_input("Find", palette.query())
-            .on_input(Message::QueryChanged)
-            .on_submit(Message::FocusList)
-            .size(theme::SIZE_BODY)
-            .padding(10)
-            .font(theme::FACE)
-            .style(|_, _| input_style())
-            .into()
-    } else {
-        button(
-            text("Find")
-                .size(theme::SIZE_META)
-                .color(theme::OVERLAY)
-                .font(theme::FACE),
-        )
-        .on_press(Message::FocusSearch)
-        .padding([8, 12])
-        .width(Fill)
-        .style(|_, _| button::Style {
-            background: Some(Background::Color(theme::MANTLE)),
-            text_color: theme::OVERLAY,
-            border: Border {
-                radius: 8.0.into(),
-                width: 1.0,
-                color: theme::SURFACE1,
-            },
-            ..button::Style::default()
         })
         .into()
     }
@@ -240,26 +243,25 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
     let title_color = if done { theme::OVERLAY } else { theme::TEXT };
     let id = item.id.clone();
     let pip_color = theme::priority_color(&item.priority);
-    let mut meta = format!("{}  {}  {}", item.project, item.state, item.id);
+    let mut meta = item.project.clone();
     if let Some(due) = item.due.as_deref() {
         meta = format!("{meta}  {due}");
+    } else if item.state != "TODO" && item.state != "DONE" {
+        meta = format!("{meta}  {}", item.state.to_lowercase());
     }
     if let Some(holder) = item.claimed_by.as_deref() {
-        meta = format!("{meta}  @{holder}");
+        meta = format!("{meta}  {holder}");
     }
 
-    let pip = container(Space::new().width(4).height(28))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(pip_color)),
-            border: Border {
-                radius: 2.0.into(),
-                width: 0.0,
-                color: Color::TRANSPARENT,
-            },
-            ..container::Style::default()
-        })
-        .width(4)
-        .height(28);
+    let pip = container(Space::new().width(4).height(32)).style(move |_| container::Style {
+        background: Some(Background::Color(pip_color)),
+        border: Border {
+            radius: 2.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        ..container::Style::default()
+    });
 
     let titles = column![
         text(item.title.clone())
@@ -268,7 +270,7 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
             .font(theme::FACE),
         text(meta)
             .size(theme::SIZE_META)
-            .color(theme::state_color(&item.state))
+            .color(theme::SUBTEXT)
             .font(theme::FACE),
     ]
     .spacing(2);
@@ -276,14 +278,14 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
     let body = row![
         checkbox(done)
             .on_toggle(move |_| Message::ToggleDone(id.clone()))
-            .size(18)
+            .size(20)
             .style(move |_, status| check_style(status, done)),
         pip,
         titles,
     ]
     .spacing(12)
     .align_y(Alignment::Center)
-    .padding([8, 10]);
+    .padding([10, 8]);
 
     let idx = item.id.clone();
     button(body)
@@ -303,8 +305,12 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
                 text_color: title_color,
                 border: Border {
                     radius: 10.0.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
+                    width: if selected { 1.0 } else { 0.0 },
+                    color: if selected {
+                        theme::SURFACE1
+                    } else {
+                        Color::TRANSPARENT
+                    },
                 },
                 ..button::Style::default()
             }
@@ -321,15 +327,15 @@ fn excerpt_card<'a>(palette: &'a Palette, body: &'a str) -> Element<'a, Message>
         column![
             text(label)
                 .size(theme::SIZE_BODY)
-                .color(theme::BLUE)
+                .color(theme::TEXT)
                 .font(theme::FACE),
             scrollable(
                 text(body)
                     .size(theme::SIZE_META)
-                    .color(theme::TEXT)
+                    .color(theme::SUBTEXT)
                     .font(theme::FACE)
             )
-            .height(Length::Fixed(160.0)),
+            .height(Length::Fixed(140.0)),
         ]
         .spacing(8)
         .padding(14),
@@ -361,23 +367,14 @@ fn note_bar(palette: &Palette) -> Element<'_, Message> {
 
 fn empty_copy(palette: &Palette) -> &'static str {
     if !palette.query().is_empty() {
-        return "Nothing matches that find.";
+        return "Nothing matches.";
     }
     match palette.filter() {
-        BoardFilter::Ready => "Nothing ready. Add a task or open another list.",
+        BoardFilter::Ready => "Inbox is clear. Add a task.",
         BoardFilter::Mine => "Nothing claimed by you.",
         BoardFilter::Upcoming => "Nothing dated in the next two weeks.",
         BoardFilter::All => "The vault is empty.",
     }
-}
-
-fn status_chip(palette: &Palette) -> String {
-    let kind = match palette.serve_status() {
-        vissue_tui::attach::ServeStatus::Live => "live",
-        vissue_tui::attach::ServeStatus::Offline => "offline",
-        vissue_tui::attach::ServeStatus::Mismatch => "mismatch",
-    };
-    format!("{kind}  {}", palette.agent())
 }
 
 fn fill(color: Color) -> container::Style {
@@ -392,7 +389,7 @@ fn input_style() -> text_input::Style {
     text_input::Style {
         background: Background::Color(theme::SURFACE0),
         border: Border {
-            radius: 10.0.into(),
+            radius: 12.0.into(),
             width: 1.0,
             color: theme::SURFACE1,
         },

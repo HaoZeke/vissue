@@ -15,8 +15,8 @@ use crate::palette::{BoardFilter, Palette, PaletteKey};
 use crate::summon;
 use crate::theme;
 
-const HUD_W: f32 = 900.0;
-const HUD_H: f32 = 680.0;
+const HUD_W: f32 = 520.0;
+const HUD_H: f32 = 720.0;
 
 /// First-paint inputs for the board.
 #[derive(Clone)]
@@ -159,18 +159,23 @@ impl HudApp {
     }
 }
 
-/// Decorated task window: large enough for a sidebar and a list.
+/// Decorated task column. Survives a narrow Sway tile; no compositor rules.
 pub fn board_window() -> window::Settings {
-    window::Settings {
+    let mut settings = window::Settings {
         size: Size::new(HUD_W, HUD_H),
         position: window::Position::Centered,
         resizable: true,
         decorations: true,
         level: window::Level::Normal,
         exit_on_close_request: false,
-        min_size: Some(Size::new(720.0, 480.0)),
+        min_size: Some(Size::new(360.0, 420.0)),
         ..Default::default()
+    };
+    #[cfg(target_os = "linux")]
+    {
+        settings.platform_specific.application_id = String::from("vissue");
     }
+    settings
 }
 
 /// First paint via core, attach unless `--offline`, then the iced loop.

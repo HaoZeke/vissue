@@ -236,7 +236,7 @@ fn run_iced(palette: Palette) -> iced::Result {
     .title(|_: &HudApp| "vissue".to_string())
     .default_font(theme::FACE)
     .settings(iced::Settings {
-        default_text_size: Pixels(theme::SIZE_TITLE),
+        default_text_size: Pixels(theme::SIZE_BODY),
         default_font: theme::FACE,
         ..Default::default()
     })

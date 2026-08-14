@@ -244,58 +244,40 @@ fn project_card(card: &crate::palette::ProjectCard, selected: bool) -> Element<'
         1 => "1 ready".to_string(),
         n => format!("{n} ready"),
     };
+    let title_fg = if selected { theme::BASE } else { theme::TEXT };
+    let meta_fg = if selected {
+        theme::MANTLE
+    } else if card.ready == 0 {
+        theme::OVERLAY
+    } else {
+        theme::SUBTEXT
+    };
     let body = row![
         column![
             text(card.name.clone())
                 .size(theme::SIZE_TITLE)
-                .color(theme::TEXT)
+                .color(title_fg)
                 .font(theme::FACE),
             text(count)
                 .size(theme::SIZE_META)
-                .color(if card.ready == 0 {
-                    theme::OVERLAY
-                } else {
-                    theme::SUBTEXT
-                })
+                .color(meta_fg)
                 .font(theme::FACE),
         ]
         .spacing(2),
         Space::new().width(Fill),
         text("open")
             .size(theme::SIZE_META)
-            .color(theme::OVERLAY)
+            .color(meta_fg)
             .font(theme::FACE),
     ]
     .spacing(12)
     .align_y(Alignment::Center)
-    .padding([14, 16]);
+    .padding([12, 14]);
     button(body)
         .on_press(Message::SelectProject(name))
         .padding(0)
         .width(Fill)
-        .style(move |_, status| {
-            let hovered = matches!(status, button::Status::Hovered);
-            button::Style {
-                background: Some(Background::Color(if selected {
-                    theme::SURFACE0
-                } else if hovered {
-                    theme::MANTLE
-                } else {
-                    theme::SURFACE0
-                })),
-                text_color: theme::TEXT,
-                border: Border {
-                    radius: 12.0.into(),
-                    width: if selected { 1.0 } else { 0.0 },
-                    color: if selected {
-                        theme::BLUE
-                    } else {
-                        Color::TRANSPARENT
-                    },
-                },
-                ..button::Style::default()
-            }
-        })
+        .style(move |_, status| select_style(selected, matches!(status, button::Status::Hovered)))
         .into()
 }
 
@@ -428,7 +410,18 @@ fn project_header(section: &ProjectSection<'_>) -> Element<'static, Message> {
 
 fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
     let done = item.state == "DONE";
-    let title_color = if done { theme::OVERLAY } else { theme::TEXT };
+    let title_color = if selected {
+        theme::BASE
+    } else if done {
+        theme::OVERLAY
+    } else {
+        theme::TEXT
+    };
+    let meta_color = if selected {
+        theme::MANTLE
+    } else {
+        theme::state_color(&item.state)
+    };
     let id = item.id.clone();
     let pip_color = theme::priority_color(&item.priority);
     let mut bits: Vec<String> = vec![item.state.to_lowercase()];
@@ -457,12 +450,12 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
 
     let titles = column![
         text(item.title.clone())
-            .size(theme::SIZE_TITLE)
+            .size(theme::SIZE_BODY)
             .color(title_color)
             .font(theme::FACE),
         text(meta)
             .size(theme::SIZE_META)
-            .color(theme::state_color(&item.state))
+            .color(meta_color)
             .font(theme::FACE),
     ]
     .spacing(2);
@@ -486,29 +479,7 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
         .on_press(Message::SelectId(idx))
         .padding(0)
         .width(Fill)
-        .style(move |_, status| {
-            let hovered = matches!(status, button::Status::Hovered);
-            button::Style {
-                background: Some(Background::Color(if selected {
-                    theme::SURFACE0
-                } else if hovered {
-                    theme::MANTLE
-                } else {
-                    Color::TRANSPARENT
-                })),
-                text_color: title_color,
-                border: Border {
-                    radius: 10.0.into(),
-                    width: if selected { 1.0 } else { 0.0 },
-                    color: if selected {
-                        theme::SURFACE1
-                    } else {
-                        Color::TRANSPARENT
-                    },
-                },
-                ..button::Style::default()
-            }
-        })
+        .style(move |_, status| select_style(selected, matches!(status, button::Status::Hovered)))
         .into()
 }
 
@@ -556,7 +527,7 @@ fn detail_panel(palette: &Palette) -> Element<'_, Message> {
         border: Border {
             radius: 12.0.into(),
             width: 1.0,
-            color: theme::SURFACE1,
+            color: theme::OVERLAY1,
         },
         ..container::Style::default()
     })
@@ -618,6 +589,27 @@ fn empty_copy(palette: &Palette) -> &'static str {
     }
 }
 
+/// Rofi selected-normal: blue field, mocha text.
+fn select_style(selected: bool, hovered: bool) -> button::Style {
+    let (bg, fg) = if selected {
+        (theme::BLUE, theme::BASE)
+    } else if hovered {
+        (theme::SURFACE0, theme::TEXT)
+    } else {
+        (Color::TRANSPARENT, theme::TEXT)
+    };
+    button::Style {
+        background: Some(Background::Color(bg)),
+        text_color: fg,
+        border: Border {
+            radius: 8.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        ..button::Style::default()
+    }
+}
+
 fn fill(color: Color) -> container::Style {
     container::Style {
         background: Some(Background::Color(color)),
@@ -632,7 +624,7 @@ fn input_style() -> text_input::Style {
         border: Border {
             radius: 12.0.into(),
             width: 1.0,
-            color: theme::SURFACE1,
+            color: theme::OVERLAY1,
         },
         icon: theme::SUBTEXT,
         placeholder: theme::OVERLAY,

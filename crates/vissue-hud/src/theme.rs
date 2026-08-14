@@ -1,8 +1,10 @@
 //! Catppuccin Mocha tokens and Atkinson Hyperlegible sizes.
 //!
-//! The board is a task list, not a launcher. Mocha matches the seat
-//! rofi chrome. Atkinson Hyperlegible is the system family when
-//! present; iced falls back to the default sans if it is not.
+//! Colours and the selected-row invert match the seat rofi palette
+//! (`~/.config/rofi/colors.rasi`). Atkinson Hyperlegible is the system
+//! family when present; iced falls back to the default sans if it is not.
+//! `SIZE_BODY` is the app base: iced's default text size, and the size
+//! unsized widgets (including markdown headings) inherit.
 
 use iced::{Color, Font};
 
@@ -14,6 +16,8 @@ pub const BASE: Color = Color::from_rgb8(0x1e, 0x1e, 0x2e);
 pub const SURFACE0: Color = Color::from_rgb8(0x31, 0x32, 0x44);
 /// Hairlines (`#45475a`).
 pub const SURFACE1: Color = Color::from_rgb8(0x45, 0x47, 0x5a);
+/// Rofi border (`#585b70`, Catppuccin overlay1).
+pub const OVERLAY1: Color = Color::from_rgb8(0x58, 0x5b, 0x70);
 /// Title text (`#cdd6f4`).
 pub const TEXT: Color = Color::from_rgb8(0xcd, 0xd6, 0xf4);
 /// Meta line (`#a6adc8`).
@@ -31,11 +35,11 @@ pub const GREEN: Color = Color::from_rgb8(0xa6, 0xe3, 0xa1);
 /// Blocked (`#f9e2af`).
 pub const YELLOW: Color = Color::from_rgb8(0xf9, 0xe2, 0xaf);
 
-/// Title and task name.
-pub const SIZE_TITLE: f32 = 20.0;
-/// Filter labels and quick add.
+/// Project name. A step above the base, not a second default.
+pub const SIZE_TITLE: f32 = 18.0;
+/// App base. iced `default_text_size`. Task titles and inputs.
 pub const SIZE_BODY: f32 = 16.0;
-/// Project / state / id.
+/// Chips, meta, ids.
 pub const SIZE_META: f32 = 14.0;
 /// Hint bar.
 pub const SIZE_HINT: f32 = 13.0;
@@ -97,5 +101,12 @@ mod tests {
         assert_eq!(priority_color("A"), RED);
         assert_eq!(priority_color("B"), PEACH);
         assert_eq!(priority_color("C"), OVERLAY);
+    }
+
+    #[test]
+    fn body_is_the_app_base_and_smaller_than_title() {
+        assert!(SIZE_BODY < SIZE_TITLE);
+        assert!(SIZE_META < SIZE_BODY);
+        assert_eq!(OVERLAY1, Color::from_rgb8(0x58, 0x5b, 0x70));
     }
 }

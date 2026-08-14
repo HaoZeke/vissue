@@ -800,6 +800,55 @@ mod tests {
         assert!(err.to_string().contains("already in use"), "{err:#}");
     }
 
+    /// Everything the server advertises, it answers.
+    ///
+    /// `initialize` hands the client `LIVE_CAPABILITIES` as the list of
+    /// methods it may call. Adding a name there without wiring the dispatch
+    /// arm, or renaming an arm without the list, turns that promise into a
+    /// "method not found" the client only discovers at run time. Empty params
+    /// are enough: a routed method answers or rejects the arguments, and
+    /// either one proves it is reachable.
+    #[test]
+    fn every_advertised_capability_is_routed() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state(dir.path());
+        let mut session = Session {
+            agent: Some("probe".to_string()),
+        };
+
+        for (i, method) in crate::LIVE_CAPABILITIES.iter().enumerate() {
+            let req = JsonRpcRequest::call(
+                JsonRpcId::Number(i as i64 + 1),
+                *method,
+                serde_json::json!({}),
+            );
+            let resp = dispatch_ex(&state, &mut session, &req)
+                .response
+                .unwrap_or_else(|| panic!("{method} answered nothing"));
+            if let Some(err) = resp.error {
+                assert_ne!(
+                    err.code,
+                    vissue_control::rpc::METHOD_NOT_FOUND,
+                    "{method} is advertised but not dispatched"
+                );
+            }
+        }
+    }
+
+    /// The reverse: nothing is advertised that the protocol cannot name.
+    #[test]
+    fn the_advertised_list_is_the_protocol_surface() {
+        for name in crate::LIVE_CAPABILITIES {
+            vissue_control::rpc::Method::parse(name)
+                .unwrap_or_else(|_| panic!("{name} is advertised but is not a Method"));
+        }
+        // `initialize` is the handshake, not a capability a client selects.
+        assert!(
+            !crate::LIVE_CAPABILITIES.contains(&"initialize"),
+            "initialize is the handshake, not a listed capability"
+        );
+    }
+
     /// A writer reads its own write without waiting for the watcher.
     ///
     /// No watcher runs in this test, which is the point: every read here is

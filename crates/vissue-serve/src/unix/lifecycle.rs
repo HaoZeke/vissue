@@ -588,6 +588,72 @@ mod tests {
         assert!(!cfg.socket.exists());
     }
 
+    /// `status` against a live owner reports what the owner says, not what
+    /// the caller guessed.
+    ///
+    /// The unenriched snapshot carries the caller's own layout and a
+    /// placeholder revision; the fields that matter come back over the
+    /// socket, so an owner serving a different root has to show through.
+    #[test]
+    fn status_against_a_live_owner_reports_the_owners_view() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path().join("vault"), "Software");
+        std::fs::create_dir_all(layout.projects_dir()).unwrap();
+        let cfg = ServeConfig {
+            layout: layout.clone(),
+            socket: dir.path().join("control.sock"),
+            exe: None,
+        };
+        let owner = crate::OwnerHandle::spawn(ServeConfig {
+            layout,
+            socket: cfg.socket.clone(),
+            exe: None,
+        })
+        .unwrap();
+
+        let snap = status(&cfg);
+        assert!(snap.live, "{snap:?}");
+        assert_eq!(snap.prefix, "Software");
+        // A running owner starts at 1; SERVE_REVISION is the no-owner value.
+        assert!(
+            snap.revision > crate::SERVE_REVISION,
+            "revision not enriched: {snap:?}"
+        );
+        assert_eq!(snap.socket, cfg.socket);
+        drop(owner);
+    }
+
+    /// A socket that accepts but answers nothing leaves the snapshot alone.
+    ///
+    /// `enrich_from_owner` talks to whatever is listening. Something that is
+    /// not a vissue owner must not take the status call down with it.
+    #[test]
+    fn status_survives_a_socket_that_is_not_an_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("mute.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        // Accept and immediately drop, so initialize never gets an answer.
+        let mute = std::thread::spawn(move || {
+            for stream in listener.incoming().take(1) {
+                drop(stream);
+            }
+        });
+
+        let cfg = ServeConfig {
+            layout: Layout::new(dir.path().join("vault"), "Software"),
+            socket: socket.clone(),
+            exe: None,
+        };
+        let snap = status(&cfg);
+        assert!(snap.live, "the socket does accept");
+        assert_eq!(
+            snap.revision,
+            crate::SERVE_REVISION,
+            "nothing answered, so nothing should have been enriched"
+        );
+        let _ = mute.join();
+    }
+
     #[test]
     fn pid_zero_is_not_alive() {
         assert!(!pid_is_alive(0));

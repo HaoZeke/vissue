@@ -413,3 +413,166 @@ fn tree_text_from_ascii_and_dot_name_the_root() {
     let err = tree_text_from(&recs, "missing-zzzz", "ascii").unwrap_err();
     assert!(matches!(err, Error::IssueNotFound { .. }));
 }
+
+/// Two issues naming each other as parent.
+///
+/// Nothing stops a person from writing this in an org file, so every walk
+/// over the parent edges has to terminate rather than recurse until the
+/// stack runs out.
+fn cyclic_corpus() -> Vec<IssueRec> {
+    vec![
+        with_property(
+            issue("atlas", "atlas-aaaa", "TODO", "First half of the loop"),
+            "PARENT",
+            "atlas-bbbb",
+        ),
+        with_property(
+            issue("atlas", "atlas-bbbb", "TODO", "Second half of the loop"),
+            "PARENT",
+            "atlas-aaaa",
+        ),
+    ]
+}
+
+#[test]
+fn a_parent_cycle_stops_instead_of_recurring_forever() {
+    let recs = cyclic_corpus();
+    let tree = tree_from(&recs, "atlas-aaaa").unwrap();
+    assert_eq!(tree.id, "atlas-aaaa");
+    // The loop closes on the second visit, and the repeat carries no state:
+    // that is how a reader tells it apart from a real node.
+    let child = &tree.children[0];
+    assert_eq!(child.id, "atlas-bbbb");
+    let repeat = &child.children[0];
+    assert_eq!(repeat.id, "atlas-aaaa");
+    assert!(repeat.state.is_empty(), "{repeat:?}");
+    assert!(repeat.children.is_empty(), "{repeat:?}");
+}
+
+#[test]
+fn the_ascii_tree_says_where_a_cycle_closed() {
+    let recs = cyclic_corpus();
+    let text = tree_text_from(&recs, "atlas-aaaa", "ascii").unwrap();
+    assert!(text.contains("(cycle, stopping)"), "{text}");
+    assert_eq!(
+        text.matches("atlas-aaaa").count(),
+        2,
+        "the root appears once as itself and once as the cycle: {text}"
+    );
+}
+
+#[test]
+fn the_ascii_tree_indents_children_and_names_blockers() {
+    let recs = corpus();
+    let text = tree_text_from(&recs, "atlas-1a2b", "ascii").unwrap();
+    let child = text
+        .lines()
+        .find(|l| l.contains("atlas-2c3d"))
+        .unwrap_or_else(|| panic!("no child row in {text}"));
+    assert!(child.starts_with("  "), "a child is indented: {child:?}");
+    assert!(child.contains("Emit a summary table"), "{child:?}");
+
+    // A blocked issue names what holds it, one line per blocker.
+    let blocked = tree_text_from(&recs, "atlas-3e4f", "ascii").unwrap();
+    assert!(blocked.contains("* blocked-by atlas-1a2b"), "{blocked}");
+}
+
+#[test]
+fn the_dot_tree_draws_both_kinds_of_edge() {
+    let recs = corpus();
+    let dot = tree_text_from(&recs, "atlas-1a2b", "dot").unwrap();
+    assert!(dot.contains("digraph vissue_tree {"), "{dot}");
+    assert!(dot.trim_end().ends_with('}'), "{dot}");
+    // A parent edge is solid; a blocker edge is dashed and labelled.
+    assert!(
+        dot.contains("\"atlas-1a2b\" -> \"atlas-2c3d\""),
+        "no parent edge: {dot}"
+    );
+    let blocked = tree_text_from(&recs, "atlas-3e4f", "dot").unwrap();
+    assert!(
+        blocked.contains("label=\"blocks\"") && blocked.contains("style=dashed"),
+        "no blocker edge: {blocked}"
+    );
+}
+
+#[test]
+fn a_dot_tree_survives_a_cycle() {
+    let recs = cyclic_corpus();
+    let dot = tree_text_from(&recs, "atlas-aaaa", "dot").unwrap();
+    assert!(dot.contains("digraph"), "{dot}");
+    assert!(dot.contains("atlas-bbbb"), "{dot}");
+}
+
+#[test]
+fn an_unknown_tree_format_names_the_ones_that_work() {
+    let recs = corpus();
+    let err = tree_text_from(&recs, "atlas-1a2b", "svg").unwrap_err();
+    let text = err.to_string();
+    assert!(text.contains("svg"), "{text}");
+    assert!(text.contains("ascii") && text.contains("dot"), "{text}");
+}
+
+#[test]
+fn children_of_an_id_the_corpus_does_not_hold_is_an_error() {
+    let recs = corpus();
+    assert!(matches!(
+        children_from(&recs, "atlas-zzzz").unwrap_err(),
+        Error::IssueNotFound { .. }
+    ));
+}
+
+#[test]
+fn backlinks_report_a_discovered_from_edge_and_a_bare_mention() {
+    let mut recs = corpus();
+    recs.push(with_property(
+        issue("atlas", "atlas-6i7j", "TODO", "Fell out of the parser work"),
+        "DISCOVERED_FROM",
+        "atlas-1a2b",
+    ));
+    recs.push(with_body(
+        issue(
+            "atlas",
+            "atlas-7k8l",
+            "TODO",
+            "Unrelated, but talks about it",
+        ),
+        "Same failure as atlas-1a2b, different file.",
+    ));
+
+    let hits = backlinks_from(&recs, "atlas-1a2b").unwrap();
+    let by_id: Vec<(&str, &str)> = hits
+        .iter()
+        .map(|h| (h.id.as_str(), h.relation.as_str()))
+        .collect();
+    assert!(
+        by_id.contains(&("atlas-6i7j", "discovered-from")),
+        "{by_id:?}"
+    );
+    assert!(by_id.contains(&("atlas-7k8l", "body mention")), "{by_id:?}");
+    // A declared edge wins: a mention is only reported when nothing else is.
+    assert!(
+        !by_id
+            .iter()
+            .any(|(id, rel)| *id == "atlas-6i7j" && *rel == "body mention"),
+        "{by_id:?}"
+    );
+}
+
+#[test]
+fn an_issue_is_not_its_own_backlink() {
+    let recs = with_body(
+        issue("atlas", "atlas-9m0n", "TODO", "Mentions itself"),
+        "See atlas-9m0n for the rest.",
+    );
+    let hits = backlinks_from(std::slice::from_ref(&recs), "atlas-9m0n").unwrap();
+    assert!(hits.is_empty(), "{hits:?}");
+}
+
+#[test]
+fn backlinks_of_an_unknown_id_is_an_error() {
+    let recs = corpus();
+    assert!(matches!(
+        backlinks_from(&recs, "atlas-zzzz").unwrap_err(),
+        Error::IssueNotFound { .. }
+    ));
+}

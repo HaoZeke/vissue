@@ -1,6 +1,6 @@
 [package]
 name = "vissue-hud"
-description = "Summonable iced palette over ready, search, claim, and show"
+description = "Summonable iced task board over ready, mine, upcoming, and all"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -13,7 +13,7 @@ pub const HUD_BIN_ENV: &str = "VISSUE_HUD_BIN";
 
 /// Summonable palette over ready and search.
 #[derive(Debug, Clone, Parser)]
-#[command(name = "vissue-hud", version, about = "Summonable vissue palette")]
+#[command(name = "vissue-hud", version, about = "Summonable vissue task board")]
 pub struct HudCli {
     /// Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then cwd.
     #[arg(long, global = true)]

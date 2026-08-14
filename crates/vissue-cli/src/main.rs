@@ -376,32 +376,35 @@ enum Command {
         #[arg(short = 's', long)]
         socket: Option<PathBuf>,
     },
-    /// Summonable palette. Default is rofi over the ready set (seat theme).
+    /// Task board. Default execs `vissue-hud` (Ready / Mine / Upcoming / All).
     ///
-    /// Return opens the heading in `$EDITOR`. Alt+c claims. Alt+n notes.
-    /// `--iced` execs `vissue-hud` if that binary is installed.
+    /// `--rofi` is the seat dmenu picker: Return opens the heading in
+    /// `$EDITOR`, Alt+c claims, Alt+n notes.
     Hud {
-        /// ready, list (all), claims, stale, or new
+        /// ready, list (all), claims, stale, or new. Used by `--rofi`.
         #[arg(long, default_value = "ready")]
         mode: String,
-        /// Never attach, never spawn serve; used by `--iced`.
+        /// Never attach, never spawn serve.
         #[arg(long)]
         offline: bool,
-        /// Stay on the terminal. Used by `--iced`.
+        /// Stay on the terminal.
         #[arg(long)]
         foreground: bool,
-        /// Show or hide a running iced HUD, or dismiss a live rofi picker.
+        /// Show or hide a running board, or dismiss a live rofi picker.
         #[arg(long, group = "summon")]
         toggle: bool,
-        /// Show a running iced HUD.
+        /// Show a running board.
         #[arg(long, group = "summon")]
         show: bool,
-        /// Hide a running iced HUD, or dismiss a live rofi picker.
+        /// Hide a running board, or dismiss a live rofi picker.
         #[arg(long, group = "summon")]
         hide: bool,
-        /// Use the iced overlay instead of rofi.
+        /// Use the iced board. Default when `--rofi` is absent.
         #[arg(long)]
         iced: bool,
+        /// Use the rofi picker instead of the iced board.
+        #[arg(long)]
+        rofi: bool,
         /// Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then
         /// $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock.
         #[arg(short = 's', long)]
@@ -811,11 +814,17 @@ fn run() -> Result<()> {
             show,
             hide,
             iced,
+            rofi,
             socket,
         } => {
-            if iced {
+            let use_rofi = rofi && !iced;
+            if use_rofi {
+                let _ = (toggle, show, hide, offline, foreground, socket);
+                let mode = rofi::Mode::parse(&mode)?;
+                rofi::run(rofi::RofiOpts::from_env(layout, mode)?)?;
+            } else {
                 if !offline && cfg!(not(unix)) {
-                    bail!("vissue hud --iced is Unix-only");
+                    bail!("vissue hud is Unix-only");
                 }
                 exec_hud(ExecHud {
                     layout,
@@ -826,10 +835,6 @@ fn run() -> Result<()> {
                     show,
                     hide,
                 })?;
-            } else {
-                let _ = (toggle, show, hide, offline, foreground, socket);
-                let mode = rofi::Mode::parse(&mode)?;
-                rofi::run(rofi::RofiOpts::from_env(layout, mode)?)?;
             }
         }
     }
@@ -910,6 +915,21 @@ fn resolve_hud_bin() -> Option<PathBuf> {
         let t = raw.trim();
         if !t.is_empty() {
             return Some(PathBuf::from(t));
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join("vissue-hud");
+            if sibling.is_file() {
+                return Some(sibling);
+            }
+            #[cfg(windows)]
+            {
+                let exe = dir.join("vissue-hud.exe");
+                if exe.is_file() {
+                    return Some(exe);
+                }
+            }
         }
     }
     let path = std::env::var_os("PATH")?;

@@ -23,7 +23,7 @@
 | =projects=, =identity=                                                    | Layout introspection                                                     |
 | =serve=                                                                   | Own the per-user Unix control socket (= -d=, =stop=, =restart=, =status=) |
 | =tui=                                                                     | Terminal board (=--offline= never attaches)                              |
-| =hud=                                                                     | Rofi picker over ready (=--mode=, =--iced=) |
+| =hud=                                                                     | Iced task board; =--rofi= for the dmenu picker (=--mode=) |
 | =completions=, =man=                                                      | Shell completion scripts and the manual page                             |
 
 * States and priorities
@@ -138,10 +138,10 @@ stays offline and refuses mutations against the other vault. Status:
 =serve:live|offline|mismatch gen=N rev=M agent=...=. Keys are on =?=.
 On Windows only =tui --offline= runs.
 
-=vissue hud= is a rofi picker over the ready set. It uses the seat
-rofi theme. Return opens the heading in =$EDITOR=. Alt+c claims.
-Alt+n notes. =--mode list|claims|stale|new= changes the list.
-=--iced= execs the optional overlay.
+=vissue hud= opens the iced task board (Ready / Mine / Upcoming / All).
+=--rofi= is the seat dmenu picker. Return opens the heading in
+=$EDITOR=. Alt+c claims. Alt+n notes. =--mode list|claims|stale|new=
+changes the picker list.
 
 * Exit statuses
 

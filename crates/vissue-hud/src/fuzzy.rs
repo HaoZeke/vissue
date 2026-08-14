@@ -168,6 +168,8 @@ mod tests {
             state: "TODO".into(),
             priority: "C".into(),
             source: ItemSource::Ready,
+            claimed_by: None,
+            due: None,
         }
     }
 

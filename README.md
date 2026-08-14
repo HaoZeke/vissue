@@ -152,16 +152,19 @@ attaches to `vissue serve`, starting serve when the socket is free. A
 socket bound to another root stays on the files so a claim cannot hit
 the wrong vault. `q` quits; `?` lists the keys.
 
-`vissue hud` opens a rofi picker over the ready set and uses the seat
-rofi theme (font, colours, window). Return opens the heading in
-`$EDITOR`. Alt+c claims. Alt+n notes. `--mode list|claims|stale|new`
-changes the list. `--iced` execs the optional `vissue-hud` overlay.
+`vissue hud` opens the iced task board (Ready / Mine / Upcoming / All)
+with checkbox rows, a priority pip, and a quick-add field. First paint
+reads the files; unless `--offline` it then attaches to `vissue serve`.
+`--rofi` is the seat dmenu picker: Return opens the heading in
+`$EDITOR`, Alt+c claims, Alt+n notes. `--mode list|claims|stale|new`
+applies to the picker.
 
 ```console
 $ vissue tui
 $ vissue tui --offline
 $ vissue hud
-$ vissue hud --mode new
+$ vissue hud --rofi
+$ vissue hud --rofi --mode new
 ```
 
 ## Install

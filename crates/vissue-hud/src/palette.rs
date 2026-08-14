@@ -3,9 +3,10 @@
 use std::path::Path;
 
 use vissue_core::config::Layout;
-use vissue_core::views::{Excerpt, IssueDetail, IssueRow, SearchHit};
+use vissue_core::ops::{self, CreateOpts};
+use vissue_core::views::{Excerpt, IssueDetail, IssueRow, ListQuery, SearchHit};
 use vissue_tui::attach::{AttachHooks, AttachOutcome, ServeStatus};
-use vissue_tui::backend::BoardBackend;
+use vissue_tui::backend::{BoardBackend, UpdateReq};
 use vissue_tui::CoreBackend;
 
 use crate::attach;
@@ -17,6 +18,46 @@ use crate::summon::{SummonAction, SummonRequest};
 pub enum ItemSource {
     Ready,
     Search,
+    Mine,
+    Upcoming,
+    All,
+}
+
+/// Sidebar list. Ready is the inbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoardFilter {
+    Ready,
+    Mine,
+    Upcoming,
+    All,
+}
+
+impl BoardFilter {
+    /// Sidebar order with labels.
+    pub const ALL: [(Self, &'static str); 4] = [
+        (Self::Ready, "Ready"),
+        (Self::Mine, "Mine"),
+        (Self::Upcoming, "Upcoming"),
+        (Self::All, "All"),
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "Ready",
+            Self::Mine => "Mine",
+            Self::Upcoming => "Upcoming",
+            Self::All => "All",
+        }
+    }
+}
+
+/// Which field owns typing. List is the default so j/k move rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    List,
+    Search,
+    Add,
+    Note,
 }
 
 /// One selectable palette row.
@@ -28,6 +69,8 @@ pub struct HudItem {
     pub state: String,
     pub priority: String,
     pub source: ItemSource,
+    pub claimed_by: Option<String>,
+    pub due: Option<String>,
 }
 
 impl HudItem {
@@ -39,6 +82,8 @@ impl HudItem {
             state: row.state,
             priority: row.priority,
             source: ItemSource::Ready,
+            claimed_by: row.claimed_by,
+            due: None,
         }
     }
 
@@ -50,7 +95,41 @@ impl HudItem {
             state: hit.state,
             priority: hit.priority,
             source: ItemSource::Search,
+            claimed_by: None,
+            due: None,
         }
+    }
+
+    fn from_claim(row: vissue_core::views::ClaimRow) -> Self {
+        Self {
+            id: row.id,
+            title: row.title,
+            project: row.project,
+            state: row.state,
+            priority: row.priority,
+            source: ItemSource::Mine,
+            claimed_by: row.holder,
+            due: None,
+        }
+    }
+
+    fn from_agenda(row: vissue_core::views::AgendaRow) -> Self {
+        Self {
+            id: row.id,
+            title: row.title,
+            project: row.project,
+            state: row.state,
+            priority: row.priority,
+            source: ItemSource::Upcoming,
+            claimed_by: None,
+            due: Some(row.date),
+        }
+    }
+
+    fn from_all(row: IssueRow) -> Self {
+        let mut item = Self::from_row(row);
+        item.source = ItemSource::All;
+        item
     }
 }
 
@@ -63,6 +142,7 @@ pub enum PaletteKey {
     Up,
     Down,
     Backspace,
+    Space,
 }
 
 /// Summonable palette. Talks only to [`BoardBackend`].
@@ -78,6 +158,13 @@ pub struct Palette {
     excerpt: Option<Excerpt>,
     detail: Option<IssueDetail>,
     note_draft: Option<String>,
+    add_draft: String,
+    filter: BoardFilter,
+    focus: Focus,
+    ready_count: usize,
+    mine_count: usize,
+    upcoming_count: usize,
+    all_count: usize,
     visible: bool,
 }
 
@@ -104,6 +191,13 @@ impl Palette {
             excerpt: None,
             detail: None,
             note_draft: None,
+            add_draft: String::new(),
+            filter: BoardFilter::Ready,
+            focus: Focus::List,
+            ready_count: 0,
+            mine_count: 0,
+            upcoming_count: 0,
+            all_count: 0,
             visible: true,
         };
         palette.reload()?;
@@ -140,6 +234,27 @@ impl Palette {
 
     pub fn note_draft(&self) -> Option<&str> {
         self.note_draft.as_deref()
+    }
+
+    pub fn add_draft(&self) -> &str {
+        &self.add_draft
+    }
+
+    pub fn filter(&self) -> BoardFilter {
+        self.filter
+    }
+
+    pub fn focus(&self) -> Focus {
+        self.focus
+    }
+
+    pub fn count(&self, filter: BoardFilter) -> usize {
+        match filter {
+            BoardFilter::Ready => self.ready_count,
+            BoardFilter::Mine => self.mine_count,
+            BoardFilter::Upcoming => self.upcoming_count,
+            BoardFilter::All => self.all_count,
+        }
     }
 
     pub fn backend(&self) -> &dyn BoardBackend {
@@ -230,6 +345,8 @@ impl Palette {
 
     pub fn hide(&mut self) {
         self.note_draft = None;
+        self.add_draft.clear();
+        self.focus = Focus::List;
         self.visible = false;
     }
 
@@ -253,8 +370,16 @@ impl Palette {
         if !self.visible {
             return;
         }
-        if self.note_draft.is_some() {
+        if self.focus == Focus::Note || self.note_draft.is_some() {
             self.handle_note_key(key);
+            return;
+        }
+        if self.focus == Focus::Add {
+            self.handle_add_key(key);
+            return;
+        }
+        if self.focus == Focus::Search {
+            self.handle_search_key(key);
             return;
         }
         match key {
@@ -268,21 +393,28 @@ impl Palette {
             PaletteKey::Enter => self.show_excerpt(),
             PaletteKey::Up => self.move_sel(-1),
             PaletteKey::Down => self.move_sel(1),
-            PaletteKey::Backspace => {
-                self.query.pop();
-                let _ = self.reload();
+            PaletteKey::Backspace => {}
+            PaletteKey::Space => {
+                if let Some(id) = self.selected_id().map(str::to_string) {
+                    self.toggle_done(&id);
+                }
             }
+            PaletteKey::Char('j') => self.move_sel(1),
+            PaletteKey::Char('k') => self.move_sel(-1),
             PaletteKey::Char('c') => self.claim_selected(),
             PaletteKey::Char('n') => {
                 if self.selected_id().is_some() {
                     self.note_draft = Some(String::new());
+                    self.focus = Focus::Note;
                 }
             }
-            PaletteKey::Char(c) => {
-                self.query.push(c);
-                self.excerpt = None;
-                let _ = self.reload();
-            }
+            PaletteKey::Char('a') => self.focus_add(),
+            PaletteKey::Char('/') => self.focus_search(),
+            PaletteKey::Char('1') => self.set_filter(BoardFilter::Ready),
+            PaletteKey::Char('2') => self.set_filter(BoardFilter::Mine),
+            PaletteKey::Char('3') => self.set_filter(BoardFilter::Upcoming),
+            PaletteKey::Char('4') => self.set_filter(BoardFilter::All),
+            PaletteKey::Char(_) => {}
         }
     }
 
@@ -293,15 +425,21 @@ impl Palette {
         match key {
             PaletteKey::Esc => {
                 self.message.clear();
+                self.focus = Focus::List;
             }
             PaletteKey::Enter => {
                 if let Some(id) = self.selected_id().map(str::to_string) {
                     match self.backend.note(&id, &text) {
                         Ok(result) => {
                             self.message = result.report.trim().to_string();
+                            self.focus = Focus::List;
                             let _ = self.reload();
                         }
-                        Err(err) => self.message = err.to_string(),
+                        Err(err) => {
+                            self.message = err.to_string();
+                            self.note_draft = Some(text);
+                            self.focus = Focus::Note;
+                        }
                     }
                 }
             }
@@ -313,10 +451,164 @@ impl Palette {
                 text.push(c);
                 self.note_draft = Some(text);
             }
-            PaletteKey::Up | PaletteKey::Down => {
+            PaletteKey::Up | PaletteKey::Down | PaletteKey::Space => {
                 self.note_draft = Some(text);
             }
         }
+    }
+
+    fn handle_add_key(&mut self, key: PaletteKey) {
+        match key {
+            PaletteKey::Esc => {
+                self.add_draft.clear();
+                self.focus = Focus::List;
+            }
+            PaletteKey::Enter => self.submit_add(),
+            PaletteKey::Backspace => {
+                self.add_draft.pop();
+            }
+            PaletteKey::Char(c) => self.add_draft.push(c),
+            PaletteKey::Up | PaletteKey::Down | PaletteKey::Space => {}
+        }
+    }
+
+    fn handle_search_key(&mut self, key: PaletteKey) {
+        match key {
+            PaletteKey::Esc => {
+                if self.query.is_empty() {
+                    self.focus = Focus::List;
+                } else {
+                    self.query.clear();
+                    let _ = self.reload();
+                }
+            }
+            PaletteKey::Enter => self.focus = Focus::List,
+            PaletteKey::Up => self.move_sel(-1),
+            PaletteKey::Down => self.move_sel(1),
+            PaletteKey::Backspace => {
+                self.query.pop();
+                let _ = self.reload();
+            }
+            PaletteKey::Space => self.query.push(' '),
+            PaletteKey::Char(c) => {
+                self.query.push(c);
+                self.excerpt = None;
+                let _ = self.reload();
+            }
+        }
+    }
+
+    pub fn set_filter(&mut self, filter: BoardFilter) {
+        if self.filter == filter {
+            self.focus = Focus::List;
+            return;
+        }
+        self.filter = filter;
+        self.excerpt = None;
+        self.focus = Focus::List;
+        self.backend.invalidate_since();
+        self.items.clear();
+        let _ = self.reload();
+    }
+
+    pub fn select_id(&mut self, id: &str) {
+        if let Some(pos) = self
+            .filtered
+            .iter()
+            .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+        {
+            self.selected = pos;
+            self.excerpt = None;
+        }
+    }
+
+    pub fn toggle_done(&mut self, id: &str) {
+        let current = match self.backend.get(id) {
+            Ok(detail) => detail.state,
+            Err(err) => {
+                self.message = err.to_string();
+                return;
+            }
+        };
+        let next = if current == "DONE" { "TODO" } else { "DONE" };
+        match self.backend.update(UpdateReq {
+            id: id.to_string(),
+            state: Some(next.to_string()),
+            ..UpdateReq::default()
+        }) {
+            Ok(result) => {
+                self.message = result.report.trim().to_string();
+                let _ = self.reload();
+            }
+            Err(err) => self.message = err.to_string(),
+        }
+    }
+
+    pub fn set_add_draft(&mut self, text: impl Into<String>) {
+        self.add_draft = text.into();
+        self.focus = Focus::Add;
+    }
+
+    pub fn submit_add(&mut self) {
+        let title = self.add_draft.trim().to_string();
+        if title.is_empty() {
+            return;
+        }
+        let project = self.selected_item().map(|i| i.project.clone()).or_else(|| {
+            self.backend
+                .projects()
+                .ok()
+                .and_then(|p| p.into_iter().next())
+        });
+        let Some(project) = project else {
+            self.message = "no project to add into".into();
+            return;
+        };
+        match ops::create(
+            self.backend.layout(),
+            &project,
+            &title,
+            CreateOpts {
+                quiet: true,
+                ..CreateOpts::default()
+            },
+        ) {
+            Ok(report) => {
+                self.message = report.trim().to_string();
+                self.add_draft.clear();
+                self.focus = Focus::List;
+                self.backend.invalidate_since();
+                let _ = self.reload();
+            }
+            Err(err) => self.message = err.to_string(),
+        }
+    }
+
+    pub fn set_note_draft(&mut self, text: impl Into<String>) {
+        self.note_draft = Some(text.into());
+        self.focus = Focus::Note;
+    }
+
+    pub fn submit_note(&mut self) {
+        let Some(text) = self.note_draft.clone() else {
+            return;
+        };
+        self.handle_note_key(PaletteKey::Enter);
+        if self.note_draft.is_none() && text.is_empty() {
+            self.focus = Focus::List;
+        }
+    }
+
+    pub fn focus_add(&mut self) {
+        self.focus = Focus::Add;
+    }
+
+    pub fn focus_search(&mut self) {
+        self.focus = Focus::Search;
+    }
+
+    pub fn focus_list(&mut self) {
+        self.focus = Focus::List;
     }
 
     pub fn show_excerpt(&mut self) {
@@ -358,15 +650,13 @@ impl Palette {
     }
 
     pub fn reload(&mut self) -> anyhow::Result<()> {
-        // Last full ready page stays when serve answers `{unchanged: true,
-        // issues: []}`. Search extras are rebuilt from the current query.
-        self.items.retain(|item| item.source == ItemSource::Ready);
-        if let Ok(page) = self.backend.ready(None) {
-            if !page.unchanged {
-                self.items = page.issues.into_iter().map(HudItem::from_row).collect();
-            }
+        match self.filter {
+            BoardFilter::Ready => self.reload_ready(),
+            BoardFilter::Mine => self.reload_mine(),
+            BoardFilter::Upcoming => self.reload_upcoming(),
+            BoardFilter::All => self.reload_all(),
         }
-        if !self.query.is_empty() {
+        if !self.query.is_empty() && matches!(self.filter, BoardFilter::Ready | BoardFilter::All) {
             if let Ok(hits) = self.backend.search(&self.query, 50) {
                 for hit in hits {
                     if !self.items.iter().any(|i| i.id == hit.id) {
@@ -377,6 +667,45 @@ impl Palette {
         }
         self.refilter();
         Ok(())
+    }
+
+    fn reload_ready(&mut self) {
+        // Last full ready page stays when serve answers `{unchanged: true,
+        // issues: []}`. Search extras are rebuilt from the current query.
+        self.items.retain(|item| item.source == ItemSource::Ready);
+        if let Ok(page) = self.backend.ready(None) {
+            if !page.unchanged {
+                self.items = page.issues.into_iter().map(HudItem::from_row).collect();
+                self.ready_count = self.items.len();
+            }
+        }
+    }
+
+    fn reload_mine(&mut self) {
+        if let Ok(rows) = self.backend.claims(Some(self.agent.as_str()), None) {
+            self.items = rows.into_iter().map(HudItem::from_claim).collect();
+            self.mine_count = self.items.len();
+        }
+    }
+
+    fn reload_upcoming(&mut self) {
+        if let Ok(rows) = self.backend.agenda(14, None) {
+            self.items = rows.into_iter().map(HudItem::from_agenda).collect();
+            self.upcoming_count = self.items.len();
+        }
+    }
+
+    fn reload_all(&mut self) {
+        let q = ListQuery {
+            limit: Some(200),
+            ..ListQuery::default()
+        };
+        if let Ok(page) = self.backend.list(q) {
+            if !page.unchanged {
+                self.items = page.issues.into_iter().map(HudItem::from_all).collect();
+                self.all_count = self.items.len();
+            }
+        }
     }
 
     fn refilter(&mut self) {
@@ -731,18 +1060,17 @@ mod tests {
         palette.handle_key(PaletteKey::Up);
         assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
         palette.handle_key(PaletteKey::Char('j'));
-        assert_eq!(palette.query(), "j");
-        palette.handle_key(PaletteKey::Backspace);
+        assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
         palette.handle_key(PaletteKey::Char('k'));
-        assert_eq!(palette.query(), "k");
-        palette.handle_key(PaletteKey::Backspace);
-        assert_eq!(palette.query(), "");
         assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
+        palette.handle_key(PaletteKey::Char('/'));
         palette.handle_key(PaletteKey::Char('z'));
         assert_eq!(palette.query(), "z");
         assert!(palette.filtered_items().is_empty());
         palette.handle_key(PaletteKey::Backspace);
         assert_eq!(palette.query(), "");
+        palette.handle_key(PaletteKey::Esc);
+        assert_eq!(palette.focus(), Focus::List);
         palette.handle_key(PaletteKey::Enter);
         assert!(palette.excerpt().is_some());
         palette.handle_key(PaletteKey::Esc);
@@ -790,8 +1118,10 @@ mod tests {
             .map(|i| i.id.clone())
             .collect();
         assert_eq!(first, second);
+        palette.handle_key(PaletteKey::Char('/'));
         palette.handle_key(PaletteKey::Char('z'));
         palette.handle_key(PaletteKey::Backspace);
+        palette.handle_key(PaletteKey::Esc);
         assert_eq!(palette.query(), "");
         let after_backspace: Vec<_> = palette
             .filtered_items()
@@ -799,5 +1129,68 @@ mod tests {
             .map(|i| i.id.clone())
             .collect();
         assert_eq!(first, after_backspace);
+    }
+
+    #[test]
+    fn digits_switch_sidebar_filters() {
+        let mut palette =
+            Palette::open_core(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap".into()).unwrap();
+        assert_eq!(palette.filter(), BoardFilter::Ready);
+        assert!(palette.count(BoardFilter::Ready) >= 3);
+        palette.handle_key(PaletteKey::Char('4'));
+        assert_eq!(palette.filter(), BoardFilter::All);
+        assert!(!palette.filtered_items().is_empty());
+        palette.handle_key(PaletteKey::Char('2'));
+        assert_eq!(palette.filter(), BoardFilter::Mine);
+        palette.handle_key(PaletteKey::Char('1'));
+        assert_eq!(palette.filter(), BoardFilter::Ready);
+        let ids: Vec<_> = palette
+            .filtered_items()
+            .into_iter()
+            .map(|i| i.id.as_str())
+            .collect();
+        assert_eq!(ids, ["atlas-1a2b", "atlas-2c3d", "beacon-5j6k"]);
+    }
+
+    #[test]
+    fn space_marks_selected_done() {
+        let (_dir, layout) = writable();
+        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        palette.set_filter(BoardFilter::All);
+        palette.set_query("atlas-2c3d");
+        palette.focus_list();
+        assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
+        palette.handle_key(PaletteKey::Space);
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "DONE");
+        palette.select_id("atlas-2c3d");
+        palette.handle_key(PaletteKey::Space);
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "TODO");
+    }
+
+    #[test]
+    fn a_then_enter_creates_a_ready_row() {
+        let (_dir, layout) = writable();
+        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        palette.handle_key(PaletteKey::Char('a'));
+        assert_eq!(palette.focus(), Focus::Add);
+        for c in "desk lamp".chars() {
+            palette.handle_key(PaletteKey::Char(c));
+        }
+        palette.handle_key(PaletteKey::Enter);
+        assert_eq!(palette.focus(), Focus::List);
+        assert!(palette.add_draft().is_empty());
+        palette.set_query("desk lamp");
+        assert!(
+            palette
+                .filtered_items()
+                .iter()
+                .any(|i| i.title == "desk lamp"),
+            "{:?}",
+            palette
+                .filtered_items()
+                .iter()
+                .map(|i| i.title.as_str())
+                .collect::<Vec<_>>()
+        );
     }
 }

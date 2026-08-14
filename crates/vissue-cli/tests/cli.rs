@@ -157,6 +157,7 @@ fn hud_help_names_rofi_and_iced() {
     let text = stdout(&out);
     assert!(text.contains("--mode"), "{text}");
     assert!(text.contains("rofi"), "{text}");
+    assert!(text.contains("--rofi"), "{text}");
     assert!(text.contains("--iced"), "{text}");
     assert!(text.contains("--toggle"), "{text}");
 }
@@ -164,8 +165,8 @@ fn hud_help_names_rofi_and_iced() {
 #[test]
 fn iced_hud_without_binary_exits_127() {
     let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
-        .args(["--root", fixture_root().to_str().unwrap(), "hud", "--iced"])
-        .env_remove("VISSUE_HUD_BIN")
+        .args(["--root", fixture_root().to_str().unwrap(), "hud"])
+        .env("VISSUE_HUD_BIN", "/nonexistent/vissue-hud")
         .env("PATH", "/nonexistent")
         .output()
         .expect("run vissue hud --iced");

@@ -6,19 +6,19 @@ use std::time::Duration;
 use iced::event::{self, Event};
 use iced::keyboard::{self, key::Named, Key};
 use iced::window::{self, Mode};
-use iced::{time, Element, Size, Subscription, Task};
+use iced::{time, Element, Font, Pixels, Size, Subscription, Task};
 
 use vissue_core::config::Layout;
 
 use crate::attach;
-use crate::palette::{Palette, PaletteKey};
+use crate::palette::{BoardFilter, Palette, PaletteKey};
 use crate::summon;
 use crate::theme;
 
-const HUD_W: f32 = 640.0;
-const HUD_H: f32 = 420.0;
+const HUD_W: f32 = 900.0;
+const HUD_H: f32 = 680.0;
 
-/// First-paint inputs for the overlay.
+/// First-paint inputs for the board.
 #[derive(Clone)]
 pub struct BootOpts {
     pub layout: Layout,
@@ -34,6 +34,18 @@ pub enum Message {
     Key(PaletteKey),
     Tick,
     WindowId(Option<window::Id>),
+    Close,
+    Filter(BoardFilter),
+    SelectId(String),
+    ToggleDone(String),
+    QueryChanged(String),
+    AddChanged(String),
+    AddSubmit,
+    NoteChanged(String),
+    NoteSubmit,
+    FocusAdd,
+    FocusSearch,
+    FocusList,
 }
 
 /// iced application state.
@@ -65,6 +77,54 @@ impl HudApp {
                         return self.sync_window();
                     }
                 }
+                Task::none()
+            }
+            Message::Close => {
+                self.palette.hide();
+                self.sync_window()
+            }
+            Message::Filter(filter) => {
+                self.palette.set_filter(filter);
+                Task::none()
+            }
+            Message::SelectId(id) => {
+                self.palette.select_id(&id);
+                Task::none()
+            }
+            Message::ToggleDone(id) => {
+                self.palette.toggle_done(&id);
+                Task::none()
+            }
+            Message::QueryChanged(q) => {
+                self.palette.set_query(q);
+                Task::none()
+            }
+            Message::AddChanged(text) => {
+                self.palette.set_add_draft(text);
+                Task::none()
+            }
+            Message::AddSubmit => {
+                self.palette.submit_add();
+                Task::none()
+            }
+            Message::NoteChanged(text) => {
+                self.palette.set_note_draft(text);
+                Task::none()
+            }
+            Message::NoteSubmit => {
+                self.palette.submit_note();
+                Task::none()
+            }
+            Message::FocusAdd => {
+                self.palette.focus_add();
+                Task::none()
+            }
+            Message::FocusSearch => {
+                self.palette.focus_search();
+                Task::none()
+            }
+            Message::FocusList => {
+                self.palette.focus_list();
                 Task::none()
             }
             Message::Key(key) => {
@@ -99,15 +159,16 @@ impl HudApp {
     }
 }
 
-/// Overlay window: centered, always on top, no decorations.
-pub fn overlay_window() -> window::Settings {
+/// Decorated task window: large enough for a sidebar and a list.
+pub fn board_window() -> window::Settings {
     window::Settings {
         size: Size::new(HUD_W, HUD_H),
         position: window::Position::Centered,
-        resizable: false,
-        decorations: false,
-        level: window::Level::AlwaysOnTop,
+        resizable: true,
+        decorations: true,
+        level: window::Level::Normal,
         exit_on_close_request: false,
+        min_size: Some(Size::new(720.0, 480.0)),
         ..Default::default()
     }
 }
@@ -141,11 +202,14 @@ fn run_iced(palette: Palette) -> iced::Result {
     )
     .subscription(subscription)
     .theme(|_: &HudApp| theme::theme())
+    .title(|_: &HudApp| "vissue".to_string())
+    .default_font(theme::FACE)
     .settings(iced::Settings {
-        default_text_size: iced::Pixels(15.0),
+        default_text_size: Pixels(theme::SIZE_TITLE),
+        default_font: theme::FACE,
         ..Default::default()
     })
-    .window(overlay_window())
+    .window(board_window())
     .run()
 }
 
@@ -170,12 +234,25 @@ fn view(app: &HudApp) -> Element<'_, Message> {
 
 fn subscription(_app: &HudApp) -> Subscription<Message> {
     Subscription::batch([
-        event::listen_with(|event, _status, _id| match event {
-            Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => map_key(key),
+        event::listen_with(|event, status, _id| match event {
+            Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
+                if status == event::Status::Captured && !is_nav_key(&key) {
+                    return None;
+                }
+                map_key(key)
+            }
+            Event::Window(window::Event::CloseRequested) => Some(Message::Close),
             _ => None,
         }),
         time::every(Duration::from_millis(50)).map(|_| Message::Tick),
     ])
+}
+
+fn is_nav_key(key: &Key) -> bool {
+    matches!(
+        key,
+        Key::Named(Named::Escape | Named::Enter | Named::ArrowUp | Named::ArrowDown)
+    )
 }
 
 fn map_key(key: Key) -> Option<Message> {
@@ -185,6 +262,7 @@ fn map_key(key: Key) -> Option<Message> {
         Key::Named(Named::ArrowUp) => Some(Message::Key(PaletteKey::Up)),
         Key::Named(Named::ArrowDown) => Some(Message::Key(PaletteKey::Down)),
         Key::Named(Named::Backspace) => Some(Message::Key(PaletteKey::Backspace)),
+        Key::Named(Named::Space) => Some(Message::Key(PaletteKey::Space)),
         Key::Character(c) => {
             let mut chars = c.chars();
             let first = chars.next()?;
@@ -196,3 +274,6 @@ fn map_key(key: Key) -> Option<Message> {
         _ => None,
     }
 }
+
+// Keep Font in scope so a missing FACE constant fails here, not in view.
+const _: Font = theme::FACE;

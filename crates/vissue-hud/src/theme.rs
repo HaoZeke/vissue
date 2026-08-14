@@ -101,10 +101,13 @@ mod tests {
         assert_eq!(priority_color("C"), OVERLAY);
     }
 
+    // The type scale is fixed at compile time, so its ordering is checked
+    // there too: a runtime assertion over two constants can only ever pass.
+    const _: () = assert!(SIZE_BODY < SIZE_TITLE);
+    const _: () = assert!(SIZE_META < SIZE_BODY);
+
     #[test]
     fn body_is_the_app_base_and_smaller_than_title() {
-        assert!(SIZE_BODY < SIZE_TITLE);
-        assert!(SIZE_META < SIZE_BODY);
         assert_eq!(OVERLAY1, Color::from_rgb8(0x58, 0x5b, 0x70));
     }
 }

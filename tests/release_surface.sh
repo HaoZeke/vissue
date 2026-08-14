@@ -11,16 +11,10 @@ for path in README.md CHANGELOG.md CONTRIBUTING.md RELEASING.md SECURITY.md CITA
   }
 done
 
-grep -q '^## Ecosystem$' README.md
-grep -q 'https://github.com/HaoZeke/another tool' README.md
-grep -q 'another tool' CHANGELOG.md
-awk '
-  /^## \[0\.1\.0\]/ { release = 1; next }
-  /^## \[/ && release { exit }
-  release && /another tool/ { found = 1 }
-  END { exit !found }
-' CHANGELOG.md
-grep -q 'another tool' CITATION.cff
+# The tracker's promise is that an issues.org is an ordinary Org file, so the
+# documented Org behaviour is what the release surface pins.
+grep -q '^## Documentation$' README.md
+grep -q 'vissue.rgoswami.me' README.md
 
 test -s scripts/release-prepare.sh || {
   echo "missing dry release preparation script" >&2
@@ -60,7 +54,7 @@ test "$tag_line" -lt "$arm_line"
 # the generated CLI assets have to exist for a packager to install them.
 for path in docs/build.sh docs/orgmode/index.org docs/orgmode/getting-started.org \
     docs/orgmode/howto.org docs/orgmode/reference.org docs/orgmode/explanation.org \
-    docs/orgmode/ecosystem.org docs/source/conf.py man/vissue.1 \
+    docs/orgmode/emacs.org docs/source/conf.py man/vissue.1 \
     completions/vissue.bash completions/_vissue completions/vissue.fish; do
   test -s "$path" || {
     echo "missing documentation asset: $path" >&2

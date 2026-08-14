@@ -272,8 +272,6 @@ impl Palette {
                 self.query.pop();
                 let _ = self.reload();
             }
-            PaletteKey::Char('j') => self.move_sel(1),
-            PaletteKey::Char('k') => self.move_sel(-1),
             PaletteKey::Char('c') => self.claim_selected(),
             PaletteKey::Char('n') => {
                 if self.selected_id().is_some() {
@@ -360,22 +358,23 @@ impl Palette {
     }
 
     pub fn reload(&mut self) -> anyhow::Result<()> {
-        let mut items = Vec::new();
+        // Last full ready page stays when serve answers `{unchanged: true,
+        // issues: []}`. Search extras are rebuilt from the current query.
+        self.items.retain(|item| item.source == ItemSource::Ready);
         if let Ok(page) = self.backend.ready(None) {
             if !page.unchanged {
-                items.extend(page.issues.into_iter().map(HudItem::from_row));
+                self.items = page.issues.into_iter().map(HudItem::from_row).collect();
             }
         }
         if !self.query.is_empty() {
             if let Ok(hits) = self.backend.search(&self.query, 50) {
                 for hit in hits {
-                    if !items.iter().any(|i| i.id == hit.id) {
-                        items.push(HudItem::from_search(hit));
+                    if !self.items.iter().any(|i| i.id == hit.id) {
+                        self.items.push(HudItem::from_search(hit));
                     }
                 }
             }
         }
-        self.items = items;
         self.refilter();
         Ok(())
     }
@@ -459,6 +458,142 @@ mod tests {
         _: &str,
     ) -> Result<Box<dyn BoardBackend>, AttachFail> {
         Err(AttachFail::Mismatch("other root".into()))
+    }
+
+    /// Second `ready` returns `{unchanged: true, issues: []}`, like serve
+    /// when `since_revision` matches the catalog head.
+    struct UnchangedAfterFirst {
+        inner: CoreBackend,
+        ready_calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl UnchangedAfterFirst {
+        fn new(inner: CoreBackend) -> Self {
+            Self {
+                inner,
+                ready_calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl BoardBackend for UnchangedAfterFirst {
+        fn layout(&self) -> &Layout {
+            self.inner.layout()
+        }
+        fn generation(&self) -> u64 {
+            self.inner.generation()
+        }
+        fn revision(&self) -> u64 {
+            5
+        }
+        fn live(&self) -> BackendKind {
+            BackendKind::Control
+        }
+        fn identity(&self) -> &str {
+            self.inner.identity()
+        }
+        fn list(
+            &self,
+            q: vissue_core::views::ListQuery,
+        ) -> Result<vissue_tui::ListPage, vissue_core::error::Error> {
+            self.inner.list(q)
+        }
+        fn ready(
+            &self,
+            project: Option<&str>,
+        ) -> Result<vissue_tui::ListPage, vissue_core::error::Error> {
+            let n = self
+                .ready_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                self.inner.ready(project)
+            } else {
+                Ok(vissue_tui::ListPage {
+                    unchanged: true,
+                    revision: 5,
+                    ..vissue_tui::ListPage::default()
+                })
+            }
+        }
+        fn get(
+            &self,
+            id: &str,
+        ) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
+            self.inner.get(id)
+        }
+        fn excerpt(
+            &self,
+            id: &str,
+        ) -> Result<vissue_core::views::Excerpt, vissue_core::error::Error> {
+            self.inner.excerpt(id)
+        }
+        fn search(
+            &self,
+            q: &str,
+            n: usize,
+        ) -> Result<Vec<vissue_core::views::SearchHit>, vissue_core::error::Error> {
+            self.inner.search(q, n)
+        }
+        fn claims(
+            &self,
+            h: Option<&str>,
+            p: Option<&str>,
+        ) -> Result<Vec<vissue_core::views::ClaimRow>, vissue_core::error::Error> {
+            self.inner.claims(h, p)
+        }
+        fn agenda(
+            &self,
+            d: i64,
+            p: Option<&str>,
+        ) -> Result<Vec<vissue_core::views::AgendaRow>, vissue_core::error::Error> {
+            self.inner.agenda(d, p)
+        }
+        fn tree(
+            &self,
+            id: &str,
+        ) -> Result<vissue_core::views::TreeNode, vissue_core::error::Error> {
+            self.inner.tree(id)
+        }
+        fn related(
+            &self,
+            id: &str,
+            d: usize,
+            n: usize,
+        ) -> Result<Vec<vissue_core::views::RelatedHit>, vissue_core::error::Error> {
+            self.inner.related(id, d, n)
+        }
+        fn projects(&self) -> Result<Vec<String>, vissue_core::error::Error> {
+            self.inner.projects()
+        }
+        fn claim(
+            &self,
+            id: &str,
+            f: bool,
+        ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+            self.inner.claim(id, f)
+        }
+        fn note(
+            &self,
+            id: &str,
+            t: &str,
+        ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+            self.inner.note(id, t)
+        }
+        fn update(
+            &self,
+            r: vissue_tui::UpdateReq,
+        ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+            self.inner.update(r)
+        }
+        fn open(
+            &self,
+            id: &str,
+        ) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
+            self.inner.open(id)
+        }
+        fn wait(&self, last: u64, ms: u64) -> Result<u64, vissue_core::error::Error> {
+            self.inner.wait(last, ms)
+        }
     }
 
     #[test]
@@ -591,12 +726,17 @@ mod tests {
         assert_eq!(palette.generation(), 0);
         assert!(palette.message().is_empty());
         assert!(palette.note_draft().is_none());
-        palette.handle_key(PaletteKey::Char('j'));
-        assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
-        palette.handle_key(PaletteKey::Char('k'));
-        assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
         palette.handle_key(PaletteKey::Down);
+        assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
         palette.handle_key(PaletteKey::Up);
+        assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
+        palette.handle_key(PaletteKey::Char('j'));
+        assert_eq!(palette.query(), "j");
+        palette.handle_key(PaletteKey::Backspace);
+        palette.handle_key(PaletteKey::Char('k'));
+        assert_eq!(palette.query(), "k");
+        palette.handle_key(PaletteKey::Backspace);
+        assert_eq!(palette.query(), "");
         assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
         palette.handle_key(PaletteKey::Char('z'));
         assert_eq!(palette.query(), "z");
@@ -628,5 +768,36 @@ mod tests {
         palette.show_excerpt();
         palette.handle_key(PaletteKey::Char('n'));
         assert!(palette.note_draft().is_none());
+    }
+
+    #[test]
+    fn unchanged_ready_does_not_wipe_rows() {
+        let backend = UnchangedAfterFirst::new(
+            CoreBackend::open(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap").unwrap(),
+        );
+        let mut palette =
+            Palette::with_backend(Box::new(backend), "snap".into(), ServeStatus::Live).unwrap();
+        let first: Vec<_> = palette
+            .filtered_items()
+            .into_iter()
+            .map(|i| i.id.clone())
+            .collect();
+        assert_eq!(first, ["atlas-1a2b", "atlas-2c3d", "beacon-5j6k"]);
+        palette.reload().unwrap();
+        let second: Vec<_> = palette
+            .filtered_items()
+            .into_iter()
+            .map(|i| i.id.clone())
+            .collect();
+        assert_eq!(first, second);
+        palette.handle_key(PaletteKey::Char('z'));
+        palette.handle_key(PaletteKey::Backspace);
+        assert_eq!(palette.query(), "");
+        let after_backspace: Vec<_> = palette
+            .filtered_items()
+            .into_iter()
+            .map(|i| i.id.clone())
+            .collect();
+        assert_eq!(first, after_backspace);
     }
 }

@@ -80,7 +80,7 @@ pub fn run_with(cli: HudCli) -> anyhow::Result<i32> {
     run_owner(cli)
 }
 
-fn run_owner(cli: HudCli) -> anyhow::Result<i32> {
+pub(crate) fn run_owner(cli: HudCli) -> anyhow::Result<i32> {
     let layout = Layout::resolve(cli.root.as_deref(), cli.prefix.as_deref())?;
     let socket = cli
         .socket
@@ -89,9 +89,16 @@ fn run_owner(cli: HudCli) -> anyhow::Result<i32> {
     let agent = vissue_core::config::identity(&layout);
     let _summon = match summon::install() {
         Ok(server) => Some(server),
+        Err(summon::SummonError::AlreadyRunning(_)) => {
+            if let Some(action) = cli.summon_action() {
+                let _ = summon::send_command(action);
+            }
+            return Ok(0);
+        }
+        Err(summon::SummonError::Unsupported) => None,
         Err(err) => {
             crate::log::error(&format!("summon install: {err}"));
-            None
+            return Err(err.into());
         }
     };
     crate::app::run(crate::app::BootOpts {
@@ -216,6 +223,37 @@ mod tests {
             .expect("summon line");
         assert!(line.starts_with("toggle"), "{line}");
         std::env::remove_var(crate::summon::SOCKET_ENV);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_owner_is_noop_when_install_loses_the_bind() {
+        use std::os::unix::net::UnixListener;
+
+        let _guard = crate::env_lock();
+        let dir =
+            std::env::temp_dir().join(format!("vissue-hud-owner-already-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("hud.sock");
+        let _ = std::fs::remove_file(&path);
+        let _listener = UnixListener::bind(&path).unwrap();
+        std::env::set_var(crate::summon::SOCKET_ENV, &path);
+        let code = run_owner(HudCli {
+            root: Some(PathBuf::from("/tmp/vissue-hud-owner-already")),
+            prefix: Some("Software".into()),
+            socket: None,
+            offline: true,
+            foreground: true,
+            toggle: false,
+            show: false,
+            hide: false,
+        })
+        .unwrap();
+        assert_eq!(code, 0);
+        std::env::remove_var(crate::summon::SOCKET_ENV);
+        drop(_listener);
+        let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1243,3 +1243,145 @@ fn claiming_a_closed_issue_is_typed_invalid_state() {
     }
     assert!(err.to_string().contains("cannot claim"));
 }
+
+/// Set one property on one issue in the writable copy, then re-check.
+fn check_after<F>(edit: F) -> report::CheckReport
+where
+    F: FnOnce(&Layout),
+{
+    let (_dir, layout) = writable_copy();
+    edit(&layout);
+    report::check(&layout).unwrap()
+}
+
+fn set_property(layout: &Layout, project: &str, id: &str, key: &str, value: &str) {
+    let path = layout.project_issues_path(project);
+    let mut doc = IssueDoc::parse_file(project, &path).unwrap();
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == id)
+        .unwrap()
+        .properties
+        .insert(key.into(), value.into());
+    doc.write().unwrap();
+}
+
+#[test]
+fn check_reports_a_parent_that_names_nothing() {
+    let out = check_after(|layout| {
+        set_property(layout, "atlas", "atlas-2c3d", "PARENT", "atlas-gone");
+    });
+    assert_eq!(out.errors, 1, "{}", out.text);
+    assert!(
+        out.text
+            .contains("[err]  atlas-2c3d (in atlas) :PARENT: atlas-gone -> not found"),
+        "{}",
+        out.text
+    );
+}
+
+/// Insert a property line into the raw org text of one issue.
+///
+/// `check` guards against what a person types into the file by hand, and
+/// some of that cannot be produced through `IssueDoc`: the writer renders
+/// DEADLINE as a planning line, and a value it cannot parse does not
+/// survive the round trip.
+fn insert_property_line(layout: &Layout, project: &str, id: &str, line: &str) {
+    let path = layout.project_issues_path(project);
+    let text = fs::read_to_string(&path).unwrap();
+    let anchor = format!(":ID:         {id}");
+    let at = text
+        .find(&anchor)
+        .unwrap_or_else(|| panic!("no {id} in {path:?}"));
+    let eol = at + text[at..].find('\n').unwrap() + 1;
+    let mut out = String::with_capacity(text.len() + line.len() + 1);
+    out.push_str(&text[..eol]);
+    out.push_str(line);
+    out.push('\n');
+    out.push_str(&text[eol..]);
+    fs::write(&path, out).unwrap();
+}
+
+#[test]
+fn check_reports_dates_it_cannot_parse() {
+    let deadline = check_after(|layout| {
+        insert_property_line(layout, "atlas", "atlas-2c3d", ":DEADLINE:   next tuesday");
+    });
+    assert_eq!(deadline.errors, 1, "{}", deadline.text);
+    assert!(
+        deadline
+            .text
+            .contains(":DEADLINE: next tuesday -> unparseable"),
+        "{}",
+        deadline.text
+    );
+
+    let scheduled = check_after(|layout| {
+        insert_property_line(layout, "atlas", "atlas-2c3d", ":SCHEDULED:  soon");
+    });
+    assert_eq!(scheduled.errors, 1, "{}", scheduled.text);
+    assert!(
+        scheduled.text.contains(":SCHEDULED: soon -> unparseable"),
+        "{}",
+        scheduled.text
+    );
+}
+
+#[test]
+fn open_work_without_a_creation_date_is_a_warning_not_an_error() {
+    let out = check_after(|layout| {
+        let path = layout.project_issues_path("atlas");
+        let mut doc = IssueDoc::parse_file("atlas", &path).unwrap();
+        let h = doc
+            .headings
+            .iter_mut()
+            .find(|h| h.id == "atlas-2c3d")
+            .unwrap();
+        h.properties.remove("CREATED");
+        doc.write().unwrap();
+    });
+    assert_eq!(out.errors, 0, "{}", out.text);
+    assert_eq!(out.warnings, 1, "{}", out.text);
+    assert!(
+        out.text
+            .contains("[warn] atlas-2c3d (in atlas) state=TODO but :CREATED: is missing"),
+        "{}",
+        out.text
+    );
+}
+
+#[test]
+fn check_reports_an_id_that_names_two_issues() {
+    let out = check_after(|layout| {
+        // Give a beacon issue an id atlas already uses: every blocker and
+        // parent edge pointing at it becomes ambiguous.
+        let path = layout.project_issues_path("beacon");
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(&path, text.replace("beacon-5j6k", "atlas-2c3d")).unwrap();
+    });
+    assert!(out.errors >= 1, "{}", out.text);
+    assert!(
+        out.text.contains("duplicate id: atlas-2c3d"),
+        "{}",
+        out.text
+    );
+}
+
+#[test]
+fn check_names_a_parent_loop_that_every_edge_check_would_pass() {
+    let out = check_after(|layout| {
+        // atlas-2c3d already names atlas-1a2b as its parent. Close the loop.
+        set_property(layout, "atlas", "atlas-1a2b", "PARENT", "atlas-2c3d");
+    });
+    assert!(out.errors >= 1, "{}", out.text);
+    assert!(out.text.contains("[err]  parent cycle:"), "{}", out.text);
+    assert!(out.text.contains("atlas-1a2b"), "{}", out.text);
+    assert!(out.text.contains("atlas-2c3d"), "{}", out.text);
+}
+
+#[test]
+fn a_clean_corpus_still_counts_what_it_checked() {
+    let out = check_after(|_| {});
+    assert_eq!(out.errors, 0, "{}", out.text);
+    assert!(out.text.contains("checked 6 issue(s)"), "{}", out.text);
+}

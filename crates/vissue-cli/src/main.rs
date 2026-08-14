@@ -171,6 +171,19 @@ enum Command {
         #[arg(required = true, num_args = 1..)]
         text: Vec<String>,
     },
+    /// Append a dated report to an issue's body.
+    ///
+    /// For recording work that was done. The logbook holds one line per
+    /// event, so a written report belongs here instead. Markdown is safe.
+    Append {
+        id: String,
+        /// The text to append.
+        #[arg(long, conflicts_with = "file")]
+        text: Option<String>,
+        /// Read the text from a file; `-` reads stdin.
+        #[arg(long)]
+        file: Option<String>,
+    },
     /// Every live claim, oldest first: who holds what, and for how long.
     Claims {
         /// Only claims held by this identity
@@ -425,6 +438,18 @@ enum Command {
     },
     /// Write the roff manual page to stdout.
     Man,
+    /// Print the HUD key catalog, or check a keys.toml overlay.
+    ///
+    /// Defaults live in code. `~/.config/vissue/keys.toml` or `VISSUE_KEYS`
+    /// overlays diffs. A bad file keeps defaults and `--check` exits 1.
+    Keys {
+        /// Load the overlay and exit 1 on conflict.
+        #[arg(long)]
+        check: bool,
+        /// Print taken chords.
+        #[arg(long)]
+        occupancy: bool,
+    },
 }
 
 /// Flags and verbs under `vissue serve`.
@@ -598,6 +623,15 @@ fn run() -> Result<()> {
             }
         }
         Command::Claim { id, force } => emit!("{}", agent::claim(&layout, &id, force)?),
+        Command::Append { id, text, file } => {
+            let body = match (text, file) {
+                (Some(t), None) => t,
+                (None, Some(path)) => read_body_file(&path)?,
+                (None, None) => bail!("pass --text or --file (`-` reads stdin)"),
+                (Some(_), Some(_)) => unreachable!("clap rejects both"),
+            };
+            emit!("{}", ops::append_body(&layout, &id, &body)?)
+        }
         Command::Note { id, text } => {
             emit!("{}", ops::note(&layout, &id, &text.join(" "))?)
         }
@@ -755,6 +789,30 @@ fn run() -> Result<()> {
                 "{}",
                 strip_hidden_serve_flags(&String::from_utf8_lossy(&buffer))
             );
+        }
+        Command::Keys { check, occupancy } => {
+            let map = vissue_core::keys::KeyMap::load();
+            if check {
+                if let Some(err) = map.overlay_error {
+                    eprintln!("error: {err}");
+                    std::process::exit(1);
+                }
+                emitln!("ok");
+            } else if occupancy {
+                for (chord, id) in map.occupancy() {
+                    emitln!("{chord}\t{id}");
+                }
+            } else {
+                if let Some(err) = &map.overlay_error {
+                    eprintln!("error: {err}");
+                }
+                if let Some(leader) = map.leader {
+                    emitln!("leader {leader}");
+                }
+                for line in map.table_lines() {
+                    emitln!("{line}");
+                }
+            }
         }
         Command::Man => {
             let mut buffer: Vec<u8> = Vec::new();

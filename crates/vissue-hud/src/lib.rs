@@ -1,4 +1,4 @@
-//! Summonable iced task board over ready, mine, upcoming, and all.
+//! Summonable iced task board. Home is the project list.
 //!
 //! First paint always goes through [`vissue_tui::CoreBackend`]. Live updates
 //! attach to `vissue serve` unless `--offline`. A root/prefix mismatch stays

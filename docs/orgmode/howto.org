@@ -266,8 +266,9 @@ Body edits stay in the file.
 
 * Summon the desktop palette
 
-=vissue hud= is the terminal board in a window. Panes: Ready, List,
-Claims, Agenda, Search. Ready and List nest children under =PARENT=.
+=vissue hud= opens on the project list. Enter opens one project's ready
+forest; List / Claims / Agenda / Search then stay inside that project.
+Esc returns to the list. Ready and List nest children under =PARENT=.
 The selected row has show / excerpt / tree / related / notes. =n= shows
 the logbook and writes a note. Keys are a catalog ();
 =~/.config/vissue/keys.toml= remaps them; reserved =Esc=/=Enter=/=Tab=/=?=.

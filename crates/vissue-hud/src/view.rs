@@ -16,34 +16,42 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
         return help_overlay(palette);
     }
 
-    let mut pane = column![header(palette), chips(palette), add_bar(palette)]
+    let mut pane = column![header(palette), chips(palette)]
         .spacing(10)
         .padding([14, 16]);
 
-    let sections = palette.sections();
-    if sections.is_empty() {
-        pane = pane.push(
-            text(empty_copy(palette))
-                .size(theme::SIZE_BODY)
-                .color(theme::SUBTEXT)
-                .font(theme::FACE),
-        );
+    if palette.browsing() {
+        pane = pane.push(project_browser(palette));
     } else {
-        let mut list = column![].spacing(4);
-        let selected = palette.selected_index();
-        for section in sections {
-            list = list.push(project_header(&section));
-            if section.collapsed {
-                continue;
+        pane = pane.push(add_bar(palette));
+        let sections = palette.sections();
+        if sections.is_empty() {
+            pane = pane.push(
+                text(empty_copy(palette))
+                    .size(theme::SIZE_BODY)
+                    .color(theme::SUBTEXT)
+                    .font(theme::FACE),
+            );
+        } else {
+            let mut list = column![].spacing(4);
+            let selected = palette.selected_index();
+            for section in sections {
+                if palette.project().is_none() {
+                    list = list.push(project_header(&section));
+                }
+                if section.collapsed {
+                    continue;
+                }
+                for (i, item) in section.rows {
+                    list = list.push(task_row(item, i == selected));
+                }
             }
-            for (i, item) in section.rows {
-                list = list.push(task_row(item, i == selected));
-            }
+            pane = pane.push(scrollable(list).height(Length::FillPortion(5)));
         }
-        pane = pane.push(scrollable(list).height(Length::FillPortion(3)));
+        if palette.selected_id().is_some() {
+            pane = pane.push(detail_panel(palette));
+        }
     }
-
-    pane = pane.push(detail_panel(palette));
 
     if palette.note_draft().is_some() {
         pane = pane.push(note_bar(palette));
@@ -87,20 +95,37 @@ fn header(palette: &Palette) -> Element<'_, Message> {
         },
         ..container::Style::default()
     });
-    let project = palette.project().unwrap_or("all projects");
-    let title = row![
+    let scope = if palette.browsing() {
+        "projects"
+    } else {
+        palette.project().unwrap_or("search")
+    };
+    let mut title = row![
         text("vissue")
             .size(theme::SIZE_TITLE)
             .color(theme::TEXT)
             .font(theme::FACE),
         dot,
-        text(project)
+        text(scope)
             .size(theme::SIZE_META)
             .color(theme::SUBTEXT)
             .font(theme::FACE),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
+    if palette.project().is_some() {
+        title = title.push(
+            button(
+                text("Projects")
+                    .size(theme::SIZE_META)
+                    .color(theme::SUBTEXT)
+                    .font(theme::FACE),
+            )
+            .on_press(Message::LeaveProject)
+            .padding([4, 10])
+            .style(|_, status| chip_style(status, false)),
+        );
+    }
 
     row![title, Space::new().width(Fill), find_control(palette)]
         .spacing(10)
@@ -135,6 +160,18 @@ fn find_control(palette: &Palette) -> Element<'_, Message> {
 
 fn chips(palette: &Palette) -> Element<'_, Message> {
     let mut row = row![].spacing(6);
+    if palette.browsing() {
+        row = row.push(projects_chip(palette.project_cards().len(), true));
+        for (filter, label) in [
+            (BoardFilter::Claims, "Claims"),
+            (BoardFilter::Agenda, "Agenda"),
+            (BoardFilter::Search, "Search"),
+        ] {
+            row = row.push(chip(filter, label, palette.count(filter), false));
+        }
+        return row.into();
+    }
+    row = row.push(projects_chip(0, false));
     for (filter, label) in BoardFilter::ALL {
         row = row.push(chip(
             filter,
@@ -144,6 +181,122 @@ fn chips(palette: &Palette) -> Element<'_, Message> {
         ));
     }
     row.into()
+}
+
+fn projects_chip(count: usize, active: bool) -> Element<'static, Message> {
+    let fg = if active { theme::BASE } else { theme::SUBTEXT };
+    let label = if active && count > 0 {
+        format!("Projects {count}")
+    } else {
+        "Projects".to_string()
+    };
+    button(
+        text(label)
+            .size(theme::SIZE_META)
+            .color(fg)
+            .font(theme::FACE),
+    )
+    .on_press(Message::LeaveProject)
+    .padding([6, 12])
+    .style(move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered);
+        button::Style {
+            background: Some(Background::Color(if active {
+                theme::BLUE
+            } else if hovered {
+                theme::SURFACE1
+            } else {
+                theme::SURFACE0
+            })),
+            text_color: fg,
+            border: Border {
+                radius: 14.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            ..button::Style::default()
+        }
+    })
+    .into()
+}
+
+fn project_browser(palette: &Palette) -> Element<'_, Message> {
+    let cards = palette.project_cards();
+    if cards.is_empty() {
+        return text("No projects under this prefix.")
+            .size(theme::SIZE_BODY)
+            .color(theme::SUBTEXT)
+            .font(theme::FACE)
+            .into();
+    }
+    let selected = palette.selected_project_index();
+    let mut list = column![].spacing(8);
+    for (i, card) in cards.iter().enumerate() {
+        list = list.push(project_card(card, i == selected));
+    }
+    scrollable(list).height(Length::Fill).into()
+}
+
+fn project_card(card: &crate::palette::ProjectCard, selected: bool) -> Element<'static, Message> {
+    let name = card.name.clone();
+    let count = match card.ready {
+        0 => "caught up".to_string(),
+        1 => "1 ready".to_string(),
+        n => format!("{n} ready"),
+    };
+    let body = row![
+        column![
+            text(card.name.clone())
+                .size(theme::SIZE_TITLE)
+                .color(theme::TEXT)
+                .font(theme::FACE),
+            text(count)
+                .size(theme::SIZE_META)
+                .color(if card.ready == 0 {
+                    theme::OVERLAY
+                } else {
+                    theme::SUBTEXT
+                })
+                .font(theme::FACE),
+        ]
+        .spacing(2),
+        Space::new().width(Fill),
+        text("open")
+            .size(theme::SIZE_META)
+            .color(theme::OVERLAY)
+            .font(theme::FACE),
+    ]
+    .spacing(12)
+    .align_y(Alignment::Center)
+    .padding([14, 16]);
+    button(body)
+        .on_press(Message::SelectProject(name))
+        .padding(0)
+        .width(Fill)
+        .style(move |_, status| {
+            let hovered = matches!(status, button::Status::Hovered);
+            button::Style {
+                background: Some(Background::Color(if selected {
+                    theme::SURFACE0
+                } else if hovered {
+                    theme::MANTLE
+                } else {
+                    theme::SURFACE0
+                })),
+                text_color: theme::TEXT,
+                border: Border {
+                    radius: 12.0.into(),
+                    width: if selected { 1.0 } else { 0.0 },
+                    color: if selected {
+                        theme::BLUE
+                    } else {
+                        Color::TRANSPARENT
+                    },
+                },
+                ..button::Style::default()
+            }
+        })
+        .into()
 }
 
 fn chip(
@@ -397,7 +550,7 @@ fn detail_panel(palette: &Palette) -> Element<'_, Message> {
         .padding(12),
     )
     .width(Fill)
-    .height(Length::FillPortion(2))
+    .height(Length::Fixed(220.0))
     .style(|_| container::Style {
         background: Some(Background::Color(theme::MANTLE)),
         border: Border {
@@ -457,8 +610,8 @@ fn empty_copy(palette: &Palette) -> &'static str {
         return "Nothing matches.";
     }
     match palette.filter() {
-        BoardFilter::Ready => "Nothing ready.",
-        BoardFilter::List => "No issues in this filter.",
+        BoardFilter::Ready => "Nothing ready in this project.",
+        BoardFilter::List => "No issues in this project.",
         BoardFilter::Claims => "No claims.",
         BoardFilter::Agenda => "Nothing dated in the next two weeks.",
         BoardFilter::Search => "Type to search id, title, and tags.",

@@ -252,7 +252,8 @@ the files and refuses mutations against the other vault. Status names
 live, offline, or mismatch, then generation, revision, and agent.
 Keys are on =?=. On Windows only =tui --offline= runs.
 
-=vissue hud= execs =vissue-hud=, an iced task board over the files.
+=vissue hud= execs =vissue-hud=. Home is the project list; opening a
+project is the task board over those files.
 Unless =--offline= it then attaches to serve the same way the TUI
 does. =--rofi= is the seat dmenu picker and does not need serve.
 Return opens the heading. Alt+c claims. Alt+n notes.

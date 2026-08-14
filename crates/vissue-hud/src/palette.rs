@@ -15,12 +15,15 @@ use crate::keys::{ActionId, KeyMap};
 use crate::summon::{SummonAction, SummonRequest};
 
 const HELP: &str = "\
-vissue hud  (same board as vissue tui)
+vissue hud
+
+Home is the project list. Enter opens one.
+Esc from a project returns to that list.
 
 j/k, arrows   move
 Tab, 1-5      pane (Ready List Claims Agenda Search)
-Enter         cycle detail (show / excerpt / tree / related / notes)
-p             cycle project filter
+Enter         open project / cycle detail
+p             next project
 /             search
 a             add a task
 c             claim
@@ -144,6 +147,13 @@ pub struct HudItem {
     pub extra: String,
     pub parent: Option<String>,
     pub depth: usize,
+}
+
+/// One row on the home project list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectCard {
+    pub name: String,
+    pub ready: usize,
 }
 
 impl HudItem {
@@ -274,6 +284,8 @@ pub struct Palette {
     leader_at: Option<std::time::Instant>,
     collapsed: std::collections::BTreeSet<String>,
     collapse_seeded: bool,
+    project_cards: Vec<ProjectCard>,
+    project_sel: usize,
 }
 
 /// Close or cancel confirmation.
@@ -336,6 +348,8 @@ impl Palette {
             leader_at: None,
             collapsed: std::collections::BTreeSet::new(),
             collapse_seeded: false,
+            project_cards: Vec::new(),
+            project_sel: 0,
         };
         #[cfg(not(test))]
         {
@@ -424,6 +438,51 @@ impl Palette {
 
     pub fn help_text(&self) -> &'static str {
         HELP
+    }
+
+    /// Home screen: no project open, Ready/List would otherwise dump the vault.
+    pub fn browsing(&self) -> bool {
+        self.project.is_none() && matches!(self.filter, BoardFilter::Ready | BoardFilter::List)
+    }
+
+    pub fn project_cards(&self) -> &[ProjectCard] {
+        &self.project_cards
+    }
+
+    pub fn selected_project_index(&self) -> usize {
+        self.project_sel
+    }
+
+    pub fn selected_project_name(&self) -> Option<&str> {
+        self.project_cards
+            .get(self.project_sel)
+            .map(|c| c.name.as_str())
+    }
+
+    pub fn enter_project(&mut self, name: &str) {
+        self.project = Some(name.to_string());
+        self.query.clear();
+        self.selected = 0;
+        self.collapse_seeded = false;
+        self.collapsed.clear();
+        self.filter = BoardFilter::Ready;
+        self.focus = Focus::List;
+        self.backend.invalidate_since();
+        let _ = self.reload();
+    }
+
+    pub fn leave_project(&mut self) {
+        self.project = None;
+        self.items.clear();
+        self.filtered.clear();
+        self.query.clear();
+        self.filter = BoardFilter::Ready;
+        self.focus = Focus::List;
+        self.detail = None;
+        self.excerpt = None;
+        self.detail_body.clear();
+        self.backend.invalidate_since();
+        let _ = self.reload();
     }
 
     /// Project runs over the current filter, for collapsible headers.
@@ -649,6 +708,10 @@ impl Palette {
                     self.detail_tab = DetailTab::Show;
                     self.excerpt = None;
                     self.refresh_detail();
+                } else if self.project.is_some() {
+                    self.leave_project();
+                } else if !matches!(self.filter, BoardFilter::Ready) {
+                    self.set_filter(BoardFilter::Ready);
                 } else {
                     self.hide();
                 }
@@ -671,24 +734,52 @@ impl Palette {
         match action {
             ActionId::ListDown => self.move_sel(1),
             ActionId::ListUp => self.move_sel(-1),
-            ActionId::ListSelect | ActionId::DetailCycle => self.cycle_detail_tab(),
+            ActionId::ListSelect | ActionId::DetailCycle => {
+                if self.browsing() {
+                    if let Some(name) = self.selected_project_name().map(str::to_string) {
+                        self.enter_project(&name);
+                    }
+                } else {
+                    self.cycle_detail_tab();
+                }
+            }
             ActionId::ListDone => {
                 if let Some(id) = self.selected_id().map(str::to_string) {
                     self.toggle_done(&id);
                 }
             }
             ActionId::PaneReady => self.set_filter(BoardFilter::Ready),
-            ActionId::PaneList => self.set_filter(BoardFilter::List),
+            ActionId::PaneList => {
+                if self.browsing() {
+                    if let Some(name) = self.selected_project_name().map(str::to_string) {
+                        self.enter_project(&name);
+                    }
+                }
+                self.set_filter(BoardFilter::List);
+            }
             ActionId::PaneClaims => self.set_filter(BoardFilter::Claims),
             ActionId::PaneAgenda => self.set_filter(BoardFilter::Agenda),
             ActionId::PaneSearch => self.set_filter(BoardFilter::Search),
-            ActionId::PaneNext => self.set_filter(self.filter.next()),
+            ActionId::PaneNext => {
+                if self.browsing() {
+                    self.set_filter(BoardFilter::Claims);
+                } else {
+                    self.set_filter(self.filter.next());
+                }
+            }
             ActionId::ProjectCycle => self.cycle_project(),
             ActionId::Search => {
                 self.set_filter(BoardFilter::Search);
                 self.focus_search();
             }
-            ActionId::Add => self.focus_add(),
+            ActionId::Add => {
+                if self.browsing() {
+                    if let Some(name) = self.selected_project_name().map(str::to_string) {
+                        self.enter_project(&name);
+                    }
+                }
+                self.focus_add();
+            }
             ActionId::Claim => self.claim_selected(),
             ActionId::Note => {
                 if self.selected_id().is_some() {
@@ -1044,6 +1135,11 @@ impl Palette {
     }
 
     pub fn focus_add(&mut self) {
+        if self.browsing() {
+            if let Some(name) = self.selected_project_name().map(str::to_string) {
+                self.enter_project(&name);
+            }
+        }
         self.focus = Focus::Add;
     }
 
@@ -1097,6 +1193,17 @@ impl Palette {
     }
 
     pub fn reload(&mut self) -> anyhow::Result<()> {
+        if self.browsing() {
+            self.reload_browser();
+            self.refresh_chip_counts(None);
+            self.items.clear();
+            self.filtered.clear();
+            self.selected = 0;
+            self.detail = None;
+            self.excerpt = None;
+            self.detail_body.clear();
+            return Ok(());
+        }
         let project = self.project.clone();
         let project = project.as_deref();
         match self.filter {
@@ -1121,8 +1228,47 @@ impl Palette {
         if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
             self.collapsed.remove(&p);
         }
+        self.refresh_chip_counts(project);
         self.refresh_detail();
         Ok(())
+    }
+
+    fn reload_browser(&mut self) {
+        if let Ok(list) = self.backend.projects() {
+            self.projects = list;
+        }
+        let mut counts: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        if let Ok(page) = self.backend.ready(None) {
+            if !page.unchanged {
+                for row in &page.issues {
+                    *counts.entry(row.project.clone()).or_default() += 1;
+                }
+                self.ready_count = page.issues.len();
+            }
+        }
+        let mut cards: Vec<ProjectCard> = self
+            .projects
+            .iter()
+            .map(|name| ProjectCard {
+                name: name.clone(),
+                ready: counts.get(name).copied().unwrap_or(0),
+            })
+            .collect();
+        cards.sort_by(|a, b| b.ready.cmp(&a.ready).then_with(|| a.name.cmp(&b.name)));
+        self.project_cards = cards;
+        if self.project_sel >= self.project_cards.len() {
+            self.project_sel = self.project_cards.len().saturating_sub(1);
+        }
+    }
+
+    fn refresh_chip_counts(&mut self, project: Option<&str>) {
+        if let Ok(rows) = self.backend.claims(None, project) {
+            self.claims_count = rows.len();
+        }
+        if let Ok(rows) = self.backend.agenda(14, project) {
+            self.agenda_count = rows.len();
+        }
     }
 
     fn reload_ready(&mut self, project: Option<&str>) {
@@ -1178,6 +1324,15 @@ impl Palette {
     }
 
     fn move_sel(&mut self, delta: i32) {
+        if self.browsing() {
+            if self.project_cards.is_empty() {
+                return;
+            }
+            let next = (self.project_sel as i32 + delta)
+                .clamp(0, self.project_cards.len() as i32 - 1) as usize;
+            self.project_sel = next;
+            return;
+        }
         let vis = self.visible_indices();
         if vis.is_empty() {
             return;
@@ -1204,7 +1359,7 @@ impl Palette {
 }
 
 fn format_show(d: &IssueDetail) -> String {
-    let mut out = format!("{} · {} · {}\n", d.state, d.priority, d.project);
+    let mut out = format!("{}\n{} · {}\n", d.title, d.state, d.priority);
     if let Some(parent) = &d.parent {
         out.push_str(&format!("under {parent}\n"));
     }
@@ -1228,7 +1383,22 @@ fn format_show(d: &IssueDetail) -> String {
     }
     out.push_str(&d.id);
     out.push('\n');
+    let preview = body_preview(&d.body, 4);
+    if !preview.is_empty() {
+        out.push('\n');
+        out.push_str(&preview);
+        out.push('\n');
+    }
     out
+}
+
+fn body_preview(body: &str, lines: usize) -> String {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(lines)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// One project group in the current filter.
@@ -1475,7 +1645,7 @@ mod tests {
             let n = self
                 .ready_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if n == 0 {
+            if n < 2 {
                 self.inner.ready(project)
             } else {
                 Ok(vissue_tui::ListPage {
@@ -1566,24 +1736,46 @@ mod tests {
         }
     }
 
+    fn open_atlas(layout: Layout, agent: &str) -> Palette {
+        let mut palette = Palette::open_core(layout, agent.into()).unwrap();
+        palette.enter_project("atlas");
+        palette
+    }
+
     #[test]
-    fn first_paint_lists_ready_ids() {
+    fn first_paint_lists_projects() {
         let palette =
             Palette::open_core(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap".into()).unwrap();
-        let ids: Vec<_> = palette
-            .filtered_items()
-            .into_iter()
-            .map(|i| i.id.as_str())
+        assert!(palette.browsing());
+        assert!(palette.filtered_items().is_empty());
+        let names: Vec<_> = palette
+            .project_cards()
+            .iter()
+            .map(|c| c.name.as_str())
             .collect();
-        assert_eq!(ids, ["atlas-1a2b", "atlas-2c3d", "beacon-5j6k"]);
+        assert!(names.contains(&"atlas"), "{names:?}");
+        assert!(names.contains(&"beacon"), "{names:?}");
         assert!(palette.status_line().contains("serve:offline"));
         assert_eq!(palette.revision(), 0);
     }
 
     #[test]
+    fn enter_project_lists_that_projects_ready() {
+        let palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        assert!(!palette.browsing());
+        assert_eq!(palette.project(), Some("atlas"));
+        let ids: Vec<_> = palette
+            .filtered_items()
+            .into_iter()
+            .map(|i| i.id.as_str())
+            .collect();
+        assert_eq!(ids, ["atlas-1a2b", "atlas-2c3d"]);
+    }
+
+    #[test]
     fn enter_shows_excerpt() {
         let (_dir, layout) = writable();
-        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        let mut palette = open_atlas(layout, "hud-test");
         palette.handle_key(PaletteKey::Down);
         assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
         palette.handle_key(PaletteKey::Enter);
@@ -1596,9 +1788,19 @@ mod tests {
         let palette_layout = Layout::new(fixture_root(), DEFAULT_PREFIX);
         let mut palette = Palette::open_core(palette_layout, "snap".into()).unwrap();
         assert!(palette.visible());
+        assert!(palette.browsing());
         palette.handle_key(PaletteKey::Esc);
         assert!(!palette.visible());
-        assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
+    }
+
+    #[test]
+    fn esc_from_project_returns_to_browser() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        assert_eq!(palette.project(), Some("atlas"));
+        palette.handle_key(PaletteKey::Esc);
+        assert!(palette.visible());
+        assert!(palette.browsing());
+        assert!(palette.project().is_none());
     }
 
     #[test]
@@ -1622,7 +1824,7 @@ mod tests {
     #[test]
     fn mismatch_stays_core_and_claims_via_ops() {
         let (_dir, layout) = writable();
-        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        let mut palette = open_atlas(layout, "hud-test");
         let hooks = AttachHooks {
             probe: yes_probe,
             ensure: panic_ensure,
@@ -1654,7 +1856,7 @@ mod tests {
     #[test]
     fn c_claims_and_n_notes_selected() {
         let (_dir, layout) = writable();
-        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        let mut palette = open_atlas(layout, "hud-test");
         palette.set_query("atlas-2c3d");
         palette.handle_key(PaletteKey::Char('c'));
         assert_eq!(
@@ -1690,8 +1892,7 @@ mod tests {
 
     #[test]
     fn keys_move_filter_and_backspace() {
-        let mut palette =
-            Palette::open_core(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap".into()).unwrap();
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
         assert_eq!(palette.agent(), "snap");
         assert_eq!(palette.generation(), 0);
         assert!(palette.message().is_empty());
@@ -1725,7 +1926,7 @@ mod tests {
     #[test]
     fn note_prompt_esc_and_empty_claim_are_noops() {
         let (_dir, layout) = writable();
-        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        let mut palette = open_atlas(layout, "hud-test");
         palette.handle_key(PaletteKey::Char('n'));
         assert!(palette.note_draft().is_some());
         palette.handle_key(PaletteKey::Up);
@@ -1747,6 +1948,7 @@ mod tests {
         );
         let mut palette =
             Palette::with_backend(Box::new(backend), "snap".into(), ServeStatus::Live).unwrap();
+        palette.enter_project("atlas");
         let first: Vec<_> = palette
             .filtered_items()
             .into_iter()
@@ -1775,27 +1977,26 @@ mod tests {
     fn digits_switch_sidebar_filters() {
         let mut palette =
             Palette::open_core(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap".into()).unwrap();
+        assert!(palette.browsing());
         assert_eq!(palette.filter(), BoardFilter::Ready);
-        assert!(palette.count(BoardFilter::Ready) >= 3);
-        palette.handle_key(PaletteKey::Char('2'));
-        assert_eq!(palette.filter(), BoardFilter::List);
-        assert!(!palette.filtered_items().is_empty());
         palette.handle_key(PaletteKey::Char('3'));
         assert_eq!(palette.filter(), BoardFilter::Claims);
         palette.handle_key(PaletteKey::Char('1'));
+        assert!(palette.browsing());
+        palette.enter_project("atlas");
         assert_eq!(palette.filter(), BoardFilter::Ready);
         let ids: Vec<_> = palette
             .filtered_items()
             .into_iter()
             .map(|i| i.id.as_str())
             .collect();
-        assert_eq!(ids, ["atlas-1a2b", "atlas-2c3d", "beacon-5j6k"]);
+        assert_eq!(ids, ["atlas-1a2b", "atlas-2c3d"]);
     }
 
     #[test]
     fn space_marks_selected_done() {
         let (_dir, layout) = writable();
-        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        let mut palette = open_atlas(layout, "hud-test");
         palette.set_filter(BoardFilter::List);
         palette.set_query("atlas-2c3d");
         palette.focus_list();
@@ -1841,7 +2042,7 @@ mod tests {
     #[test]
     fn s_cycles_todo_started_blocked() {
         let (_dir, layout) = writable();
-        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        let mut palette = open_atlas(layout, "hud-test");
         palette.set_query("atlas-2c3d");
         palette.focus_list();
         assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "TODO");
@@ -1860,7 +2061,7 @@ mod tests {
     #[test]
     fn notes_tab_shows_a_written_note() {
         let (_dir, layout) = writable();
-        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        let mut palette = open_atlas(layout, "hud-test");
         palette.set_query("atlas-2c3d");
         palette.focus_list();
         palette.handle_key(PaletteKey::Char('n'));
@@ -1895,6 +2096,7 @@ mod tests {
         .trim()
         .to_string();
         let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        palette.enter_project("atlas");
         palette.set_filter(BoardFilter::List);
         let rows: Vec<_> = palette
             .filtered_items()

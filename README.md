@@ -152,8 +152,8 @@ attaches to `vissue serve`, starting serve when the socket is free. A
 socket bound to another root stays on the files so a claim cannot hit
 the wrong vault. `q` quits; `?` lists the keys.
 
-`vissue hud` is the same board as `vissue tui`, in a window: Ready,
-List, Claims, Agenda, and Search. Ready/List are parent/child forests.
+`vissue hud` opens on the project list. Opening a project shows that
+project's ready forest, then List / Claims / Agenda / Search inside it.
 The selected row has show / excerpt / tree / related / notes. `n` opens
 the logbook and writes a note. Keys come from a catalog;
 `~/.config/vissue/keys.toml` (or `VISSUE_KEYS`) remaps them. `--rofi`

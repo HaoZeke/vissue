@@ -48,6 +48,8 @@ pub enum Message {
     FocusList,
     DetailTab(DetailTab),
     ToggleProject(String),
+    SelectProject(String),
+    LeaveProject,
 }
 
 /// iced application state.
@@ -136,6 +138,14 @@ impl HudApp {
             }
             Message::ToggleProject(project) => {
                 self.palette.toggle_project(&project);
+                Task::none()
+            }
+            Message::SelectProject(project) => {
+                self.palette.enter_project(&project);
+                Task::none()
+            }
+            Message::LeaveProject => {
+                self.palette.leave_project();
                 Task::none()
             }
             Message::Key(key) => {

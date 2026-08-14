@@ -1,3 +1,3 @@
-`vissue hud` is an iced task board (Ready / Mine / Upcoming / All)
-with checkbox rows, a priority pip, and quick add. `--rofi` keeps the
-seat dmenu picker.
+`vissue hud` opens on the project list. Opening a project shows that
+project's ready forest, then List / Claims / Agenda / Search inside it.
+`--rofi` keeps the seat dmenu picker.

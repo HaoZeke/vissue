@@ -23,6 +23,7 @@
 | =projects=, =identity=                                                    | Layout introspection                                                     |
 | =serve=                                                                   | Own the per-user Unix control socket (= -d=, =stop=, =restart=, =status=) |
 | =tui=                                                                     | Terminal board (=--offline= never attaches)                              |
+| =hud=                                                                     | Exec =vissue-hud= (=--toggle=, =--show=, =--hide=, =--offline=, =--foreground=) |
 | =completions=, =man=                                                      | Shell completion scripts and the manual page                             |
 
 * States and priorities
@@ -103,6 +104,9 @@ reports an exhausted space rather than failing obscurely.
 | =VISSUE_EVENTS=          | =0= suppresses the change stream entirely                          |
 | =VISSUE_CONTROL_SOCKET=  | Unix control socket path                                           |
 | =VISSUE_SERVE_LOG=       | Detached serve log; default is =control.log= next to the socket    |
+| =VISSUE_HUD_BIN=         | =vissue hud= launcher override for the =vissue-hud= binary         |
+| =VISSUE_HUD_SUMMON_SOCKET= | HUD show/hide socket; default is =hud.sock= next to the control socket |
+| =VISSUE_HUD_LOG=         | HUD stderr log; default is =hud.log= next to the control socket    |
 
 * Control socket
 
@@ -131,6 +135,15 @@ starts =serve -d= on the same root, prefix, and socket. A mismatch
 stays offline and refuses mutations against the other vault. Status:
 =serve:live|offline|mismatch gen=N rev=M agent=...=. Keys are on =?=.
 On Windows only =tui --offline= runs.
+
+=vissue hud= execs =vissue-hud= (PATH or =VISSUE_HUD_BIN=). Same attach
+story as the board, including claim and note when serve is down or
+mismatched. A second =vissue hud= is a no-op when =hud.sock= accepts.
+=--toggle= / =--show= / =--hide= send one line on that socket. Default
+detach uses =process_group(0)= only (the child can still see SIGHUP);
+=--foreground= stays on the terminal. Missing binary prints
+=cargo install vissue-hud= and exits 127. On Windows only
+=hud --offline= runs.
 
 * Exit statuses
 

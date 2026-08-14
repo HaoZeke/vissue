@@ -39,13 +39,23 @@ impl ControlBackend {
     /// Connect, `initialize` with a required agent, and refuse a root/prefix
     /// mismatch so mutations never hit the wrong vault.
     pub fn connect(path: &Path, layout: &Layout, agent: &str) -> Result<Self, ControlAttachError> {
-        let mut client = Client::connect(path).map_err(ControlAttachError::Rpc)?;
+        Self::connect_as(path, layout, agent, "vissue-tui")
+    }
+
+    /// Same as [`Self::connect`] with an explicit `initialize.client` name.
+    pub fn connect_as(
+        path: &Path,
+        layout: &Layout,
+        agent: &str,
+        client: &str,
+    ) -> Result<Self, ControlAttachError> {
+        let mut client_conn = Client::connect(path).map_err(ControlAttachError::Rpc)?;
         let params = InitializeParams {
             protocol_version: PROTOCOL_VERSION,
-            client: "vissue-tui".into(),
+            client: client.into(),
             agent: agent.to_string(),
         };
-        let value = client
+        let value = client_conn
             .request_typed(&Request::Initialize(params))
             .map_err(ControlAttachError::Rpc)?;
         let init: InitializeResult = serde_json::from_value(value)
@@ -61,7 +71,7 @@ impl ControlBackend {
         Ok(Self {
             layout: layout.clone(),
             identity: init.identity,
-            client: Mutex::new(client),
+            client: Mutex::new(client_conn),
             generation: AtomicU64::new(init.generation),
             revision: AtomicU64::new(init.revision),
             page_revision: AtomicU64::new(0),

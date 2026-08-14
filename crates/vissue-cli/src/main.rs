@@ -374,6 +374,34 @@ enum Command {
         #[arg(short = 's', long)]
         socket: Option<PathBuf>,
     },
+    /// Exec `vissue-hud` (PATH or VISSUE_HUD_BIN). Does not compile it.
+    ///
+    /// First paint reads the files. Unless `--offline`, the palette then
+    /// attaches to `vissue serve` (starting it when the socket is free).
+    /// A second `vissue hud` is a no-op when the summon socket accepts.
+    /// Default detach uses process_group(0) only; `--foreground` stays
+    /// on the terminal. Missing binary: print cargo install and exit 127.
+    Hud {
+        /// Never attach, never spawn serve; CatalogService plus generation poll.
+        #[arg(long)]
+        offline: bool,
+        /// Stay on the terminal. Default detach uses process_group(0) only.
+        #[arg(long)]
+        foreground: bool,
+        /// Show or hide a running HUD.
+        #[arg(long, group = "summon")]
+        toggle: bool,
+        /// Show a running HUD.
+        #[arg(long, group = "summon")]
+        show: bool,
+        /// Hide a running HUD.
+        #[arg(long, group = "summon")]
+        hide: bool,
+        /// Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then
+        /// $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock.
+        #[arg(short = 's', long)]
+        socket: Option<PathBuf>,
+    },
     /// Write a shell completion script to stdout.
     ///
     /// Generated from this binary's own argument definitions, so it cannot
@@ -767,6 +795,27 @@ fn run() -> Result<()> {
                 agent,
             })?;
         }
+        Command::Hud {
+            offline,
+            foreground,
+            toggle,
+            show,
+            hide,
+            socket,
+        } => {
+            if !offline && cfg!(not(unix)) {
+                bail!("vissue hud is Unix-only");
+            }
+            exec_hud(ExecHud {
+                layout,
+                socket,
+                offline,
+                foreground,
+                toggle,
+                show,
+                hide,
+            })?;
+        }
     }
     // Flush here rather than at exit, so a full disk or a closed pipe reaches
     // the caller as a status instead of being dropped on the way out.
@@ -809,6 +858,87 @@ fn line_is_hidden_serve_flag(line: &str) -> bool {
     }
     // Keep multi-option `opts=` lines; strip the token there instead.
     !trimmed.contains("opts=")
+}
+
+/// Args forwarded to `vissue-hud`. The launcher never cargo-builds.
+struct ExecHud {
+    layout: Layout,
+    socket: Option<PathBuf>,
+    offline: bool,
+    foreground: bool,
+    toggle: bool,
+    show: bool,
+    hide: bool,
+}
+
+const HUD_BIN_ENV: &str = "VISSUE_HUD_BIN";
+
+fn resolve_hud_bin() -> Option<PathBuf> {
+    if let Ok(raw) = std::env::var(HUD_BIN_ENV) {
+        let t = raw.trim();
+        if !t.is_empty() {
+            return Some(PathBuf::from(t));
+        }
+    }
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join("vissue-hud");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        #[cfg(windows)]
+        {
+            let exe = dir.join("vissue-hud.exe");
+            if exe.is_file() {
+                return Some(exe);
+            }
+        }
+    }
+    None
+}
+
+fn exec_hud(opts: ExecHud) -> Result<()> {
+    let Some(bin) = resolve_hud_bin().filter(|p| p.is_file()) else {
+        eprintln!("vissue-hud is not installed. Install it with:\n  cargo install vissue-hud");
+        std::process::exit(127);
+    };
+    let mut cmd = std::process::Command::new(&bin);
+    cmd.arg("--root")
+        .arg(opts.layout.root())
+        .arg("--prefix")
+        .arg(opts.layout.prefix());
+    if let Some(socket) = opts.socket {
+        cmd.arg("--socket").arg(socket);
+    }
+    if opts.offline {
+        cmd.arg("--offline");
+    }
+    if opts.foreground {
+        cmd.arg("--foreground");
+    }
+    if opts.toggle {
+        cmd.arg("--toggle");
+    } else if opts.show {
+        cmd.arg("--show");
+    } else if opts.hide {
+        cmd.arg("--hide");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = cmd.exec();
+        bail!("exec {}: {err}", bin.display());
+    }
+    #[cfg(not(unix))]
+    {
+        let status = cmd
+            .status()
+            .with_context(|| format!("spawn {}", bin.display()))?;
+        if let Some(code) = status.code() {
+            std::process::exit(code);
+        }
+        bail!("{} exited without a status", bin.display());
+    }
 }
 
 fn read_body_file(path: &str) -> Result<String> {

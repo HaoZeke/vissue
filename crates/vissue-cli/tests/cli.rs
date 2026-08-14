@@ -146,10 +146,63 @@ fn tui_help_names_offline() {
     assert!(text.contains("Never attach"), "{text}");
 }
 
+#[test]
+fn hud_help_names_summon_flags() {
+    let out = vissue(&["hud", "--help"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = stdout(&out);
+    assert!(text.contains("--offline"), "{text}");
+    assert!(text.contains("--toggle"), "{text}");
+    assert!(text.contains("--show"), "{text}");
+    assert!(text.contains("--hide"), "{text}");
+    assert!(text.contains("--foreground"), "{text}");
+}
+
+#[test]
+fn hud_without_binary_exits_127() {
+    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .args(["--root", fixture_root().to_str().unwrap(), "hud"])
+        .env_remove("VISSUE_HUD_BIN")
+        .env("PATH", "/nonexistent")
+        .output()
+        .expect("run vissue hud");
+    assert_eq!(out.status.code(), Some(127));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("cargo install vissue-hud"), "{err}");
+}
+
+#[test]
+fn hud_missing_override_bin_exits_127() {
+    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .args(["--root", fixture_root().to_str().unwrap(), "hud"])
+        .env("VISSUE_HUD_BIN", "/nonexistent/vissue-hud")
+        .output()
+        .expect("run vissue hud");
+    assert_eq!(out.status.code(), Some(127));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("cargo install vissue-hud"), "{err}");
+}
+
 #[cfg(not(unix))]
 #[test]
 fn tui_without_offline_is_unix_only() {
     let out = vissue(&["tui"]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("Unix-only"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[cfg(not(unix))]
+#[test]
+fn hud_without_offline_is_unix_only() {
+    let out = vissue(&["hud"]);
     assert!(!out.status.success());
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("Unix-only"),

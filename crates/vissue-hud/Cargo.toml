@@ -1,0 +1,44 @@
+[package]
+name = "vissue-hud"
+description = "Summonable iced palette over ready, search, claim, and show"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "vissue_hud"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vissue-hud"
+path = "src/bin.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+iced = { version = "0.14", default-features = true, features = [
+    "tokio",
+    "advanced",
+    "lazy",
+    "svg",
+] }
+serde.workspace = true
+serde_json.workspace = true
+vissue-control.workspace = true
+vissue-core.workspace = true
+vissue-serve.workspace = true
+vissue-tui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_json.workspace = true

@@ -144,7 +144,7 @@ links outrank shared tags and rare terms [22]. The command prints the
 evidence (`blocked_by`, `org_link`, `term:keymap`) and writes nothing
 back [24], [25], [26].
 
-## Terminal board
+## Terminal board and HUD
 
 `vissue tui` is a ratatui board over ready, list, claims, agenda, and
 search. It paints from the files first. Unless `--offline`, it then
@@ -152,15 +152,25 @@ attaches to `vissue serve`, starting serve when the socket is free. A
 socket bound to another root stays on the files so a claim cannot hit
 the wrong vault. `q` quits; `?` lists the keys.
 
+`vissue hud` execs `vissue-hud` (install it separately so `cargo install
+vissue-cli` stays small). The overlay filters ready plus search. Enter
+shows an excerpt; `c` claims; `n` notes; Esc hides (the process stays).
+`--toggle` / `--show` / `--hide` talk to a summon socket for compositor
+binds. Default detach uses `process_group(0)` only; `--foreground` stays
+on the terminal.
+
 ```console
 $ vissue tui
 $ vissue tui --offline
+$ vissue hud --foreground
+$ vissue hud --toggle
 ```
 
 ## Install
 
 ```console
 $ cargo install vissue-cli
+$ cargo install vissue-hud   # summonable overlay, optional
 $ cargo install vissue-mcp   # the MCP server, same version
 ```
 

@@ -7,6 +7,7 @@ members = [
     "crates/vissue-control",
     "crates/vissue-serve",
     "crates/vissue-tui",
+    "crates/vissue-hud",
 ]
 
 [workspace.lints.rust]

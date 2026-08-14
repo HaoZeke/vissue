@@ -1,5 +1,9 @@
 [workspace]
-members = ["cargo:crates/vissue-cli", "cargo:crates/vissue-mcp"]
+members = [
+    "cargo:crates/vissue-cli",
+    "cargo:crates/vissue-mcp",
+    "cargo:crates/vissue-hud",
+]
 
 # Config for 'dist' (cargo-dist). `dist generate` writes the release workflow
 # from this file; the checked-in release.yml is a placeholder until the first

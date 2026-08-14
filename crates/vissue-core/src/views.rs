@@ -15,7 +15,7 @@ pub struct IssueRec {
 }
 
 /// Filters for [`crate::catalog::CatalogService::issues_rows`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ListQuery {
     pub project: Option<String>,
     pub state: Option<String>,

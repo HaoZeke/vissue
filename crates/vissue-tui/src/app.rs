@@ -263,11 +263,7 @@ impl App {
                 self.move_sel(-1);
                 Action::Continue
             }
-            KeyCode::Tab => {
-                self.pane = self.pane.next();
-                let _ = self.reload();
-                Action::Continue
-            }
+            KeyCode::Tab => self.goto_pane(self.pane.next()),
             KeyCode::Char('1') => self.goto_pane(Pane::Ready),
             KeyCode::Char('2') => self.goto_pane(Pane::List),
             KeyCode::Char('3') => self.goto_pane(Pane::Claims),
@@ -291,7 +287,10 @@ impl App {
                 Action::Continue
             }
             KeyCode::Char('/') => {
-                self.pane = Pane::Search;
+                if self.pane != Pane::Search {
+                    self.backend.invalidate_since();
+                    self.pane = Pane::Search;
+                }
                 self.prompt = Some((PromptKind::Search, self.search_query.clone()));
                 Action::Continue
             }
@@ -373,6 +372,9 @@ impl App {
             KeyCode::Enter => match kind {
                 PromptKind::Search => {
                     self.search_query = text;
+                    if self.pane != Pane::Search {
+                        self.backend.invalidate_since();
+                    }
                     self.pane = Pane::Search;
                     let _ = self.reload();
                 }
@@ -389,11 +391,15 @@ impl App {
                 }
                 PromptKind::Project => {
                     let trimmed = text.trim();
-                    self.project = if trimmed.is_empty() {
+                    let next = if trimmed.is_empty() {
                         None
                     } else {
                         Some(trimmed.to_string())
                     };
+                    if next != self.project {
+                        self.backend.invalidate_since();
+                    }
+                    self.project = next;
                     let _ = self.reload();
                 }
             },
@@ -412,7 +418,10 @@ impl App {
     }
 
     fn goto_pane(&mut self, pane: Pane) -> Action {
-        self.pane = pane;
+        if self.pane != pane {
+            self.backend.invalidate_since();
+            self.pane = pane;
+        }
         let _ = self.reload();
         Action::Continue
     }

@@ -31,6 +31,7 @@ pub struct ControlBackend {
     /// Revision of the last full list/ready page, not the last mut/notify.
     page_revision: AtomicU64,
     since: SinceGate,
+    last_query: Mutex<Option<ListQuery>>,
     last_since: Mutex<Option<Option<u64>>>,
 }
 
@@ -65,6 +66,7 @@ impl ControlBackend {
             revision: AtomicU64::new(init.revision),
             page_revision: AtomicU64::new(0),
             since: SinceGate::after_attach(),
+            last_query: Mutex::new(None),
             last_since: Mutex::new(None),
         })
     }
@@ -75,10 +77,20 @@ impl ControlBackend {
     }
 
     fn list_params(&self, q: ListQuery) -> IssueListParams {
-        // Send the last full-page revision, not the mut/notify stamp. A
-        // matching head is `unchanged`; a newer head returns rows.
+        // Serve `unchanged` is catalog-wide. Only send since_revision when
+        // this is the same ready/project/query as the last full page.
+        let mut last_query = self.last_query.lock().expect("query");
+        let same = last_query.as_ref() == Some(&q);
+        *last_query = Some(q.clone());
+        drop(last_query);
         let page = self.page_revision.load(Ordering::SeqCst);
-        let since = self.since.next(page);
+        let since = if same {
+            self.since.next(page)
+        } else {
+            self.since.invalidate();
+            let _ = self.since.next(page);
+            None
+        };
         *self.last_since.lock().expect("since") = Some(since);
         IssueListParams {
             project: q.project,
@@ -378,6 +390,11 @@ impl BoardBackend for ControlBackend {
     fn last_since_revision(&self) -> Option<Option<u64>> {
         *self.last_since.lock().expect("since")
     }
+
+    fn invalidate_since(&self) {
+        self.since.invalidate();
+        *self.last_query.lock().expect("query") = None;
+    }
 }
 
 #[cfg(test)]
@@ -452,12 +469,15 @@ mod tests {
         assert_eq!(backend.live(), BackendKind::Control);
         backend.ready(None).unwrap();
         assert_eq!(backend.last_since_revision(), Some(None));
-        backend.list(ListQuery::default()).unwrap();
+        backend.ready(None).unwrap();
         assert_eq!(backend.last_since_revision(), Some(Some(41)));
+        backend.list(ListQuery::default()).unwrap();
+        assert_eq!(backend.last_since_revision(), Some(None));
         let seen = seen.lock().unwrap();
-        assert_eq!(seen.len(), 2);
+        assert_eq!(seen.len(), 3);
         assert_eq!(seen[0], None);
         assert_eq!(seen[1], Some(json!(41)));
+        assert_eq!(seen[2], None);
     }
 
     fn serve_methods(path: &std::path::Path, root: String) {

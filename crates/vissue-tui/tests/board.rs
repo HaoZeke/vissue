@@ -471,6 +471,187 @@ fn unchanged_list_does_not_wipe_rows() {
     assert!(!text.contains("(empty)"), "{text}");
 }
 
+/// After attach, `since_revision` must be omitted when the pane changes.
+/// Serve `unchanged` is catalog-wide; a Ready page is not a List page.
+struct SinceOnRepeat {
+    inner: CoreBackend,
+    skip_since: std::sync::atomic::AtomicBool,
+    last_since: std::sync::Mutex<Option<Option<u64>>>,
+}
+
+impl SinceOnRepeat {
+    fn new(inner: CoreBackend) -> Self {
+        Self {
+            inner,
+            skip_since: std::sync::atomic::AtomicBool::new(true),
+            last_since: std::sync::Mutex::new(None),
+        }
+    }
+
+    fn take_since(&self) -> Option<u64> {
+        if self
+            .skip_since
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            None
+        } else {
+            Some(5)
+        }
+    }
+
+    fn page(
+        &self,
+        since: Option<u64>,
+        full: vissue_tui::ListPage,
+    ) -> Result<vissue_tui::ListPage, vissue_core::error::Error> {
+        *self.last_since.lock().unwrap() = Some(since);
+        if since.is_some() {
+            Ok(vissue_tui::ListPage {
+                unchanged: true,
+                revision: 5,
+                ..vissue_tui::ListPage::default()
+            })
+        } else {
+            Ok(full)
+        }
+    }
+}
+
+impl BoardBackend for SinceOnRepeat {
+    fn layout(&self) -> &vissue_core::config::Layout {
+        self.inner.layout()
+    }
+    fn generation(&self) -> u64 {
+        self.inner.generation()
+    }
+    fn revision(&self) -> u64 {
+        5
+    }
+    fn live(&self) -> vissue_tui::BackendKind {
+        vissue_tui::BackendKind::Control
+    }
+    fn identity(&self) -> &str {
+        self.inner.identity()
+    }
+    fn list(
+        &self,
+        q: vissue_core::views::ListQuery,
+    ) -> Result<vissue_tui::ListPage, vissue_core::error::Error> {
+        self.page(self.take_since(), self.inner.list(q)?)
+    }
+    fn ready(
+        &self,
+        project: Option<&str>,
+    ) -> Result<vissue_tui::ListPage, vissue_core::error::Error> {
+        self.page(self.take_since(), self.inner.ready(project)?)
+    }
+    fn get(&self, id: &str) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
+        self.inner.get(id)
+    }
+    fn excerpt(&self, id: &str) -> Result<vissue_core::views::Excerpt, vissue_core::error::Error> {
+        self.inner.excerpt(id)
+    }
+    fn search(
+        &self,
+        q: &str,
+        n: usize,
+    ) -> Result<Vec<vissue_core::views::SearchHit>, vissue_core::error::Error> {
+        self.inner.search(q, n)
+    }
+    fn claims(
+        &self,
+        h: Option<&str>,
+        p: Option<&str>,
+    ) -> Result<Vec<vissue_core::views::ClaimRow>, vissue_core::error::Error> {
+        self.inner.claims(h, p)
+    }
+    fn agenda(
+        &self,
+        d: i64,
+        p: Option<&str>,
+    ) -> Result<Vec<vissue_core::views::AgendaRow>, vissue_core::error::Error> {
+        self.inner.agenda(d, p)
+    }
+    fn tree(&self, id: &str) -> Result<vissue_core::views::TreeNode, vissue_core::error::Error> {
+        self.inner.tree(id)
+    }
+    fn related(
+        &self,
+        id: &str,
+        d: usize,
+        n: usize,
+    ) -> Result<Vec<vissue_core::views::RelatedHit>, vissue_core::error::Error> {
+        self.inner.related(id, d, n)
+    }
+    fn projects(&self) -> Result<Vec<String>, vissue_core::error::Error> {
+        self.inner.projects()
+    }
+    fn claim(&self, id: &str, f: bool) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+        self.inner.claim(id, f)
+    }
+    fn note(&self, id: &str, t: &str) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+        self.inner.note(id, t)
+    }
+    fn update(
+        &self,
+        r: vissue_tui::UpdateReq,
+    ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+        self.inner.update(r)
+    }
+    fn open(&self, id: &str) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
+        self.inner.open(id)
+    }
+    fn wait(&self, last: u64, ms: u64) -> Result<u64, vissue_core::error::Error> {
+        self.inner.wait(last, ms)
+    }
+    fn last_since_revision(&self) -> Option<Option<u64>> {
+        *self.last_since.lock().unwrap()
+    }
+    fn invalidate_since(&self) {
+        self.skip_since
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn switching_ready_to_list_fetches_a_full_list() {
+    let backend = SinceOnRepeat::new(CoreBackend::open(fixture_layout(), "snap").unwrap());
+    let mut app = App::with_backend(Box::new(backend), "snap".into(), ServeStatus::Live).unwrap();
+    let ready_ids: Vec<String> = app.rows.iter().map(|r| r.id.clone()).collect();
+    assert!(
+        ready_ids.iter().any(|id| id == "atlas-1a2b"),
+        "{ready_ids:?}"
+    );
+    assert!(
+        !ready_ids.iter().any(|id| id == "atlas-4g5h"),
+        "ready must not include DONE: {ready_ids:?}"
+    );
+    assert_eq!(app.backend().last_since_revision(), Some(None));
+
+    app.handle_key(ch('2'));
+    assert_eq!(app.pane, vissue_tui::Pane::List);
+    assert_eq!(app.backend().last_since_revision(), Some(None));
+    let list_ids: Vec<String> = app.rows.iter().map(|r| r.id.clone()).collect();
+    assert!(
+        list_ids.iter().any(|id| id == "atlas-4g5h"),
+        "list must include DONE, not the ready subset: {list_ids:?}"
+    );
+    assert!(list_ids.iter().any(|id| id == "atlas-3e4f"), "{list_ids:?}");
+    assert!(list_ids.len() > ready_ids.len(), "{list_ids:?}");
+
+    app.handle_key(ch('5'));
+    assert!(app.rows.is_empty());
+    app.handle_key(ch('1'));
+    assert_eq!(app.pane, vissue_tui::Pane::Ready);
+    assert_eq!(app.backend().last_since_revision(), Some(None));
+    let back: Vec<_> = app.rows.iter().map(|r| r.id.as_str()).collect();
+    assert!(
+        back.contains(&"atlas-1a2b"),
+        "ready must not stay empty: {back:?}"
+    );
+    assert!(!back.is_empty());
+}
+
 #[test]
 fn claims_and_search_draw_extra() {
     let backend = CoreBackend::open(fixture_layout(), "snap").unwrap();

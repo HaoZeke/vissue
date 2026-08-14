@@ -70,6 +70,12 @@ impl SinceGate {
             None
         }
     }
+
+    /// Next list/ready must omit `since_revision` (pane or query changed).
+    pub fn invalidate(&self) {
+        self.skip_once
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// Read and mutate the board. Implementations are `CoreBackend` and
@@ -104,6 +110,10 @@ pub trait BoardBackend: Send + Sync {
     fn last_since_revision(&self) -> Option<Option<u64>> {
         None
     }
+
+    /// Drop `since_revision` on the next list/ready. Serve `unchanged` is
+    /// catalog-wide, so a pane or project change must fetch a full page.
+    fn invalidate_since(&self) {}
 }
 
 #[cfg(test)]
@@ -123,5 +133,15 @@ mod tests {
         let gate = SinceGate::after_attach();
         assert_eq!(gate.next(0), None);
         assert_eq!(gate.next(0), None);
+    }
+
+    #[test]
+    fn invalidate_omits_the_next_since() {
+        let gate = SinceGate::after_attach();
+        assert_eq!(gate.next(7), None);
+        assert_eq!(gate.next(7), Some(7));
+        gate.invalidate();
+        assert_eq!(gate.next(7), None);
+        assert_eq!(gate.next(7), Some(7));
     }
 }

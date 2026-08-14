@@ -65,11 +65,17 @@ pub async fn run(state: Arc<OwnerState>) -> Result<()> {
                     let mut dirty = HashSet::new();
                     let mut full = false;
                     classify_event(&state.layout, &event, &mut dirty, &mut full);
-                    pending.get_or_insert_with(|| Pending {
-                        last_signal: Instant::now(),
-                        full: false,
-                        dirty: HashSet::new(),
-                    }).mark(full, dirty);
+                    // An event that named nothing schedules nothing. `rebuild`
+                    // reads an empty dirty set as "reload everything", so
+                    // queueing a job here regardless would turn any stray
+                    // event into a full reload and a broadcast to every client.
+                    if full || !dirty.is_empty() {
+                        pending.get_or_insert_with(|| Pending {
+                            last_signal: Instant::now(),
+                            full: false,
+                            dirty: HashSet::new(),
+                        }).mark(full, dirty);
+                    }
                 }
             }
             _ = poll.tick() => {
@@ -119,6 +125,13 @@ async fn sleep_optional(wait: Option<Duration>) {
 }
 
 fn classify_event(layout: &Layout, event: &Event, dirty: &mut HashSet<String>, full: &mut bool) {
+    // Reading is not changing. The generation poll opens the projects
+    // directory every tick, and inotify reports that open against the very
+    // tree being watched, so counting it as signal makes the watcher feed
+    // itself: poll, rebuild, broadcast, poll again.
+    if matches!(event.kind, EventKind::Access(_)) {
+        return;
+    }
     for path in &event.paths {
         if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
             if name.starts_with(".vault-events") {
@@ -244,6 +257,57 @@ mod tests {
         let mut full = false;
         classify_event(&layout, &event, &mut dirty, &mut full);
         assert!(dirty.contains("atlas"));
+        assert!(!full);
+    }
+
+    /// Opening a file is not editing it.
+    ///
+    /// The generation poll opens the projects directory on every tick, and
+    /// inotify reports that open against the watched tree. Classified as a
+    /// change it schedules a rebuild, whose own reads raise the next event:
+    /// an idle tracker then reloads and broadcasts about four times a second
+    /// forever.
+    #[test]
+    fn a_read_is_not_a_change() {
+        let layout = Layout::new("/tmp/tracker", "Software");
+        for path in [
+            "/tmp/tracker/Software",
+            "/tmp/tracker/Software/atlas/issues.org",
+            "/tmp/tracker/Software/.vault-events.gen",
+        ] {
+            let event = Event {
+                kind: EventKind::Access(notify::event::AccessKind::Open(
+                    notify::event::AccessMode::Any,
+                )),
+                paths: vec![PathBuf::from(path)],
+                attrs: notify::event::EventAttributes::new(),
+            };
+            let mut dirty = HashSet::new();
+            let mut full = false;
+            classify_event(&layout, &event, &mut dirty, &mut full);
+            assert!(dirty.is_empty(), "{path} marked {dirty:?} dirty on a read");
+            assert!(!full, "{path} forced a full reload on a read");
+        }
+    }
+
+    /// An event about the watched root names no project and changes nothing.
+    ///
+    /// `rebuild` reads an empty dirty set as "reload everything", so the loop
+    /// only queues work when classification actually marked something.
+    #[test]
+    fn an_event_on_the_root_marks_nothing() {
+        let layout = Layout::new("/tmp/tracker", "Software");
+        let event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Metadata(
+                notify::event::MetadataKind::Any,
+            )),
+            paths: vec![PathBuf::from("/tmp/tracker/Software")],
+            attrs: notify::event::EventAttributes::new(),
+        };
+        let mut dirty = HashSet::new();
+        let mut full = false;
+        classify_event(&layout, &event, &mut dirty, &mut full);
+        assert!(dirty.is_empty(), "{dirty:?}");
         assert!(!full);
     }
 

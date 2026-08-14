@@ -1,12 +1,11 @@
-//! Catppuccin Mocha tokens and Atkinson Hyperlegible sizes.
-//!
-//! Colours and the selected-row invert match the seat rofi palette
-//! (`~/.config/rofi/colors.rasi`). Atkinson Hyperlegible is the system
-//! family when present; iced falls back to the default sans if it is not.
-//! `SIZE_BODY` is the app base: iced's default text size, and the size
-//! unsized widgets (including markdown headings) inherit.
+//! Seat mocha as icedtea tokens. Type scale is icedtea's.
 
-use iced::{Color, Font};
+use iced::Color;
+use icedtea::theme::{mix, Tokens};
+
+pub use icedtea::typo::{
+    BODY as SIZE_BODY, META as SIZE_HINT, META as SIZE_META, TITLE as SIZE_TITLE, UI as FACE,
+};
 
 /// Sidebar and chrome (`#181825`).
 pub const MANTLE: Color = Color::from_rgb8(0x18, 0x18, 0x25);
@@ -35,31 +34,28 @@ pub const GREEN: Color = Color::from_rgb8(0xa6, 0xe3, 0xa1);
 /// Blocked (`#f9e2af`).
 pub const YELLOW: Color = Color::from_rgb8(0xf9, 0xe2, 0xaf);
 
-/// Project name. A step above the base, not a second default.
-pub const SIZE_TITLE: f32 = 18.0;
-/// App base. iced `default_text_size`. Task titles and inputs.
-pub const SIZE_BODY: f32 = 16.0;
-/// Chips, meta, ids.
-pub const SIZE_META: f32 = 14.0;
-/// Hint bar.
-pub const SIZE_HINT: f32 = 13.0;
+/// Mocha mapped onto icedtea's semantic tokens.
+pub fn tokens() -> Tokens {
+    Tokens {
+        canvas: BASE,
+        surface: SURFACE0,
+        panel: MANTLE,
+        text: TEXT,
+        muted: SUBTEXT,
+        primary: BLUE,
+        accent: PEACH,
+        success: GREEN,
+        warning: YELLOW,
+        danger: RED,
+        border: OVERLAY1,
+        selection: mix(BLUE, BASE, 0.28),
+        selection_text: TEXT,
+    }
+}
 
-/// Seat family. cosmic-text resolves it from the system fontconfig set.
-pub const FACE: Font = Font::with_name("Atkinson Hyperlegible");
-
-/// iced theme using Mocha.
+/// iced [`Theme`](iced::Theme) from the mocha tokens.
 pub fn theme() -> iced::Theme {
-    iced::Theme::custom(
-        "vissue-mocha".to_string(),
-        iced::theme::Palette {
-            background: BASE,
-            text: TEXT,
-            primary: BLUE,
-            success: GREEN,
-            warning: YELLOW,
-            danger: RED,
-        },
-    )
+    icedtea::theme::iced_theme("vissue-mocha", tokens())
 }
 
 /// Priority pip: A red, B peach, C quiet blue-grey.
@@ -88,12 +84,14 @@ mod tests {
 
     #[test]
     fn theme_uses_mocha_tokens() {
-        let t = theme();
-        let p = t.palette();
-        assert_eq!(p.primary, BLUE);
-        assert_eq!(p.danger, RED);
-        assert_eq!(p.background, BASE);
-        assert_eq!(p.success, GREEN);
+        let t = tokens();
+        assert_eq!(t.canvas, BASE);
+        assert_eq!(t.primary, BLUE);
+        assert_eq!(t.danger, RED);
+        assert_eq!(t.success, GREEN);
+        assert_eq!(t.border, OVERLAY1);
+        assert_eq!(t.selection, mix(BLUE, BASE, 0.28));
+        let _ = theme();
     }
 
     #[test]

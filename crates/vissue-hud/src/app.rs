@@ -50,6 +50,8 @@ pub enum Message {
     ToggleProject(String),
     SelectProject(String),
     LeaveProject,
+    MdLink(String),
+    Noop,
 }
 
 /// iced application state.
@@ -148,6 +150,11 @@ impl HudApp {
                 self.palette.leave_project();
                 Task::none()
             }
+            Message::MdLink(url) => {
+                self.palette.set_clipboard(url);
+                Task::none()
+            }
+            Message::Noop => Task::none(),
             Message::Key(key) => {
                 let was = self.palette.visible();
                 let before = self.palette.clipboard().to_string();
@@ -234,10 +241,10 @@ fn run_iced(palette: Palette) -> iced::Result {
     .subscription(subscription)
     .theme(|_: &HudApp| theme::theme())
     .title(|_: &HudApp| "vissue".to_string())
-    .default_font(theme::FACE)
+    .default_font(icedtea::typo::UI)
     .settings(iced::Settings {
-        default_text_size: Pixels(theme::SIZE_BODY),
-        default_font: theme::FACE,
+        default_text_size: Pixels(icedtea::typo::BODY),
+        default_font: icedtea::typo::UI,
         ..Default::default()
     })
     .window(board_window())

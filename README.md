@@ -154,10 +154,11 @@ the wrong vault. `q` quits; `?` lists the keys.
 
 `vissue hud` opens on the project list. Opening a project shows that
 project's ready forest, then List / Claims / Agenda / Search inside it.
-The selected row has show / excerpt / tree / related / notes. `n` opens
-the logbook and writes a note. Keys come from a catalog;
-`~/.config/vissue/keys.toml` (or `VISSUE_KEYS`) remaps them. `--rofi`
-is the seat dmenu picker.
+Chrome is [icedtea](https://crates.io/crates/icedtea): chips, cards,
+markdown, and the type scale. The selected row has show / excerpt /
+tree / related / notes. `n` opens the logbook and writes a note. Keys
+come from a catalog; `~/.config/vissue/keys.toml` (or
+`VISSUE_KEYS`) remaps them. `--rofi` is the seat dmenu picker.
 
 ```console
 $ vissue tui

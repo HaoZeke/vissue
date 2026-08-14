@@ -269,6 +269,7 @@ pub struct Palette {
     focus: Focus,
     detail_tab: DetailTab,
     detail_body: String,
+    detail_md: Option<icedtea::widget::MarkdownDoc>,
     project: Option<String>,
     projects: Vec<String>,
     confirm: Option<ConfirmKind>,
@@ -333,6 +334,7 @@ impl Palette {
             focus: Focus::List,
             detail_tab: DetailTab::Show,
             detail_body: String::new(),
+            detail_md: None,
             project: None,
             projects,
             confirm: None,
@@ -434,6 +436,16 @@ impl Palette {
 
     pub fn clipboard(&self) -> &str {
         &self.clipboard
+    }
+
+    pub fn set_clipboard(&mut self, text: impl Into<String>) {
+        let text = text.into();
+        self.message = format!("copied {text}");
+        self.clipboard = text;
+    }
+
+    pub fn detail_md(&self) -> Option<&icedtea::widget::MarkdownDoc> {
+        self.detail_md.as_ref()
     }
 
     pub fn help_text(&self) -> &'static str {
@@ -998,8 +1010,7 @@ impl Palette {
         let Some(id) = self.selected_id().map(str::to_string) else {
             return;
         };
-        self.clipboard = id.clone();
-        self.message = format!("copied {id}");
+        self.set_clipboard(id);
     }
 
     fn refresh_detail(&mut self) {
@@ -1007,6 +1018,7 @@ impl Palette {
             self.detail = None;
             self.excerpt = None;
             self.detail_body.clear();
+            self.detail_md = None;
             return;
         };
         match self.detail_tab {
@@ -1040,6 +1052,7 @@ impl Palette {
                 Err(err) => self.detail_body = err.to_string(),
             },
         }
+        self.detail_md = Some(icedtea::widget::parse(&self.detail_body));
     }
 
     pub fn select_id(&mut self, id: &str) {
@@ -1202,6 +1215,7 @@ impl Palette {
             self.detail = None;
             self.excerpt = None;
             self.detail_body.clear();
+            self.detail_md = None;
             return Ok(());
         }
         let project = self.project.clone();

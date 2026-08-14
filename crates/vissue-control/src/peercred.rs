@@ -22,13 +22,24 @@ pub fn peer_uid<F: AsFd>(sock: &F) -> io::Result<u32> {
     peer_uid_impl(sock)
 }
 
-/// True when [`peer_uid`] succeeds and [`accept_peer`] accepts it.
+/// Whether an accepted socket may stay open.
+///
+/// `Ok(uid)` uses [`accept_peer`]. `ErrorKind::Unsupported` means this OS
+/// cannot read peer credentials: return true so dir 0700 / sock 0600 are the
+/// check. Every other IO error and a uid mismatch fail closed.
 #[must_use]
-pub fn accept_socket<F: AsFd>(sock: &F) -> bool {
-    match peer_uid(sock) {
+pub fn accept_from_result(result: io::Result<u32>) -> bool {
+    match result {
         Ok(uid) => accept_peer(uid),
+        Err(err) if err.kind() == io::ErrorKind::Unsupported => true,
         Err(_) => false,
     }
+}
+
+/// [`accept_from_result`] over [`peer_uid`].
+#[must_use]
+pub fn accept_socket<F: AsFd>(sock: &F) -> bool {
+    accept_from_result(peer_uid(sock))
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -62,10 +73,9 @@ fn peer_uid_impl<F: AsFd>(sock: &F) -> io::Result<u32> {
     target_os = "netbsd"
 )))]
 fn peer_uid_impl<F: AsFd>(_sock: &F) -> io::Result<u32> {
-    // Dir 0700 / sock 0600 is the check on this OS.
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        "peer credentials are unavailable",
+        "peer credentials are unavailable; rely on dir 0700 / sock 0600",
     ))
 }
 
@@ -82,6 +92,16 @@ mod tests {
     fn other_uid_is_rejected() {
         let other = current_uid().wrapping_add(1);
         assert!(!accept_peer(other));
+        assert!(!accept_from_result(Ok(other)));
+    }
+
+    #[test]
+    fn unsupported_peercred_falls_back_to_mode_bits() {
+        let err = io::Error::new(io::ErrorKind::Unsupported, "no SO_PEERCRED");
+        assert!(accept_from_result(Err(err)));
+        let err = io::Error::other("getsockopt failed");
+        assert!(!accept_from_result(Err(err)));
+        assert!(accept_from_result(Ok(current_uid())));
     }
 
     #[test]

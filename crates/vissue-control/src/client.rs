@@ -8,7 +8,8 @@ use serde_json::Value;
 
 use crate::frame::{read_message, write_message, Framing};
 use crate::rpc::{
-    Error, JsonRpcId, JsonRpcRequest, JsonRpcResponse, Notification, Request, Response,
+    invalid_request, Error, JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, Notification,
+    Request, Response,
 };
 
 /// Connected client. One stream; notifications arriving during [`Self::request`]
@@ -76,7 +77,7 @@ impl Client {
             }
             let resp: JsonRpcResponse = serde_json::from_value(value)?;
             if resp.id.as_ref() != Some(&id) {
-                continue;
+                return Err(Error::Rpc(id_mismatch(resp.error)));
             }
             if let Some(err) = resp.error {
                 return Err(Error::Rpc(err));
@@ -103,8 +104,25 @@ impl Client {
     }
 }
 
+/// True only when the object has `method` and no `id` member. `"id": null`
+/// is a response, not a notification.
 fn is_notification(value: &Value) -> bool {
-    value.get("method").is_some() && value.get("id").is_none() && value.get("result").is_none()
+    let obj = match value.as_object() {
+        Some(o) => o,
+        None => return false,
+    };
+    obj.contains_key("method") && !obj.contains_key("id") && !obj.contains_key("result")
+}
+
+fn id_mismatch(server_error: Option<JsonRpcError>) -> JsonRpcError {
+    match server_error {
+        Some(err) => err,
+        None => {
+            let mut err = invalid_request();
+            err.message = "response id does not match request".into();
+            err
+        }
+    }
 }
 
 /// Decode a typed [`Response`] from a raw result when the method is known.
@@ -257,6 +275,48 @@ mod tests {
         let result = client.request("events/gen", json!({})).unwrap();
         assert_eq!(result["ok"], true);
         assert_eq!(seen.lock().unwrap().as_slice(), [NOTIFY_VAULT_CHANGED]);
+    }
+
+    #[test]
+    fn null_response_id_is_rpc_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("control.sock");
+        serve_one(&sock, Framing::Jsonl, |_req| {
+            json!({
+                "jsonrpc":"2.0",
+                "id": null,
+                "error": {"code": -32600, "message": "invalid request"}
+            })
+        });
+        let mut client = Client::connect(&sock).unwrap();
+        let err = client.request("identity/get", json!({})).unwrap_err();
+        match err {
+            Error::Rpc(e) => {
+                assert_eq!(e.code, -32600);
+                assert_eq!(e.message, "invalid request");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn unmatched_response_id_is_rpc_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("control.sock");
+        serve_one(
+            &sock,
+            Framing::Jsonl,
+            |_req| json!({"jsonrpc":"2.0","id": 99, "result":{"ok":true}}),
+        );
+        let mut client = Client::connect(&sock).unwrap();
+        let err = client.request("identity/get", json!({})).unwrap_err();
+        match err {
+            Error::Rpc(e) => {
+                assert_eq!(e.code, -32600);
+                assert_eq!(e.message, "response id does not match request");
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

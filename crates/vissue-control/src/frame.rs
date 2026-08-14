@@ -109,18 +109,22 @@ pub fn write_message<W: Write>(writer: &mut W, payload: &[u8], framing: Framing)
 }
 
 /// Read one framed body. The returned [`Framing`] is what the reply must use.
+///
+/// The cap is the body size: a JSONL payload of [`MAX_MESSAGE_BYTES`] plus its
+/// terminating newline (or CRLF) is accepted. That matches [`write_message`].
 pub fn read_message<R: BufRead>(reader: &mut R) -> Result<(Vec<u8>, Framing), FrameError> {
-    let first = read_line_limited(reader, MAX_MESSAGE_BYTES + 1)?;
-    if first.len() > MAX_MESSAGE_BYTES {
-        return Err(FrameError::MessageTooLarge);
-    }
+    let first = read_line_limited(reader, MAX_MESSAGE_BYTES + 2)?;
     if is_header_line(&first) {
         let length = read_content_length(reader, first)?;
         let mut body = vec![0u8; length];
         reader.read_exact(&mut body)?;
         Ok((body, Framing::Headers))
     } else {
-        Ok((strip_crlf(first), Framing::Jsonl))
+        let body = strip_crlf(first);
+        if body.len() > MAX_MESSAGE_BYTES {
+            return Err(FrameError::MessageTooLarge);
+        }
+        Ok((body, Framing::Jsonl))
     }
 }
 
@@ -350,6 +354,17 @@ mod tests {
     fn empty_reader_is_incomplete() {
         let err = read_message(&mut Cursor::new(&b""[..])).unwrap_err();
         assert!(matches!(err, FrameError::Incomplete));
+    }
+
+    #[test]
+    fn exact_max_payload_roundtrips_jsonl_and_headers() {
+        let payload = vec![b'a'; MAX_MESSAGE_BYTES];
+        let (got, framing) = encode_decode(&payload, Framing::Jsonl);
+        assert_eq!(framing, Framing::Jsonl);
+        assert_eq!(got, payload);
+        let (got, framing) = encode_decode(&payload, Framing::Headers);
+        assert_eq!(framing, Framing::Headers);
+        assert_eq!(got, payload);
     }
 
     #[test]

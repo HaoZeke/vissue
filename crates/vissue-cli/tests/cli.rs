@@ -134,6 +134,31 @@ fn whoami_prints_the_identity_a_claim_would_record() {
 }
 
 #[test]
+fn tui_help_names_offline() {
+    let out = vissue(&["tui", "--help"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = stdout(&out);
+    assert!(text.contains("--offline"), "{text}");
+    assert!(text.contains("Never attach"), "{text}");
+}
+
+#[cfg(not(unix))]
+#[test]
+fn tui_without_offline_is_unix_only() {
+    let out = vissue(&["tui"]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("Unix-only"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn identity_reports_the_resolved_binary_root_and_prefix() {
     // `identity` answers the wrapper's old question, "which binary and which
     // tracker", and is distinct from `whoami`, which names the claimant.

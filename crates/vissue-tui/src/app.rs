@@ -1,0 +1,676 @@
+//! Board state and key handling. Drawing lives in [`crate::view`].
+
+use std::path::PathBuf;
+
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyEvent;
+use vissue_core::config::Layout;
+use vissue_core::views::{IssueDetail, ListQuery};
+
+use crate::attach::{try_attach, AttachHooks, AttachOutcome, ServeStatus};
+use crate::backend::{BoardBackend, UpdateReq};
+use crate::core_backend::CoreBackend;
+use crate::keys::{
+    char_of, is_press, Action, ConfirmKind, DetailTab, Focus, Pane, PromptKind, HELP,
+};
+
+/// One displayed row. Every pane maps onto this shape so keys share a path.
+#[derive(Debug, Clone)]
+pub struct BoardRow {
+    pub id: String,
+    pub state: String,
+    pub priority: String,
+    pub title: String,
+    pub project: String,
+    pub extra: String,
+}
+
+/// Interactive board. Talks only to [`BoardBackend`].
+pub struct App {
+    backend: Box<dyn BoardBackend>,
+    agent: String,
+    status: ServeStatus,
+    message: String,
+    pub pane: Pane,
+    pub detail_tab: DetailTab,
+    pub focus: Focus,
+    pub rows: Vec<BoardRow>,
+    pub selected: usize,
+    pub project: Option<String>,
+    pub projects: Vec<String>,
+    pub detail: Option<IssueDetail>,
+    pub detail_body: String,
+    pub prompt: Option<(PromptKind, String)>,
+    pub confirm: Option<ConfirmKind>,
+    pub help: bool,
+    pub clipboard: String,
+    search_query: String,
+}
+
+impl App {
+    pub fn open_core(layout: Layout, agent: String) -> anyhow::Result<Self> {
+        let backend = CoreBackend::open(layout, agent.clone())?;
+        Self::with_backend(Box::new(backend), agent, ServeStatus::Offline)
+    }
+
+    pub fn with_backend(
+        backend: Box<dyn BoardBackend>,
+        agent: String,
+        status: ServeStatus,
+    ) -> anyhow::Result<Self> {
+        let projects = backend.projects().unwrap_or_default();
+        let mut app = Self {
+            backend,
+            agent,
+            status,
+            message: String::new(),
+            pane: Pane::Ready,
+            detail_tab: DetailTab::Show,
+            focus: Focus::Rows,
+            rows: Vec::new(),
+            selected: 0,
+            project: None,
+            projects,
+            detail: None,
+            detail_body: String::new(),
+            prompt: None,
+            confirm: None,
+            help: false,
+            clipboard: String::new(),
+            search_query: String::new(),
+        };
+        app.reload()?;
+        Ok(app)
+    }
+
+    pub fn serve_status(&self) -> ServeStatus {
+        self.status
+    }
+
+    pub fn agent(&self) -> &str {
+        &self.agent
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.backend.generation()
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.backend.revision()
+    }
+
+    pub fn selected_id(&self) -> Option<&str> {
+        self.rows.get(self.selected).map(|r| r.id.as_str())
+    }
+
+    pub fn selected_state(&self) -> Option<&str> {
+        self.rows.get(self.selected).map(|r| r.state.as_str())
+    }
+
+    pub fn backend(&self) -> &dyn BoardBackend {
+        self.backend.as_ref()
+    }
+
+    pub fn replace_backend(&mut self, backend: Box<dyn BoardBackend>, status: ServeStatus) {
+        self.backend = backend;
+        self.status = status;
+        self.agent = self.backend.identity().to_string();
+    }
+
+    /// Post-paint attach. `--offline` never probes the socket.
+    pub fn attach(
+        &mut self,
+        socket: &std::path::Path,
+        offline: bool,
+        hooks: &AttachHooks,
+    ) -> anyhow::Result<()> {
+        let layout = self.backend.layout().clone();
+        let agent = self.agent.clone();
+        match try_attach(&layout, socket, &agent, offline, hooks) {
+            AttachOutcome::Switch { backend, status } => {
+                self.replace_backend(backend, status);
+                self.message.clear();
+            }
+            AttachOutcome::Stay { status, message } => {
+                self.status = status;
+                self.message = message;
+            }
+        }
+        self.reload()
+    }
+
+    pub fn status_line(&self) -> String {
+        let kind = match self.status {
+            ServeStatus::Live => "live",
+            ServeStatus::Offline => "offline",
+            ServeStatus::Mismatch => "mismatch",
+        };
+        let mut line = format!(
+            "serve:{kind} gen={} rev={} agent={}",
+            self.backend.generation(),
+            self.backend.revision(),
+            self.agent
+        );
+        if let Some(project) = &self.project {
+            line.push_str(" project=");
+            line.push_str(project);
+        }
+        if !self.message.is_empty() {
+            line.push_str("  ");
+            line.push_str(&self.message);
+        }
+        line
+    }
+
+    pub fn reload(&mut self) -> anyhow::Result<()> {
+        let project = self.project.as_deref();
+        self.rows = match self.pane {
+            Pane::Ready => self
+                .backend
+                .ready(project)?
+                .issues
+                .into_iter()
+                .map(row_from_issue)
+                .collect(),
+            Pane::List => self
+                .backend
+                .list(ListQuery {
+                    project: project.map(str::to_string),
+                    ..ListQuery::default()
+                })?
+                .issues
+                .into_iter()
+                .map(row_from_issue)
+                .collect(),
+            Pane::Claims => self
+                .backend
+                .claims(None, project)?
+                .into_iter()
+                .map(row_from_claim)
+                .collect(),
+            Pane::Agenda => self
+                .backend
+                .agenda(14, project)?
+                .into_iter()
+                .map(row_from_agenda)
+                .collect(),
+            Pane::Search => {
+                if self.search_query.is_empty() {
+                    Vec::new()
+                } else {
+                    self.backend
+                        .search(&self.search_query, 50)?
+                        .into_iter()
+                        .map(row_from_search)
+                        .collect()
+                }
+            }
+        };
+        if self.selected >= self.rows.len() {
+            self.selected = self.rows.len().saturating_sub(1);
+        }
+        self.refresh_detail();
+        Ok(())
+    }
+
+    pub fn poll_updates(&mut self) {
+        let last = match self.backend.live() {
+            crate::backend::BackendKind::Control => self.backend.revision(),
+            crate::backend::BackendKind::Core => self.backend.generation(),
+        };
+        if let Ok(next) = self.backend.wait(last, 1) {
+            if next > last {
+                let _ = self.reload();
+            }
+        }
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> Action {
+        if !is_press(key) {
+            return Action::Continue;
+        }
+        if self.help {
+            if matches!(
+                key.code,
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')
+            ) {
+                self.help = false;
+            }
+            return Action::Continue;
+        }
+        if self.confirm.is_some() {
+            return self.handle_confirm(key);
+        }
+        if self.prompt.is_some() {
+            return self.handle_prompt(key);
+        }
+        match key.code {
+            KeyCode::Char('q') => Action::Quit,
+            KeyCode::Esc => {
+                if self.focus == Focus::Detail {
+                    self.focus = Focus::Rows;
+                    Action::Continue
+                } else {
+                    Action::Quit
+                }
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.move_sel(1);
+                Action::Continue
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.move_sel(-1);
+                Action::Continue
+            }
+            KeyCode::Tab => {
+                self.pane = self.pane.next();
+                let _ = self.reload();
+                Action::Continue
+            }
+            KeyCode::Char('1') => self.goto_pane(Pane::Ready),
+            KeyCode::Char('2') => self.goto_pane(Pane::List),
+            KeyCode::Char('3') => self.goto_pane(Pane::Claims),
+            KeyCode::Char('4') => self.goto_pane(Pane::Agenda),
+            KeyCode::Char('5') => self.goto_pane(Pane::Search),
+            KeyCode::Enter => {
+                if self.focus == Focus::Detail {
+                    self.detail_tab = self.detail_tab.next();
+                    self.refresh_detail();
+                } else {
+                    self.focus = Focus::Detail;
+                    self.refresh_detail();
+                }
+                Action::Continue
+            }
+            KeyCode::Char('p') => {
+                self.prompt = Some((
+                    PromptKind::Project,
+                    self.project.clone().unwrap_or_default(),
+                ));
+                Action::Continue
+            }
+            KeyCode::Char('/') => {
+                self.pane = Pane::Search;
+                self.prompt = Some((PromptKind::Search, self.search_query.clone()));
+                Action::Continue
+            }
+            KeyCode::Char('c') => {
+                self.claim_selected();
+                Action::Continue
+            }
+            KeyCode::Char('n') => {
+                if self.selected_id().is_some() {
+                    self.prompt = Some((PromptKind::Note, String::new()));
+                }
+                Action::Continue
+            }
+            KeyCode::Char('s') => {
+                self.cycle_state();
+                Action::Continue
+            }
+            KeyCode::Char('D') => {
+                if self.selected_id().is_some() {
+                    self.confirm = Some(ConfirmKind::Done);
+                    self.message = "confirm DONE? y/n".into();
+                }
+                Action::Continue
+            }
+            KeyCode::Char('X') => {
+                if self.selected_id().is_some() {
+                    self.confirm = Some(ConfirmKind::Cancelled);
+                    self.message = "confirm CANCELLED? y/n".into();
+                }
+                Action::Continue
+            }
+            KeyCode::Char('o') => {
+                self.open_selected();
+                Action::Continue
+            }
+            KeyCode::Char('y') => {
+                if let Some(id) = self.selected_id().map(str::to_string) {
+                    self.clipboard = id.clone();
+                    self.message = format!("copied {id}");
+                }
+                Action::Continue
+            }
+            KeyCode::Char('R') => {
+                let _ = self.reload();
+                self.message = "reloaded".into();
+                Action::Continue
+            }
+            KeyCode::Char('?') => {
+                self.help = true;
+                Action::Continue
+            }
+            _ => Action::Continue,
+        }
+    }
+
+    fn handle_confirm(&mut self, key: KeyEvent) -> Action {
+        let kind = self.confirm.unwrap();
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                self.confirm = None;
+                self.apply_state(kind.state());
+            }
+            _ => {
+                self.confirm = None;
+                self.message.clear();
+            }
+        }
+        Action::Continue
+    }
+
+    fn handle_prompt(&mut self, key: KeyEvent) -> Action {
+        let Some((kind, mut text)) = self.prompt.take() else {
+            return Action::Continue;
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.message.clear();
+            }
+            KeyCode::Enter => match kind {
+                PromptKind::Search => {
+                    self.search_query = text;
+                    self.pane = Pane::Search;
+                    let _ = self.reload();
+                }
+                PromptKind::Note => {
+                    if let Some(id) = self.selected_id().map(str::to_string) {
+                        match self.backend.note(&id, &text) {
+                            Ok(result) => {
+                                self.message = result.report.trim().to_string();
+                                let _ = self.reload();
+                            }
+                            Err(err) => self.message = err.to_string(),
+                        }
+                    }
+                }
+                PromptKind::Project => {
+                    let trimmed = text.trim();
+                    self.project = if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    };
+                    let _ = self.reload();
+                }
+            },
+            KeyCode::Backspace => {
+                text.pop();
+                self.prompt = Some((kind, text));
+            }
+            _ => {
+                if let Some(c) = char_of(key) {
+                    text.push(c);
+                }
+                self.prompt = Some((kind, text));
+            }
+        }
+        Action::Continue
+    }
+
+    fn goto_pane(&mut self, pane: Pane) -> Action {
+        self.pane = pane;
+        let _ = self.reload();
+        Action::Continue
+    }
+
+    fn move_sel(&mut self, delta: i32) {
+        if self.rows.is_empty() {
+            return;
+        }
+        let len = self.rows.len() as i32;
+        let next = (self.selected as i32 + delta).clamp(0, len - 1) as usize;
+        if next != self.selected {
+            self.selected = next;
+            self.refresh_detail();
+        }
+    }
+
+    fn claim_selected(&mut self) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            return;
+        };
+        match self.backend.claim(&id, false) {
+            Ok(result) => {
+                self.message = result.report.trim().to_string();
+                let _ = self.reload();
+            }
+            Err(err) => self.message = err.to_string(),
+        }
+    }
+
+    fn cycle_state(&mut self) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            return;
+        };
+        let Some(state) = self.selected_state() else {
+            return;
+        };
+        let next = match state {
+            "TODO" => "STARTED",
+            "STARTED" => "BLOCKED",
+            "BLOCKED" => "TODO",
+            _ => {
+                self.message = format!("{id} is {state}; s cycles TODO/STARTED/BLOCKED");
+                return;
+            }
+        };
+        self.apply_state(next);
+    }
+
+    fn apply_state(&mut self, state: &str) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            return;
+        };
+        match self.backend.update(UpdateReq {
+            id: id.clone(),
+            state: Some(state.to_string()),
+            ..UpdateReq::default()
+        }) {
+            Ok(result) => {
+                self.message = result.report.trim().to_string();
+                let _ = self.reload();
+            }
+            Err(err) => self.message = err.to_string(),
+        }
+    }
+
+    fn open_selected(&mut self) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            return;
+        };
+        match self.backend.open(&id) {
+            Ok(detail) => {
+                self.detail = Some(detail);
+                self.message = format!("opened {id}");
+                self.refresh_detail();
+            }
+            Err(err) => self.message = err.to_string(),
+        }
+    }
+
+    fn refresh_detail(&mut self) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            self.detail = None;
+            self.detail_body.clear();
+            return;
+        };
+        match self.detail_tab {
+            DetailTab::Show => match self.backend.get(&id) {
+                Ok(detail) => {
+                    self.detail_body = format_show(&detail);
+                    self.detail = Some(detail);
+                }
+                Err(err) => self.detail_body = err.to_string(),
+            },
+            DetailTab::Excerpt => match self.backend.excerpt(&id) {
+                Ok(excerpt) => {
+                    let mut text = excerpt.text;
+                    if !text.ends_with('\n') {
+                        text.push('\n');
+                    }
+                    text.push_str("body lives in file; open the range above");
+                    self.detail_body = text;
+                }
+                Err(err) => self.detail_body = err.to_string(),
+            },
+            DetailTab::Tree => match self.backend.tree(&id) {
+                Ok(node) => self.detail_body = format_tree(&node, 0),
+                Err(err) => self.detail_body = err.to_string(),
+            },
+            DetailTab::Related => match self.backend.related(&id, 2, 20) {
+                Ok(hits) => self.detail_body = format_related(&hits),
+                Err(err) => self.detail_body = err.to_string(),
+            },
+        }
+    }
+
+    pub fn prompt_line(&self) -> Option<String> {
+        self.prompt.as_ref().map(|(kind, text)| {
+            let label = match kind {
+                PromptKind::Search => "search",
+                PromptKind::Note => "note",
+                PromptKind::Project => "project",
+            };
+            format!("{label}: {text}")
+        })
+    }
+
+    pub fn confirm_line(&self) -> Option<String> {
+        self.confirm
+            .map(|kind| format!("confirm {}? y/n", kind.state()))
+    }
+
+    pub fn help_text(&self) -> &'static str {
+        HELP
+    }
+}
+
+fn row_from_issue(row: vissue_core::views::IssueRow) -> BoardRow {
+    let extra = row.claimed_by.unwrap_or_default();
+    BoardRow {
+        id: row.id,
+        state: row.state,
+        priority: row.priority,
+        title: row.title,
+        project: row.project,
+        extra,
+    }
+}
+
+fn row_from_claim(row: vissue_core::views::ClaimRow) -> BoardRow {
+    BoardRow {
+        id: row.id,
+        state: row.state,
+        priority: row.priority,
+        title: row.title,
+        project: row.project,
+        extra: format!("{} {}d", row.holder.unwrap_or_default(), row.age_days),
+    }
+}
+
+fn row_from_agenda(row: vissue_core::views::AgendaRow) -> BoardRow {
+    BoardRow {
+        id: row.id,
+        state: row.state,
+        priority: row.priority,
+        title: row.title,
+        project: row.project,
+        extra: format!("{} {}", row.kind, row.date),
+    }
+}
+
+fn row_from_search(row: vissue_core::views::SearchHit) -> BoardRow {
+    BoardRow {
+        id: row.id,
+        state: row.state,
+        priority: row.priority,
+        title: row.title,
+        project: row.project,
+        extra: row.snippet,
+    }
+}
+
+fn format_show(d: &IssueDetail) -> String {
+    let mut out = format!(
+        "id: {}\nproject: {}\nstate: {}\npriority: {}\ntitle: {}\nfile: {}\n",
+        d.id, d.project, d.state, d.priority, d.title, d.file
+    );
+    if let Some(parent) = &d.parent {
+        out.push_str(&format!("parent: {parent}\n"));
+    }
+    if !d.blocked_by.is_empty() {
+        out.push_str(&format!("blocked_by: {}\n", d.blocked_by.join(", ")));
+    }
+    if let Some(who) = &d.claimed_by {
+        out.push_str(&format!("claimed_by: {who}\n"));
+    }
+    if !d.tags.is_empty() {
+        out.push_str(&format!("tags: {}\n", d.tags.join(", ")));
+    }
+    out
+}
+
+fn format_tree(node: &vissue_core::views::TreeNode, depth: usize) -> String {
+    let pad = "  ".repeat(depth);
+    let mut out = format!("{pad}{} [{}] {}\n", node.id, node.state, node.title);
+    for child in &node.children {
+        out.push_str(&format_tree(child, depth + 1));
+    }
+    out
+}
+
+fn format_related(hits: &[vissue_core::views::RelatedHit]) -> String {
+    if hits.is_empty() {
+        return "no related issues\n".into();
+    }
+    let mut out = String::new();
+    for hit in hits {
+        out.push_str(&format!(
+            "{} [{}] {}  score={:.2}  {}\n",
+            hit.id,
+            hit.state,
+            hit.title,
+            hit.score,
+            hit.evidence.join(", ")
+        ));
+    }
+    out
+}
+
+/// Options for the interactive `vissue tui` entry point.
+pub struct RunOpts {
+    pub layout: Layout,
+    pub socket: PathBuf,
+    pub offline: bool,
+    pub agent: String,
+}
+
+/// First paint via core, then attach unless `--offline`, then the crossterm loop.
+pub fn run(opts: RunOpts) -> anyhow::Result<()> {
+    let mut app = App::open_core(opts.layout.clone(), opts.agent.clone())?;
+    let mut terminal = crate::view::install()?;
+    let result = (|| {
+        terminal.draw(|f| crate::view::draw(f, &app))?;
+        app.attach(&opts.socket, opts.offline, &AttachHooks::default())?;
+        loop {
+            terminal.draw(|f| crate::view::draw(f, &app))?;
+            if ratatui::crossterm::event::poll(std::time::Duration::from_millis(200))? {
+                if let ratatui::crossterm::event::Event::Key(key) =
+                    ratatui::crossterm::event::read()?
+                {
+                    if app.handle_key(key) == Action::Quit {
+                        break;
+                    }
+                }
+            } else {
+                app.poll_updates();
+            }
+        }
+        Ok(())
+    })();
+    crate::view::restore()?;
+    result
+}

@@ -358,6 +358,22 @@ enum Command {
     ///
     /// Unix only. On Windows this command exits 1.
     Serve(ServeArgs),
+    /// Interactive board over ready, list, claims, agenda, and search.
+    ///
+    /// First paint reads the files. Unless `--offline`, the board then
+    /// attaches to `vissue serve` (starting it when the socket is free).
+    /// A root or prefix mismatch stays on the files and does not mutate
+    /// the wrong vault. On Windows, omit `--offline` to get a Unix-only
+    /// error; `--offline` still runs.
+    Tui {
+        /// Never attach, never spawn serve; CatalogService plus generation poll.
+        #[arg(long)]
+        offline: bool,
+        /// Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then
+        /// $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock.
+        #[arg(short = 's', long)]
+        socket: Option<PathBuf>,
+    },
     /// Write a shell completion script to stdout.
     ///
     /// Generated from this binary's own argument definitions, so it cannot
@@ -737,6 +753,19 @@ fn run() -> Result<()> {
             if code != 0 {
                 std::process::exit(code);
             }
+        }
+        Command::Tui { offline, socket } => {
+            if !offline && cfg!(not(unix)) {
+                bail!("vissue tui is Unix-only");
+            }
+            let socket = socket.unwrap_or_else(vissue_control::default_socket_path);
+            let agent = vissue_core::config::identity(&layout);
+            vissue_tui::run(vissue_tui::RunOpts {
+                layout,
+                socket,
+                offline,
+                agent,
+            })?;
         }
     }
     // Flush here rather than at exit, so a full disk or a closed pipe reaches

@@ -130,6 +130,9 @@ _vissue() {
             vissue,tree)
                 cmd="vissue__subcmd__tree"
                 ;;
+            vissue,tui)
+                cmd="vissue__subcmd__tui"
+                ;;
             vissue,update)
                 cmd="vissue__subcmd__update"
                 ;;
@@ -256,6 +259,9 @@ _vissue() {
             vissue__subcmd__help,tree)
                 cmd="vissue__subcmd__help__subcmd__tree"
                 ;;
+            vissue__subcmd__help,tui)
+                cmd="vissue__subcmd__help__subcmd__tui"
+                ;;
             vissue__subcmd__help,update)
                 cmd="vissue__subcmd__help__subcmd__update"
                 ;;
@@ -308,7 +314,7 @@ _vissue() {
 
     case "${cmd}" in
         vissue)
-            opts="-h -V --root --prefix --help --version create q list show update ready claim note claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve completions man help"
+            opts="-h -V --root --prefix --help --version create q list show update ready claim note claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve tui completions man help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -866,7 +872,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__help)
-            opts="create q list show update ready claim note claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve completions man help"
+            opts="create q list show update ready claim note claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve tui completions man help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1440,6 +1446,20 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__help__subcmd__tree)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__help__subcmd__tui)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2237,6 +2257,36 @@ _vissue() {
                     return 0
                     ;;
                 -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --root)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prefix)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__tui)
+            opts="-s -h --offline --socket --root --prefix --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --socket)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

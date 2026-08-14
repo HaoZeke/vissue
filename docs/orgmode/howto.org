@@ -187,6 +187,42 @@ live: true
 =initialize= must send a non-empty =agent=. A claim over the socket
 stamps that agent, not the process =VISSUE_AGENT= that started serve.
 
+* Browse the terminal board
+
+=vissue tui= paints from the files first, then attaches to serve when
+the socket is free. =--offline= never probes a socket and never starts
+serve. A live serve bound to another root stays on the files: the board
+does not send mutations to the wrong vault.
+
+#+begin_src console
+$ vissue tui
+$ vissue tui --offline
+#+end_src
+
+Panes: Ready, List, Claims, Agenda, Search. Detail tabs on the selected
+row: show, excerpt, tree, related. Keys (also on =?=):
+
+| Key | Action |
+|-----+--------|
+| =j=/=k=, arrows | Move |
+| =Tab= / 1-5 | Pane |
+| =Enter= | Focus detail |
+| =p= | Project filter |
+| =/= | Search |
+| =c= | Claim |
+| =n= | Note |
+| =s= | Cycle TODO / STARTED / BLOCKED |
+| =D= | DONE (confirm) |
+| =X= | CANCELLED (confirm) |
+| =o= | Open (shared selection) |
+| =y= | Copy id |
+| =R= | Reload |
+| =?= | Help |
+| =q= / =Esc= | Quit / back |
+
+The status line reads =serve:live|offline|mismatch gen=N rev=M agent=...=.
+Body edits stay in the file.
+
 * Point at a different layout
 
 Use =--prefix=, =VISSUE_PREFIX=, or a =vissue.toml= at the root:

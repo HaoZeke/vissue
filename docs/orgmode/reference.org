@@ -22,6 +22,7 @@
 | =gen=, =events=, =wait=, =ping=                                           | Change stream for pollers                                                |
 | =projects=, =identity=                                                    | Layout introspection                                                     |
 | =serve=                                                                   | Own the per-user Unix control socket (= -d=, =stop=, =restart=, =status=) |
+| =tui=                                                                     | Terminal board (=--offline= never attaches)                              |
 | =completions=, =man=                                                      | Shell completion scripts and the manual page                             |
 
 * States and priorities
@@ -123,6 +124,13 @@ per-call =agent=; they never read =VISSUE_AGENT= for the RPC. After a
 catalog rebuild the owner pushes =vault/changed=. =issue/open= sets the
 shared selection and pushes =issue/selected=. Serve is a cache: a crash
 loses nothing, and the CLI still talks to the files.
+
+=vissue tui= is the interactive board. First paint is the files
+(=revision= 0). Unless =--offline=, it attaches to a live socket or
+starts =serve -d= on the same root, prefix, and socket. A mismatch
+stays offline and refuses mutations against the other vault. Status:
+=serve:live|offline|mismatch gen=N rev=M agent=...=. Keys are on =?=.
+On Windows only =tui --offline= runs.
 
 * Exit statuses
 

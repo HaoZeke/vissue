@@ -1,6 +1,6 @@
 [package]
-name = "vissue-cli"
-description = "vissue command line: plain-text issue tracking over per-project orgmode files"
+name = "vissue-tui"
+description = "Terminal board over ready, claims, agenda, and search"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,21 +15,15 @@ categories.workspace = true
 [lints]
 workspace = true
 
-[[bin]]
-name = "vissue"
-path = "src/main.rs"
-
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
-clap_complete.workspace = true
-clap_mangen.workspace = true
+ratatui = "0.30.2"
+serde.workspace = true
 serde_json.workspace = true
 vissue-control.workspace = true
 vissue-core.workspace = true
 vissue-serve.workspace = true
-vissue-tui.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 tempfile.workspace = true
+serde_json.workspace = true

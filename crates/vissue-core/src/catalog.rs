@@ -214,6 +214,7 @@ fn issue_row(rec: &IssueRec) -> IssueRow {
         blocked_by: rec.heading.blocked_by(),
         claimed_by: rec.heading.claimed_by().map(str::to_string),
         claimed_at: rec.heading.claimed_at().map(str::to_string),
+        parent: rec.heading.parent().map(str::to_string),
     }
 }
 
@@ -239,6 +240,19 @@ fn issue_detail(rec: &IssueRec) -> IssueDetail {
         ),
         line_start: rec.heading.line_start,
         line_end: rec.heading.line_end,
+        body: rec.heading.body.trim_end().to_string(),
+        logbook: rec
+            .heading
+            .logbook
+            .iter()
+            .map(|e| crate::views::LogbookLine {
+                timestamp: e.timestamp.clone(),
+                from_state: e.from_state.clone(),
+                to_state: e.to_state.clone(),
+                note: e.note.clone(),
+                raw: e.raw.clone(),
+            })
+            .collect(),
     }
 }
 
@@ -275,6 +289,31 @@ pub fn excerpt_from(rec: &IssueRec) -> Result<Excerpt, Error> {
         text,
         suppressed,
     })
+}
+
+/// The heading's on-disk text in full, screened for secrets.
+///
+/// [`excerpt_from`] caps its output at [`BODY_EXCERPT_MAX_LINES`], which is
+/// right for a preview and wrong for handing the issue to someone as a
+/// specification: an issue longer than the cap loses its tail silently. This
+/// returns the whole range, so what comes back is what the file holds.
+///
+/// The secret screen stays: a heading that carries credential-shaped text is
+/// refused here exactly as it is in a preview.
+pub fn org_text_from(rec: &IssueRec) -> Result<String, Error> {
+    let content = fs::read_to_string(&rec.path)?;
+    let lines: Vec<&str> = content.lines().collect();
+    let from = rec.heading.line_start.saturating_sub(1).min(lines.len());
+    let to = rec.heading.line_end.min(lines.len()).max(from);
+    let text = lines[from..to].join("\n");
+    if let Some(marker) = secret_marker(&text) {
+        return Err(Error::Other(anyhow::anyhow!(
+            "{} looks like secret material; open {} directly",
+            marker,
+            rec.path.display()
+        )));
+    }
+    Ok(text)
 }
 
 /// Text shape of [`crate::agent::body_excerpt`].

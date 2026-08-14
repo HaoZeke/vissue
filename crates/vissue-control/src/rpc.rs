@@ -1184,6 +1184,8 @@ mod tests {
             file: "issues.org:1-2".into(),
             line_start: 1,
             line_end: 2,
+            body: "what the issue asks for".into(),
+            logbook: vec![],
         };
         let get = IssueGetResult {
             issue: detail.clone(),

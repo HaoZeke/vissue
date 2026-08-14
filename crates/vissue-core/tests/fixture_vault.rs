@@ -760,7 +760,7 @@ fn related_reads_org_body_links_and_discovered_from_properties() {
 }
 
 #[test]
-fn show_reports_the_file_range_without_the_body() {
+fn show_reports_the_metadata_the_range_and_the_body() {
     let layout = fixture_layout();
     let text = report::show(&layout, "atlas-2c3d").unwrap();
     assert!(text.contains("ID:       atlas-2c3d"), "{text}");
@@ -768,10 +768,105 @@ fn show_reports_the_file_range_without_the_body() {
     assert!(text.contains("State:    TODO"), "{text}");
     assert!(text.contains("Priority: [#B]"), "{text}");
     assert!(text.contains("atlas/issues.org:"), "{text}");
+    // The body is the part that says what to do, so printing the range and
+    // stopping leaves every reader to go fetch it by hand.
     assert!(
-        !text.contains("Scope: one row per parsed record"),
-        "show must not print the body: {text}"
+        text.contains("Scope: one row per parsed record"),
+        "show must print the body: {text}"
     );
+}
+
+#[test]
+fn show_says_so_when_there_is_no_body() {
+    let (_dir, layout) = writable_copy();
+    let id = vissue_core::ops::create(
+        &layout,
+        "atlas",
+        "Nothing written yet",
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    let text = report::show(&layout, &id).unwrap();
+    assert!(text.contains("(no body"), "{text}");
+}
+
+/// The org export is the whole heading, not a preview of it.
+///
+/// `body_excerpt` caps at 40 lines, which silently drops the tail of any
+/// longer issue. That is fine for a glance and wrong when the issue is being
+/// handed to someone as the thing to work from.
+#[test]
+fn the_org_export_does_not_truncate_a_long_issue() {
+    let (_dir, layout) = writable_copy();
+    let body: String = (1..=60)
+        .map(|i| format!("Requirement {i}: this must survive the export."))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let id = vissue_core::ops::create(
+        &layout,
+        "atlas",
+        "A long specification",
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            body: Some(&body),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+
+    let org = vissue_core::agent::org_text(&layout, &id).unwrap();
+    assert!(org.starts_with("* TODO"), "{org}");
+    assert!(org.contains(&format!(":ID:         {id}")), "{org}");
+    assert!(
+        org.contains("Requirement 60: this must survive the export."),
+        "the tail was dropped"
+    );
+    assert!(org.ends_with('\n'), "org text is written to a file as-is");
+
+    // The preview stops early, which is the difference being pinned.
+    let excerpt = vissue_core::agent::body_excerpt(&layout, &id).unwrap();
+    assert!(
+        !excerpt.contains("Requirement 60:"),
+        "the excerpt is supposed to be capped: {excerpt}"
+    );
+}
+
+#[test]
+fn the_org_export_refuses_an_id_it_cannot_find() {
+    let layout = fixture_layout();
+    assert!(vissue_core::agent::org_text(&layout, "atlas-zzzz").is_err());
+}
+
+/// Credential-shaped text is refused here exactly as it is in a preview.
+#[test]
+fn the_org_export_keeps_the_secret_screen() {
+    let (_dir, layout) = writable_copy();
+    let carrier = concat!("-----BEGIN OPENSSH ", "PRIVATE KEY-----");
+    let id = vissue_core::ops::create(
+        &layout,
+        "atlas",
+        "Carries a key by mistake",
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            body: Some(carrier),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+
+    let err = vissue_core::agent::org_text(&layout, &id).unwrap_err();
+    let text = format!("{err:#}");
+    assert!(text.contains("secret material"), "{text}");
+    assert!(!text.contains(carrier), "the refusal repeated the material");
 }
 
 /// `VISSUE_EVENTS` is process-global, so the two tests that depend on its value

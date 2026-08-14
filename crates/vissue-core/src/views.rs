@@ -36,6 +36,8 @@ pub struct IssueRow {
     pub blocked_by: Vec<String>,
     pub claimed_by: Option<String>,
     pub claimed_at: Option<String>,
+    #[serde(default)]
+    pub parent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -55,6 +57,29 @@ pub struct IssueDetail {
     pub file: String,
     pub line_start: usize,
     pub line_end: usize,
+    /// Prose under the heading, without the property drawer or logbook.
+    ///
+    /// Carried here so a caller that fetched the detail has what the issue
+    /// asks for, rather than a file path and a line range to go read.
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub logbook: Vec<LogbookLine>,
+}
+
+/// One logbook line on a detail card: note, state flip, or raw CLOCK.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LogbookLine {
+    #[serde(default)]
+    pub timestamp: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

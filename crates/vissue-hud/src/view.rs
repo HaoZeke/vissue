@@ -4,7 +4,7 @@ use iced::widget::{button, checkbox, column, container, row, scrollable, text, t
 use iced::{Alignment, Background, Border, Color, Element, Fill, Length};
 
 use crate::app::Message;
-use crate::palette::{BoardFilter, Focus, HudItem, Palette};
+use crate::palette::{BoardFilter, DetailTab, Focus, HudItem, Palette};
 use crate::theme;
 
 /// Board face. Hidden state draws nothing so a `Mode::Hidden` frame is empty.
@@ -12,10 +12,13 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
     if !palette.visible() {
         return Space::new().width(0).height(0).into();
     }
+    if palette.focus() == Focus::Help {
+        return help_overlay(palette);
+    }
 
     let mut pane = column![header(palette), chips(palette), add_bar(palette)]
-        .spacing(12)
-        .padding([16, 18]);
+        .spacing(10)
+        .padding([14, 16]);
 
     let items = palette.filtered_items();
     if items.is_empty() {
@@ -30,17 +33,22 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
         for (i, item) in items.into_iter().enumerate() {
             list = list.push(task_row(item, i == palette.selected_index()));
         }
-        pane = pane.push(scrollable(list).height(Length::Fill));
+        pane = pane.push(scrollable(list).height(Length::FillPortion(3)));
     }
 
-    if let Some(excerpt) = palette.excerpt() {
-        pane = pane.push(excerpt_card(palette, excerpt.text.as_str()));
-    }
+    pane = pane.push(detail_panel(palette));
 
     if palette.note_draft().is_some() {
         pane = pane.push(note_bar(palette));
     }
-
+    if let Some(kind) = palette.confirm() {
+        pane = pane.push(
+            text(format!("confirm {}? y/n", kind.state()))
+                .size(theme::SIZE_BODY)
+                .color(theme::PEACH)
+                .font(theme::FACE),
+        );
+    }
     if !palette.message().is_empty() {
         pane = pane.push(
             text(palette.message())
@@ -50,7 +58,7 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
         );
     }
 
-    container(pane.spacing(12).width(Fill).height(Fill))
+    container(pane.spacing(10).width(Fill).height(Fill))
         .width(Fill)
         .height(Fill)
         .style(|_| fill(theme::BASE))
@@ -72,14 +80,14 @@ fn header(palette: &Palette) -> Element<'_, Message> {
         },
         ..container::Style::default()
     });
-
+    let project = palette.project().unwrap_or("all projects");
     let title = row![
         text("vissue")
             .size(theme::SIZE_TITLE)
             .color(theme::TEXT)
             .font(theme::FACE),
         dot,
-        text(palette.filter().label())
+        text(project)
             .size(theme::SIZE_META)
             .color(theme::SUBTEXT)
             .font(theme::FACE),
@@ -94,42 +102,26 @@ fn header(palette: &Palette) -> Element<'_, Message> {
 }
 
 fn find_control(palette: &Palette) -> Element<'_, Message> {
-    if palette.focus() == Focus::Search || !palette.query().is_empty() {
-        text_input("Find", palette.query())
+    if palette.focus() == Focus::Search || palette.filter() == BoardFilter::Search {
+        text_input("Search title, id, tags", palette.query())
             .on_input(Message::QueryChanged)
             .on_submit(Message::FocusList)
             .size(theme::SIZE_META)
             .padding([8, 10])
             .font(theme::FACE)
-            .width(220)
+            .width(260)
             .style(|_, _| input_style())
             .into()
     } else {
         button(
-            text("Find")
+            text("Search")
                 .size(theme::SIZE_META)
                 .color(theme::SUBTEXT)
                 .font(theme::FACE),
         )
         .on_press(Message::FocusSearch)
         .padding([8, 12])
-        .style(|_, status| {
-            let hovered = matches!(status, button::Status::Hovered);
-            button::Style {
-                background: Some(Background::Color(if hovered {
-                    theme::SURFACE0
-                } else {
-                    Color::TRANSPARENT
-                })),
-                text_color: theme::SUBTEXT,
-                border: Border {
-                    radius: 8.0.into(),
-                    width: 1.0,
-                    color: theme::SURFACE1,
-                },
-                ..button::Style::default()
-            }
-        })
+        .style(|_, status| chip_style(status, false))
         .into()
     }
 }
@@ -154,7 +146,6 @@ fn chip(
     active: bool,
 ) -> Element<'static, Message> {
     let fg = if active { theme::BASE } else { theme::SUBTEXT };
-    let bg = if active { theme::BLUE } else { theme::SURFACE0 };
     button(
         text(format!("{label} {count}"))
             .size(theme::SIZE_META)
@@ -167,11 +158,11 @@ fn chip(
         let hovered = matches!(status, button::Status::Hovered);
         button::Style {
             background: Some(Background::Color(if active {
-                bg
+                theme::BLUE
             } else if hovered {
                 theme::SURFACE1
             } else {
-                bg
+                theme::SURFACE0
             })),
             text_color: fg,
             border: Border {
@@ -187,11 +178,11 @@ fn chip(
 
 fn add_bar(palette: &Palette) -> Element<'_, Message> {
     if palette.focus() == Focus::Add {
-        text_input("Add a task", palette.add_draft())
+        text_input("Add a task in the current project", palette.add_draft())
             .on_input(Message::AddChanged)
             .on_submit(Message::AddSubmit)
             .size(theme::SIZE_BODY)
-            .padding(14)
+            .padding(12)
             .font(theme::FACE)
             .style(|_, _| input_style())
             .into()
@@ -211,7 +202,7 @@ fn add_bar(palette: &Palette) -> Element<'_, Message> {
             .align_y(Alignment::Center),
         )
         .on_press(Message::FocusAdd)
-        .padding([12, 14])
+        .padding([10, 12])
         .width(Fill)
         .style(|_, status| {
             let hovered = matches!(status, button::Status::Hovered);
@@ -243,17 +234,18 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
     let title_color = if done { theme::OVERLAY } else { theme::TEXT };
     let id = item.id.clone();
     let pip_color = theme::priority_color(&item.priority);
-    let mut meta = item.project.clone();
-    if let Some(due) = item.due.as_deref() {
-        meta = format!("{meta}  {due}");
-    } else if item.state != "TODO" && item.state != "DONE" {
-        meta = format!("{meta}  {}", item.state.to_lowercase());
+    let mut meta = format!(
+        "{}  [{}]  [#{}]  {}",
+        item.id, item.state, item.priority, item.project
+    );
+    if !item.blocked_by.is_empty() {
+        meta = format!("{meta}  blocked by {}", item.blocked_by.join(","));
     }
-    if let Some(holder) = item.claimed_by.as_deref() {
-        meta = format!("{meta}  {holder}");
+    if !item.extra.is_empty() {
+        meta = format!("{meta}  {}", item.extra);
     }
 
-    let pip = container(Space::new().width(4).height(32)).style(move |_| container::Style {
+    let pip = container(Space::new().width(4).height(34)).style(move |_| container::Style {
         background: Some(Background::Color(pip_color)),
         border: Border {
             radius: 2.0.into(),
@@ -270,7 +262,7 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
             .font(theme::FACE),
         text(meta)
             .size(theme::SIZE_META)
-            .color(theme::SUBTEXT)
+            .color(theme::state_color(&item.state))
             .font(theme::FACE),
     ]
     .spacing(2);
@@ -278,14 +270,14 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
     let body = row![
         checkbox(done)
             .on_toggle(move |_| Message::ToggleDone(id.clone()))
-            .size(20)
+            .size(18)
             .style(move |_, status| check_style(status, done)),
         pip,
         titles,
     ]
-    .spacing(12)
+    .spacing(10)
     .align_y(Alignment::Center)
-    .padding([10, 8]);
+    .padding([8, 6]);
 
     let idx = item.id.clone();
     button(body)
@@ -318,29 +310,45 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
         .into()
 }
 
-fn excerpt_card<'a>(palette: &'a Palette, body: &'a str) -> Element<'a, Message> {
-    let label = palette
-        .detail()
-        .map(|d| d.title.clone())
-        .unwrap_or_else(|| "note".into());
+fn detail_panel(palette: &Palette) -> Element<'_, Message> {
+    let mut tabs = row![].spacing(6);
+    for tab in DetailTab::ALL {
+        let active = palette.detail_tab() == tab;
+        tabs = tabs.push(
+            button(
+                text(tab.label())
+                    .size(theme::SIZE_META)
+                    .color(if active { theme::BASE } else { theme::SUBTEXT })
+                    .font(theme::FACE),
+            )
+            .on_press(Message::DetailTab(tab))
+            .padding([4, 10])
+            .style(move |_, status| chip_style(status, active)),
+        );
+    }
+
+    let body = if palette.detail_body().is_empty() {
+        "Select a row."
+    } else {
+        palette.detail_body()
+    };
+
     container(
         column![
-            text(label)
-                .size(theme::SIZE_BODY)
-                .color(theme::TEXT)
-                .font(theme::FACE),
+            tabs,
             scrollable(
                 text(body)
                     .size(theme::SIZE_META)
-                    .color(theme::SUBTEXT)
+                    .color(theme::TEXT)
                     .font(theme::FACE)
             )
-            .height(Length::Fixed(140.0)),
+            .height(Length::Fill),
         ]
         .spacing(8)
-        .padding(14),
+        .padding(12),
     )
     .width(Fill)
+    .height(Length::FillPortion(2))
     .style(|_| container::Style {
         background: Some(Background::Color(theme::MANTLE)),
         border: Border {
@@ -355,7 +363,7 @@ fn excerpt_card<'a>(palette: &'a Palette, body: &'a str) -> Element<'a, Message>
 
 fn note_bar(palette: &Palette) -> Element<'_, Message> {
     let draft = palette.note_draft().unwrap_or("");
-    text_input("Add a note", draft)
+    text_input("Add a note to the logbook", draft)
         .on_input(Message::NoteChanged)
         .on_submit(Message::NoteSubmit)
         .size(theme::SIZE_BODY)
@@ -365,15 +373,46 @@ fn note_bar(palette: &Palette) -> Element<'_, Message> {
         .into()
 }
 
+fn help_overlay(palette: &Palette) -> Element<'_, Message> {
+    container(
+        column![
+            text("vissue")
+                .size(theme::SIZE_TITLE)
+                .color(theme::TEXT)
+                .font(theme::FACE),
+            scrollable(
+                text(palette.help_text())
+                    .size(theme::SIZE_META)
+                    .color(theme::SUBTEXT)
+                    .font(theme::FACE)
+            ),
+            text("esc closes help")
+                .size(theme::SIZE_HINT)
+                .color(theme::OVERLAY)
+                .font(theme::FACE),
+        ]
+        .spacing(12)
+        .padding(24),
+    )
+    .width(Fill)
+    .height(Fill)
+    .style(|_| fill(theme::BASE))
+    .into()
+}
+
 fn empty_copy(palette: &Palette) -> &'static str {
+    if palette.filter() == BoardFilter::Search && palette.query().is_empty() {
+        return "Type to search id, title, and tags.";
+    }
     if !palette.query().is_empty() {
         return "Nothing matches.";
     }
     match palette.filter() {
-        BoardFilter::Ready => "Inbox is clear. Add a task.",
-        BoardFilter::Mine => "Nothing claimed by you.",
-        BoardFilter::Upcoming => "Nothing dated in the next two weeks.",
-        BoardFilter::All => "The vault is empty.",
+        BoardFilter::Ready => "Nothing ready.",
+        BoardFilter::List => "No issues in this filter.",
+        BoardFilter::Claims => "No claims.",
+        BoardFilter::Agenda => "Nothing dated in the next two weeks.",
+        BoardFilter::Search => "Type to search id, title, and tags.",
     }
 }
 
@@ -397,6 +436,26 @@ fn input_style() -> text_input::Style {
         placeholder: theme::OVERLAY,
         value: theme::TEXT,
         selection: theme::BLUE,
+    }
+}
+
+fn chip_style(status: button::Status, active: bool) -> button::Style {
+    let hovered = matches!(status, button::Status::Hovered);
+    button::Style {
+        background: Some(Background::Color(if active {
+            theme::BLUE
+        } else if hovered {
+            theme::SURFACE1
+        } else {
+            theme::SURFACE0
+        })),
+        text_color: if active { theme::BASE } else { theme::SUBTEXT },
+        border: Border {
+            radius: 12.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        ..button::Style::default()
     }
 }
 

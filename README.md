@@ -152,12 +152,11 @@ attaches to `vissue serve`, starting serve when the socket is free. A
 socket bound to another root stays on the files so a claim cannot hit
 the wrong vault. `q` quits; `?` lists the keys.
 
-`vissue hud` opens the iced task board (Ready / Mine / Upcoming / All
-as chips) with checkbox rows, a priority pip, and a quick-add field. First paint
-reads the files; unless `--offline` it then attaches to `vissue serve`.
-`--rofi` is the seat dmenu picker: Return opens the heading in
-`$EDITOR`, Alt+c claims, Alt+n notes. `--mode list|claims|stale|new`
-applies to the picker.
+`vissue hud` is the same board as `vissue tui`, in a window: Ready,
+List, Claims, Agenda, and Search, with a show / excerpt / tree / related
+card for the selected row. `s` cycles TODO/STARTED/BLOCKED. `c` claims.
+`n` notes. `p` filters by project. `D`/`X` close with confirm. `--rofi`
+is the seat dmenu picker.
 
 ```console
 $ vissue tui

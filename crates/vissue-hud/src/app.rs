@@ -11,12 +11,12 @@ use iced::{time, Element, Font, Pixels, Size, Subscription, Task};
 use vissue_core::config::Layout;
 
 use crate::attach;
-use crate::palette::{BoardFilter, Palette, PaletteKey};
+use crate::palette::{BoardFilter, DetailTab, Palette, PaletteKey};
 use crate::summon;
 use crate::theme;
 
-const HUD_W: f32 = 520.0;
-const HUD_H: f32 = 720.0;
+const HUD_W: f32 = 960.0;
+const HUD_H: f32 = 760.0;
 
 /// First-paint inputs for the board.
 #[derive(Clone)]
@@ -46,6 +46,7 @@ pub enum Message {
     FocusAdd,
     FocusSearch,
     FocusList,
+    DetailTab(DetailTab),
 }
 
 /// iced application state.
@@ -120,6 +121,7 @@ impl HudApp {
                 Task::none()
             }
             Message::FocusSearch => {
+                self.palette.set_filter(BoardFilter::Search);
                 self.palette.focus_search();
                 Task::none()
             }
@@ -127,14 +129,23 @@ impl HudApp {
                 self.palette.focus_list();
                 Task::none()
             }
+            Message::DetailTab(tab) => {
+                self.palette.set_detail_tab(tab);
+                Task::none()
+            }
             Message::Key(key) => {
                 let was = self.palette.visible();
+                let before = self.palette.clipboard().to_string();
                 self.palette.handle_key(key);
-                if was != self.palette.visible() {
-                    self.sync_window()
-                } else {
-                    Task::none()
+                let clip = self.palette.clipboard().to_string();
+                let mut tasks = Vec::new();
+                if clip != before && !clip.is_empty() {
+                    tasks.push(iced::clipboard::write(clip));
                 }
+                if was != self.palette.visible() {
+                    tasks.push(self.sync_window());
+                }
+                Task::batch(tasks)
             }
         }
     }
@@ -256,7 +267,7 @@ fn subscription(_app: &HudApp) -> Subscription<Message> {
 fn is_nav_key(key: &Key) -> bool {
     matches!(
         key,
-        Key::Named(Named::Escape | Named::Enter | Named::ArrowUp | Named::ArrowDown)
+        Key::Named(Named::Escape | Named::Enter | Named::ArrowUp | Named::ArrowDown | Named::Tab)
     )
 }
 
@@ -268,6 +279,7 @@ fn map_key(key: Key) -> Option<Message> {
         Key::Named(Named::ArrowDown) => Some(Message::Key(PaletteKey::Down)),
         Key::Named(Named::Backspace) => Some(Message::Key(PaletteKey::Backspace)),
         Key::Named(Named::Space) => Some(Message::Key(PaletteKey::Space)),
+        Key::Named(Named::Tab) => Some(Message::Key(PaletteKey::Tab)),
         Key::Character(c) => {
             let mut chars = c.chars();
             let first = chars.next()?;

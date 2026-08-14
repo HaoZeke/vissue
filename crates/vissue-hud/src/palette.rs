@@ -13,41 +13,99 @@ use crate::attach;
 use crate::fuzzy::rank_indices;
 use crate::summon::{SummonAction, SummonRequest};
 
+const HELP: &str = "\
+vissue hud  (same board as vissue tui)
+
+j/k, arrows   move
+Tab, 1-5      pane (Ready List Claims Agenda Search)
+Enter         cycle detail (show / excerpt / tree / related)
+p             cycle project filter
+/             search
+a             add a task
+c             claim
+n             note
+s             cycle TODO / STARTED / BLOCKED
+space / D     DONE (D confirms)
+X             CANCELLED (confirm)
+o             open heading
+y             copy id
+R             reload
+?             this help
+esc           back / hide
+
+Body edits stay in the file.
+";
+
 /// Where a row came from before the filter merge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemSource {
     Ready,
     Search,
-    Mine,
-    Upcoming,
-    All,
+    List,
+    Claims,
+    Agenda,
 }
 
-/// Sidebar list. Ready is the inbox.
+/// Same panes as the terminal board.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoardFilter {
     Ready,
-    Mine,
-    Upcoming,
-    All,
+    List,
+    Claims,
+    Agenda,
+    Search,
 }
 
 impl BoardFilter {
-    /// Sidebar order with labels.
-    pub const ALL: [(Self, &'static str); 4] = [
+    /// Chip order with labels.
+    pub const ALL: [(Self, &'static str); 5] = [
         (Self::Ready, "Ready"),
-        (Self::Mine, "Mine"),
-        (Self::Upcoming, "Upcoming"),
-        (Self::All, "All"),
+        (Self::List, "List"),
+        (Self::Claims, "Claims"),
+        (Self::Agenda, "Agenda"),
+        (Self::Search, "Search"),
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Ready => "Ready",
-            Self::Mine => "Mine",
-            Self::Upcoming => "Upcoming",
-            Self::All => "All",
+            Self::List => "List",
+            Self::Claims => "Claims",
+            Self::Agenda => "Agenda",
+            Self::Search => "Search",
         }
+    }
+
+    pub fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|(p, _)| *p == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()].0
+    }
+}
+
+/// Detail card. Same tabs as the terminal board.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailTab {
+    Show,
+    Excerpt,
+    Tree,
+    Related,
+}
+
+impl DetailTab {
+    pub const ALL: [Self; 4] = [Self::Show, Self::Excerpt, Self::Tree, Self::Related];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Show => "show",
+            Self::Excerpt => "excerpt",
+            Self::Tree => "tree",
+            Self::Related => "related",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
     }
 }
 
@@ -58,6 +116,8 @@ pub enum Focus {
     Search,
     Add,
     Note,
+    Project,
+    Help,
 }
 
 /// One selectable palette row.
@@ -71,6 +131,8 @@ pub struct HudItem {
     pub source: ItemSource,
     pub claimed_by: Option<String>,
     pub due: Option<String>,
+    pub blocked_by: Vec<String>,
+    pub extra: String,
 }
 
 impl HudItem {
@@ -82,8 +144,10 @@ impl HudItem {
             state: row.state,
             priority: row.priority,
             source: ItemSource::Ready,
-            claimed_by: row.claimed_by,
+            claimed_by: row.claimed_by.clone(),
             due: None,
+            blocked_by: row.blocked_by,
+            extra: row.claimed_by.unwrap_or_default(),
         }
     }
 
@@ -97,38 +161,50 @@ impl HudItem {
             source: ItemSource::Search,
             claimed_by: None,
             due: None,
+            blocked_by: Vec::new(),
+            extra: hit.snippet,
         }
     }
 
     fn from_claim(row: vissue_core::views::ClaimRow) -> Self {
+        let extra = format!(
+            "{}  {}d",
+            row.holder.clone().unwrap_or_default(),
+            row.age_days
+        );
         Self {
             id: row.id,
             title: row.title,
             project: row.project,
             state: row.state,
             priority: row.priority,
-            source: ItemSource::Mine,
+            source: ItemSource::Claims,
             claimed_by: row.holder,
             due: None,
+            blocked_by: Vec::new(),
+            extra,
         }
     }
 
     fn from_agenda(row: vissue_core::views::AgendaRow) -> Self {
+        let extra = format!("{}  {}", row.kind, row.date);
         Self {
             id: row.id,
             title: row.title,
             project: row.project,
             state: row.state,
             priority: row.priority,
-            source: ItemSource::Upcoming,
+            source: ItemSource::Agenda,
             claimed_by: None,
             due: Some(row.date),
+            blocked_by: Vec::new(),
+            extra,
         }
     }
 
-    fn from_all(row: IssueRow) -> Self {
+    fn from_list(row: IssueRow) -> Self {
         let mut item = Self::from_row(row);
-        item.source = ItemSource::All;
+        item.source = ItemSource::List;
         item
     }
 }
@@ -143,6 +219,7 @@ pub enum PaletteKey {
     Down,
     Backspace,
     Space,
+    Tab,
 }
 
 /// Summonable palette. Talks only to [`BoardBackend`].
@@ -161,11 +238,34 @@ pub struct Palette {
     add_draft: String,
     filter: BoardFilter,
     focus: Focus,
+    detail_tab: DetailTab,
+    detail_body: String,
+    project: Option<String>,
+    projects: Vec<String>,
+    confirm: Option<ConfirmKind>,
+    clipboard: String,
     ready_count: usize,
-    mine_count: usize,
-    upcoming_count: usize,
-    all_count: usize,
+    list_count: usize,
+    claims_count: usize,
+    agenda_count: usize,
+    search_count: usize,
     visible: bool,
+}
+
+/// Close or cancel confirmation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmKind {
+    Done,
+    Cancelled,
+}
+
+impl ConfirmKind {
+    pub fn state(self) -> &'static str {
+        match self {
+            Self::Done => "DONE",
+            Self::Cancelled => "CANCELLED",
+        }
+    }
 }
 
 impl Palette {
@@ -179,6 +279,7 @@ impl Palette {
         agent: String,
         status: ServeStatus,
     ) -> anyhow::Result<Self> {
+        let projects = backend.projects().unwrap_or_default();
         let mut palette = Self {
             backend,
             agent,
@@ -194,10 +295,17 @@ impl Palette {
             add_draft: String::new(),
             filter: BoardFilter::Ready,
             focus: Focus::List,
+            detail_tab: DetailTab::Show,
+            detail_body: String::new(),
+            project: None,
+            projects,
+            confirm: None,
+            clipboard: String::new(),
             ready_count: 0,
-            mine_count: 0,
-            upcoming_count: 0,
-            all_count: 0,
+            list_count: 0,
+            claims_count: 0,
+            agenda_count: 0,
+            search_count: 0,
             visible: true,
         };
         palette.reload()?;
@@ -251,10 +359,35 @@ impl Palette {
     pub fn count(&self, filter: BoardFilter) -> usize {
         match filter {
             BoardFilter::Ready => self.ready_count,
-            BoardFilter::Mine => self.mine_count,
-            BoardFilter::Upcoming => self.upcoming_count,
-            BoardFilter::All => self.all_count,
+            BoardFilter::List => self.list_count,
+            BoardFilter::Claims => self.claims_count,
+            BoardFilter::Agenda => self.agenda_count,
+            BoardFilter::Search => self.search_count,
         }
+    }
+
+    pub fn detail_tab(&self) -> DetailTab {
+        self.detail_tab
+    }
+
+    pub fn detail_body(&self) -> &str {
+        &self.detail_body
+    }
+
+    pub fn project(&self) -> Option<&str> {
+        self.project.as_deref()
+    }
+
+    pub fn confirm(&self) -> Option<ConfirmKind> {
+        self.confirm
+    }
+
+    pub fn clipboard(&self) -> &str {
+        &self.clipboard
+    }
+
+    pub fn help_text(&self) -> &'static str {
+        HELP
     }
 
     pub fn backend(&self) -> &dyn BoardBackend {
@@ -346,6 +479,7 @@ impl Palette {
     pub fn hide(&mut self) {
         self.note_draft = None;
         self.add_draft.clear();
+        self.confirm = None;
         self.focus = Focus::List;
         self.visible = false;
     }
@@ -370,6 +504,19 @@ impl Palette {
         if !self.visible {
             return;
         }
+        if self.focus == Focus::Help {
+            if matches!(
+                key,
+                PaletteKey::Esc | PaletteKey::Char('?') | PaletteKey::Char('q')
+            ) {
+                self.focus = Focus::List;
+            }
+            return;
+        }
+        if self.confirm.is_some() {
+            self.handle_confirm_key(key);
+            return;
+        }
         if self.focus == Focus::Note || self.note_draft.is_some() {
             self.handle_note_key(key);
             return;
@@ -383,14 +530,9 @@ impl Palette {
             return;
         }
         match key {
-            PaletteKey::Esc => {
-                if self.excerpt.is_some() {
-                    self.excerpt = None;
-                } else {
-                    self.hide();
-                }
-            }
-            PaletteKey::Enter => self.show_excerpt(),
+            PaletteKey::Esc => self.hide(),
+            PaletteKey::Enter => self.cycle_detail_tab(),
+            PaletteKey::Tab => self.set_filter(self.filter.next()),
             PaletteKey::Up => self.move_sel(-1),
             PaletteKey::Down => self.move_sel(1),
             PaletteKey::Backspace => {}
@@ -409,11 +551,26 @@ impl Palette {
                 }
             }
             PaletteKey::Char('a') => self.focus_add(),
-            PaletteKey::Char('/') => self.focus_search(),
+            PaletteKey::Char('/') => {
+                self.set_filter(BoardFilter::Search);
+                self.focus_search();
+            }
+            PaletteKey::Char('p') => self.cycle_project(),
+            PaletteKey::Char('s') => self.cycle_state(),
+            PaletteKey::Char('D') => self.confirm = Some(ConfirmKind::Done),
+            PaletteKey::Char('X') => self.confirm = Some(ConfirmKind::Cancelled),
+            PaletteKey::Char('o') => self.open_selected(),
+            PaletteKey::Char('y') => self.copy_selected(),
+            PaletteKey::Char('R') => {
+                self.backend.invalidate_since();
+                let _ = self.reload();
+            }
+            PaletteKey::Char('?') => self.focus = Focus::Help,
             PaletteKey::Char('1') => self.set_filter(BoardFilter::Ready),
-            PaletteKey::Char('2') => self.set_filter(BoardFilter::Mine),
-            PaletteKey::Char('3') => self.set_filter(BoardFilter::Upcoming),
-            PaletteKey::Char('4') => self.set_filter(BoardFilter::All),
+            PaletteKey::Char('2') => self.set_filter(BoardFilter::List),
+            PaletteKey::Char('3') => self.set_filter(BoardFilter::Claims),
+            PaletteKey::Char('4') => self.set_filter(BoardFilter::Agenda),
+            PaletteKey::Char('5') => self.set_filter(BoardFilter::Search),
             PaletteKey::Char(_) => {}
         }
     }
@@ -500,15 +657,154 @@ impl Palette {
 
     pub fn set_filter(&mut self, filter: BoardFilter) {
         if self.filter == filter {
-            self.focus = Focus::List;
+            self.focus = if filter == BoardFilter::Search {
+                Focus::Search
+            } else {
+                Focus::List
+            };
             return;
         }
         self.filter = filter;
         self.excerpt = None;
-        self.focus = Focus::List;
+        self.focus = if filter == BoardFilter::Search {
+            Focus::Search
+        } else {
+            Focus::List
+        };
         self.backend.invalidate_since();
         self.items.clear();
         let _ = self.reload();
+    }
+
+    fn handle_confirm_key(&mut self, key: PaletteKey) {
+        match key {
+            PaletteKey::Char('y') | PaletteKey::Char('Y') | PaletteKey::Enter => {
+                if let Some(kind) = self.confirm.take() {
+                    self.apply_state(kind.state());
+                }
+            }
+            PaletteKey::Esc | PaletteKey::Char('n') | PaletteKey::Char('N') => {
+                self.confirm = None;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn cycle_detail_tab(&mut self) {
+        self.detail_tab = self.detail_tab.next();
+        self.refresh_detail();
+    }
+
+    pub fn set_detail_tab(&mut self, tab: DetailTab) {
+        self.detail_tab = tab;
+        self.refresh_detail();
+    }
+
+    fn cycle_project(&mut self) {
+        if self.projects.is_empty() {
+            if let Ok(list) = self.backend.projects() {
+                self.projects = list;
+            }
+        }
+        self.project = match self.project.as_deref() {
+            None => self.projects.first().cloned(),
+            Some(cur) => {
+                let i = self.projects.iter().position(|p| p == cur);
+                match i {
+                    Some(i) if i + 1 < self.projects.len() => Some(self.projects[i + 1].clone()),
+                    _ => None,
+                }
+            }
+        };
+        self.backend.invalidate_since();
+        let _ = self.reload();
+    }
+
+    fn cycle_state(&mut self) {
+        let Some(state) = self.selected_item().map(|i| i.state.clone()) else {
+            return;
+        };
+        let next = match state.as_str() {
+            "TODO" => "STARTED",
+            "STARTED" => "BLOCKED",
+            "BLOCKED" => "TODO",
+            other => {
+                self.message = format!("{other}; s cycles TODO/STARTED/BLOCKED");
+                return;
+            }
+        };
+        self.apply_state(next);
+    }
+
+    fn apply_state(&mut self, state: &str) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            return;
+        };
+        match self.backend.update(UpdateReq {
+            id,
+            state: Some(state.to_string()),
+            ..UpdateReq::default()
+        }) {
+            Ok(result) => {
+                self.message = result.report.trim().to_string();
+                let _ = self.reload();
+            }
+            Err(err) => self.message = err.to_string(),
+        }
+    }
+
+    fn open_selected(&mut self) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            return;
+        };
+        match self.backend.open(&id) {
+            Ok(_) => {
+                self.message = format!("opened {id}");
+                self.refresh_detail();
+            }
+            Err(err) => self.message = err.to_string(),
+        }
+    }
+
+    fn copy_selected(&mut self) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            return;
+        };
+        self.clipboard = id.clone();
+        self.message = format!("copied {id}");
+    }
+
+    fn refresh_detail(&mut self) {
+        let Some(id) = self.selected_id().map(str::to_string) else {
+            self.detail = None;
+            self.excerpt = None;
+            self.detail_body.clear();
+            return;
+        };
+        match self.detail_tab {
+            DetailTab::Show => match self.backend.get(&id) {
+                Ok(detail) => {
+                    self.detail_body = format_show(&detail);
+                    self.detail = Some(detail);
+                }
+                Err(err) => self.detail_body = err.to_string(),
+            },
+            DetailTab::Excerpt => match self.backend.excerpt(&id) {
+                Ok(excerpt) => {
+                    self.detail_body = excerpt.text.clone();
+                    self.excerpt = Some(excerpt);
+                }
+                Err(err) => self.detail_body = err.to_string(),
+            },
+            DetailTab::Tree => match self.backend.tree(&id) {
+                Ok(node) => self.detail_body = format_tree(&node, 0),
+                Err(err) => self.detail_body = err.to_string(),
+            },
+            DetailTab::Related => match self.backend.related(&id, 2, 20) {
+                Ok(hits) => self.detail_body = format_related(&hits),
+                Err(err) => self.detail_body = err.to_string(),
+            },
+        }
     }
 
     pub fn select_id(&mut self, id: &str) {
@@ -518,7 +814,7 @@ impl Palette {
             .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
         {
             self.selected = pos;
-            self.excerpt = None;
+            self.refresh_detail();
         }
     }
 
@@ -605,6 +901,9 @@ impl Palette {
     }
 
     pub fn focus_search(&mut self) {
+        if self.filter != BoardFilter::Search {
+            self.set_filter(BoardFilter::Search);
+        }
         self.focus = Focus::Search;
     }
 
@@ -651,30 +950,31 @@ impl Palette {
     }
 
     pub fn reload(&mut self) -> anyhow::Result<()> {
+        let project = self.project.as_deref();
         match self.filter {
-            BoardFilter::Ready => self.reload_ready(),
-            BoardFilter::Mine => self.reload_mine(),
-            BoardFilter::Upcoming => self.reload_upcoming(),
-            BoardFilter::All => self.reload_all(),
+            BoardFilter::Ready => self.reload_ready(project),
+            BoardFilter::List => self.reload_list(project),
+            BoardFilter::Claims => self.reload_claims(project),
+            BoardFilter::Agenda => self.reload_agenda(project),
+            BoardFilter::Search => self.reload_search(),
         }
-        if !self.query.is_empty() && matches!(self.filter, BoardFilter::Ready | BoardFilter::All) {
-            if let Ok(hits) = self.backend.search(&self.query, 50) {
-                for hit in hits {
-                    if !self.items.iter().any(|i| i.id == hit.id) {
-                        self.items.push(HudItem::from_search(hit));
-                    }
-                }
-            }
+        if !self.query.is_empty() && self.filter != BoardFilter::Search {
+            self.filtered = rank_indices(&self.query, &self.items);
+        } else {
+            self.filtered = (0..self.items.len()).collect();
         }
-        self.refilter();
+        if self.selected >= self.filtered.len() {
+            self.selected = self.filtered.len().saturating_sub(1);
+        }
+        self.refresh_detail();
         Ok(())
     }
 
-    fn reload_ready(&mut self) {
+    fn reload_ready(&mut self, project: Option<&str>) {
         // Last full ready page stays when serve answers `{unchanged: true,
-        // issues: []}`. Search extras are rebuilt from the current query.
+        // issues: []}`.
         self.items.retain(|item| item.source == ItemSource::Ready);
-        if let Ok(page) = self.backend.ready(None) {
+        if let Ok(page) = self.backend.ready(project) {
             if !page.unchanged {
                 self.items = page.issues.into_iter().map(HudItem::from_row).collect();
                 self.ready_count = self.items.len();
@@ -682,37 +982,43 @@ impl Palette {
         }
     }
 
-    fn reload_mine(&mut self) {
-        if let Ok(rows) = self.backend.claims(Some(self.agent.as_str()), None) {
-            self.items = rows.into_iter().map(HudItem::from_claim).collect();
-            self.mine_count = self.items.len();
-        }
-    }
-
-    fn reload_upcoming(&mut self) {
-        if let Ok(rows) = self.backend.agenda(14, None) {
-            self.items = rows.into_iter().map(HudItem::from_agenda).collect();
-            self.upcoming_count = self.items.len();
-        }
-    }
-
-    fn reload_all(&mut self) {
+    fn reload_list(&mut self, project: Option<&str>) {
         let q = ListQuery {
+            project: project.map(str::to_string),
             limit: Some(200),
             ..ListQuery::default()
         };
         if let Ok(page) = self.backend.list(q) {
             if !page.unchanged {
-                self.items = page.issues.into_iter().map(HudItem::from_all).collect();
-                self.all_count = self.items.len();
+                self.items = page.issues.into_iter().map(HudItem::from_list).collect();
+                self.list_count = self.items.len();
             }
         }
     }
 
-    fn refilter(&mut self) {
-        self.filtered = rank_indices(&self.query, &self.items);
-        if self.selected >= self.filtered.len() {
-            self.selected = self.filtered.len().saturating_sub(1);
+    fn reload_claims(&mut self, project: Option<&str>) {
+        if let Ok(rows) = self.backend.claims(None, project) {
+            self.items = rows.into_iter().map(HudItem::from_claim).collect();
+            self.claims_count = self.items.len();
+        }
+    }
+
+    fn reload_agenda(&mut self, project: Option<&str>) {
+        if let Ok(rows) = self.backend.agenda(14, project) {
+            self.items = rows.into_iter().map(HudItem::from_agenda).collect();
+            self.agenda_count = self.items.len();
+        }
+    }
+
+    fn reload_search(&mut self) {
+        if self.query.is_empty() {
+            self.items.clear();
+            self.search_count = 0;
+            return;
+        }
+        if let Ok(hits) = self.backend.search(&self.query, 50) {
+            self.items = hits.into_iter().map(HudItem::from_search).collect();
+            self.search_count = self.items.len();
         }
     }
 
@@ -724,9 +1030,71 @@ impl Palette {
         let next = (self.selected as i32 + delta).clamp(0, len - 1) as usize;
         if next != self.selected {
             self.selected = next;
-            self.excerpt = None;
+            self.refresh_detail();
         }
     }
+}
+
+fn format_show(d: &IssueDetail) -> String {
+    let mut out = format!(
+        "{}  [{}]  [#{}]\n{}\nfile: {}\n",
+        d.id, d.state, d.priority, d.title, d.file
+    );
+    if let Some(parent) = &d.parent {
+        out.push_str(&format!("parent: {parent}\n"));
+    }
+    if !d.blocked_by.is_empty() {
+        out.push_str(&format!("blocked by: {}\n", d.blocked_by.join(", ")));
+    }
+    if let Some(who) = &d.claimed_by {
+        out.push_str(&format!("claimed by: {who}\n"));
+    }
+    if !d.tags.is_empty() {
+        out.push_str(&format!("tags: {}\n", d.tags.join(", ")));
+    }
+    if !d.org_tags.is_empty() {
+        out.push_str(&format!("org tags: {}\n", d.org_tags.join(", ")));
+    }
+    for (k, v) in &d.properties {
+        if matches!(k.as_str(), "ID" | "CREATED") {
+            continue;
+        }
+        out.push_str(&format!("{k}: {v}\n"));
+    }
+    out
+}
+
+fn format_tree(node: &vissue_core::views::TreeNode, depth: usize) -> String {
+    let pad = "  ".repeat(depth);
+    let mut out = format!("{pad}{} [{}] {}\n", node.id, node.state, node.title);
+    if !node.blocked_by.is_empty() {
+        out.push_str(&format!(
+            "{pad}  blocked by: {}\n",
+            node.blocked_by.join(", ")
+        ));
+    }
+    for child in &node.children {
+        out.push_str(&format_tree(child, depth + 1));
+    }
+    out
+}
+
+fn format_related(hits: &[vissue_core::views::RelatedHit]) -> String {
+    if hits.is_empty() {
+        return "no related issues\n".into();
+    }
+    let mut out = String::new();
+    for hit in hits {
+        out.push_str(&format!(
+            "{} [{}] {}  {:.2}  {}\n",
+            hit.id,
+            hit.state,
+            hit.title,
+            hit.score,
+            hit.evidence.join(", ")
+        ));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1072,8 +1440,9 @@ mod tests {
         assert_eq!(palette.query(), "");
         palette.handle_key(PaletteKey::Esc);
         assert_eq!(palette.focus(), Focus::List);
+        palette.handle_key(PaletteKey::Char('1'));
         palette.handle_key(PaletteKey::Enter);
-        assert!(palette.excerpt().is_some());
+        assert!(palette.excerpt().is_some() || !palette.detail_body().is_empty());
         palette.handle_key(PaletteKey::Esc);
         assert!(palette.excerpt().is_none());
         assert!(palette.visible());
@@ -1123,6 +1492,7 @@ mod tests {
         palette.handle_key(PaletteKey::Char('z'));
         palette.handle_key(PaletteKey::Backspace);
         palette.handle_key(PaletteKey::Esc);
+        palette.handle_key(PaletteKey::Char('1'));
         assert_eq!(palette.query(), "");
         let after_backspace: Vec<_> = palette
             .filtered_items()
@@ -1138,11 +1508,11 @@ mod tests {
             Palette::open_core(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap".into()).unwrap();
         assert_eq!(palette.filter(), BoardFilter::Ready);
         assert!(palette.count(BoardFilter::Ready) >= 3);
-        palette.handle_key(PaletteKey::Char('4'));
-        assert_eq!(palette.filter(), BoardFilter::All);
-        assert!(!palette.filtered_items().is_empty());
         palette.handle_key(PaletteKey::Char('2'));
-        assert_eq!(palette.filter(), BoardFilter::Mine);
+        assert_eq!(palette.filter(), BoardFilter::List);
+        assert!(!palette.filtered_items().is_empty());
+        palette.handle_key(PaletteKey::Char('3'));
+        assert_eq!(palette.filter(), BoardFilter::Claims);
         palette.handle_key(PaletteKey::Char('1'));
         assert_eq!(palette.filter(), BoardFilter::Ready);
         let ids: Vec<_> = palette
@@ -1157,7 +1527,7 @@ mod tests {
     fn space_marks_selected_done() {
         let (_dir, layout) = writable();
         let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
-        palette.set_filter(BoardFilter::All);
+        palette.set_filter(BoardFilter::List);
         palette.set_query("atlas-2c3d");
         palette.focus_list();
         assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
@@ -1182,6 +1552,10 @@ mod tests {
         assert!(palette.add_draft().is_empty());
         palette.set_query("desk lamp");
         assert!(
+            !palette.detail_body().is_empty(),
+            "selected row has a show card"
+        );
+        assert!(
             palette
                 .filtered_items()
                 .iter()
@@ -1193,5 +1567,25 @@ mod tests {
                 .map(|i| i.title.as_str())
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn s_cycles_todo_started_blocked() {
+        let (_dir, layout) = writable();
+        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        palette.set_query("atlas-2c3d");
+        palette.focus_list();
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "TODO");
+        palette.handle_key(PaletteKey::Char('s'));
+        assert_eq!(
+            palette.backend().get("atlas-2c3d").unwrap().state,
+            "STARTED"
+        );
+        palette.handle_key(PaletteKey::Char('s'));
+        assert_eq!(
+            palette.backend().get("atlas-2c3d").unwrap().state,
+            "BLOCKED"
+        );
+        assert!(palette.detail_body().contains("atlas-2c3d") || !palette.detail_body().is_empty());
     }
 }

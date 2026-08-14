@@ -170,6 +170,8 @@ mod tests {
             source: ItemSource::Ready,
             claimed_by: None,
             due: None,
+            blocked_by: Vec::new(),
+            extra: String::new(),
         }
     }
 

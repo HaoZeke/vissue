@@ -138,7 +138,8 @@ stays offline and refuses mutations against the other vault. Status:
 =serve:live|offline|mismatch gen=N rev=M agent=...=. Keys are on =?=.
 On Windows only =tui --offline= runs.
 
-=vissue hud= opens the iced task board (Ready / Mine / Upcoming / All as chips).
+=vissue hud= is the terminal board in a window (Ready / List / Claims /
+Agenda / Search, plus a detail card).
 =--rofi= is the seat dmenu picker. Return opens the heading in
 =$EDITOR=. Alt+c claims. Alt+n notes. =--mode list|claims|stale|new=
 changes the picker list.

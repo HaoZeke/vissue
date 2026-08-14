@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/vissue-core", "crates/vissue-cli", "crates/vissue-mcp"]
+members = [
+    "crates/vissue-core",
+    "crates/vissue-cli",
+    "crates/vissue-mcp",
+    "crates/vissue-control",
+]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -22,6 +27,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
 vissue-core = { version = "0.2.0", path = "crates/vissue-core" }
+vissue-control = { version = "0.2.0", path = "crates/vissue-control" }
 anyhow = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }

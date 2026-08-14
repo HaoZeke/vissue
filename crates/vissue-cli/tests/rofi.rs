@@ -63,7 +63,13 @@ exit 10
 "#,
     );
     let out = Command::new(bin())
-        .args(["--root", tmp.path().to_str().unwrap(), "hud", "--mode", "ready"])
+        .args([
+            "--root",
+            tmp.path().to_str().unwrap(),
+            "hud",
+            "--mode",
+            "ready",
+        ])
         .env("VISSUE_ROFI", &fake)
         .env("VISSUE_AGENT", "rofi-picker")
         .output()

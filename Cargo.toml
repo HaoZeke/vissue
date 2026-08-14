@@ -5,6 +5,7 @@ members = [
     "crates/vissue-cli",
     "crates/vissue-mcp",
     "crates/vissue-control",
+    "crates/vissue-serve",
 ]
 
 [workspace.lints.rust]
@@ -28,6 +29,7 @@ categories = ["command-line-utilities", "development-tools"]
 [workspace.dependencies]
 vissue-core = { version = "0.2.0", path = "crates/vissue-core" }
 vissue-control = { version = "0.2.0", path = "crates/vissue-control" }
+vissue-serve = { version = "0.2.0", path = "crates/vissue-serve" }
 anyhow = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }

@@ -4,6 +4,21 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+#[cfg(not(unix))]
+#[test]
+fn serve_is_unix_only() {
+    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .arg("serve")
+        .output()
+        .expect("run vissue");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("Unix-only"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 fn fixture_root() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixture_vault")
 }

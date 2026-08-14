@@ -21,6 +21,7 @@
 | =check=, =hygiene=                                                        | Validation                                                               |
 | =gen=, =events=, =wait=, =ping=                                           | Change stream for pollers                                                |
 | =projects=, =identity=                                                    | Layout introspection                                                     |
+| =serve=                                                                   | Own the per-user Unix control socket (= -d=, =stop=, =restart=, =status=) |
 | =completions=, =man=                                                      | Shell completion scripts and the manual page                             |
 
 * States and priorities
@@ -98,14 +99,25 @@ reports an exhausted space rather than failing obscurely.
 | =VISSUE_ROOT=    | Tracker root; =ISSUE_ROOT= is read first for the ecosystem  |
 | =VISSUE_PREFIX=  | Directory under the root holding one directory per project  |
 | =VISSUE_AGENT=   | Identity a claim records, ahead of the config file          |
-| =VISSUE_EVENTS=  | =0= suppresses the change stream entirely                   |
+| =VISSUE_EVENTS=          | =0= suppresses the change stream entirely                          |
+| =VISSUE_CONTROL_SOCKET=  | Unix control socket path                                           |
+| =VISSUE_SERVE_LOG=       | Detached serve log; default is =control.log= next to the socket    |
+
+* Control socket
+
+=vissue serve= binds =$XDG_RUNTIME_DIR/vissue/control.sock= (or
+=~/.vissue/run/control.sock=). It is Unix-only. =serve -d= detaches after
+the socket accepts; the child is placed in its own process group and can
+still receive SIGHUP from the parent terminal. =serve status= exits 0 when
+the socket is live. Methods in this release: =initialize= (required
+=agent=) and =identity/get=.
 
 * Exit statuses
 
 | Status | Meaning                                                        |
 |--------+----------------------------------------------------------------|
 |      0 | Success, including a reader that closed the pipe               |
-|      1 | Failure, or a stale =mirror --check=, or a failing =check=     |
+|      1 | Failure, a stale =mirror --check=, a failing =check=, or =serve status= when not live |
 |      2 | =wait= timed out without the generation advancing              |
 
 * MCP server

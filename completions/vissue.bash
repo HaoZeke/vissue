@@ -118,6 +118,9 @@ _vissue() {
             vissue,search)
                 cmd="vissue__subcmd__search"
                 ;;
+            vissue,serve)
+                cmd="vissue__subcmd__serve"
+                ;;
             vissue,show)
                 cmd="vissue__subcmd__show"
                 ;;
@@ -241,6 +244,9 @@ _vissue() {
             vissue__subcmd__help,search)
                 cmd="vissue__subcmd__help__subcmd__search"
                 ;;
+            vissue__subcmd__help,serve)
+                cmd="vissue__subcmd__help__subcmd__serve"
+                ;;
             vissue__subcmd__help,show)
                 cmd="vissue__subcmd__help__subcmd__show"
                 ;;
@@ -262,6 +268,39 @@ _vissue() {
             vissue__subcmd__help,whoami)
                 cmd="vissue__subcmd__help__subcmd__whoami"
                 ;;
+            vissue__subcmd__help__subcmd__serve,restart)
+                cmd="vissue__subcmd__help__subcmd__serve__subcmd__restart"
+                ;;
+            vissue__subcmd__help__subcmd__serve,status)
+                cmd="vissue__subcmd__help__subcmd__serve__subcmd__status"
+                ;;
+            vissue__subcmd__help__subcmd__serve,stop)
+                cmd="vissue__subcmd__help__subcmd__serve__subcmd__stop"
+                ;;
+            vissue__subcmd__serve,help)
+                cmd="vissue__subcmd__serve__subcmd__help"
+                ;;
+            vissue__subcmd__serve,restart)
+                cmd="vissue__subcmd__serve__subcmd__restart"
+                ;;
+            vissue__subcmd__serve,status)
+                cmd="vissue__subcmd__serve__subcmd__status"
+                ;;
+            vissue__subcmd__serve,stop)
+                cmd="vissue__subcmd__serve__subcmd__stop"
+                ;;
+            vissue__subcmd__serve__subcmd__help,help)
+                cmd="vissue__subcmd__serve__subcmd__help__subcmd__help"
+                ;;
+            vissue__subcmd__serve__subcmd__help,restart)
+                cmd="vissue__subcmd__serve__subcmd__help__subcmd__restart"
+                ;;
+            vissue__subcmd__serve__subcmd__help,status)
+                cmd="vissue__subcmd__serve__subcmd__help__subcmd__status"
+                ;;
+            vissue__subcmd__serve__subcmd__help,stop)
+                cmd="vissue__subcmd__serve__subcmd__help__subcmd__stop"
+                ;;
             *)
                 ;;
         esac
@@ -269,7 +308,7 @@ _vissue() {
 
     case "${cmd}" in
         vissue)
-            opts="-h -V --root --prefix --help --version create q list show update ready claim note claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity completions man help"
+            opts="-h -V --root --prefix --help --version create q list show update ready claim note claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve completions man help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -827,7 +866,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__help)
-            opts="create q list show update ready claim note claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity completions man help"
+            opts="create q list show update ready claim note claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve completions man help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1305,6 +1344,62 @@ _vissue() {
         vissue__subcmd__help__subcmd__search)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__help__subcmd__serve)
+            opts="stop restart status"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__help__subcmd__serve__subcmd__restart)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__help__subcmd__serve__subcmd__status)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__help__subcmd__serve__subcmd__stop)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -1862,6 +1957,196 @@ _vissue() {
                     return 0
                     ;;
                 -n)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --root)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prefix)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve)
+            opts="-d -s -h --detach --foreground --socket --root --prefix --help stop restart status help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --socket)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --root)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prefix)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve__subcmd__help)
+            opts="stop restart status help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve__subcmd__help__subcmd__restart)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve__subcmd__help__subcmd__status)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve__subcmd__help__subcmd__stop)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve__subcmd__restart)
+            opts="-s -h --socket --root --prefix --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --socket)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --root)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prefix)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve__subcmd__status)
+            opts="-s -h --json --socket --root --prefix --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --socket)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --root)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prefix)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        vissue__subcmd__serve__subcmd__stop)
+            opts="-s -h --socket --root --prefix --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --socket)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -s)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

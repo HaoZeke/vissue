@@ -1,7 +1,7 @@
 //! `vissue`: plain-text issue tracking over per-project orgmode files.
 
 use anyhow::{bail, Context, Result};
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
@@ -354,6 +354,10 @@ enum Command {
     Projects,
     /// Print the resolved binary, root, and prefix.
     Identity,
+    /// Own the per-user Unix control socket.
+    ///
+    /// Unix only. On Windows this command exits 1.
+    Serve(ServeArgs),
     /// Write a shell completion script to stdout.
     ///
     /// Generated from this binary's own argument definitions, so it cannot
@@ -365,6 +369,39 @@ enum Command {
     },
     /// Write the roff manual page to stdout.
     Man,
+}
+
+/// Flags and verbs under `vissue serve`.
+#[derive(Args)]
+struct ServeArgs {
+    /// Detach after the socket accepts. The child is placed in its own
+    /// process group (not a new session) and can still receive SIGHUP from
+    /// the parent terminal.
+    #[arg(short = 'd', long)]
+    detach: bool,
+    /// Hidden supervisor flag for the detached child. Alias: --no-detach.
+    #[arg(long, hide = true, alias = "no-detach")]
+    foreground: bool,
+    /// Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then
+    /// $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock.
+    #[arg(short = 's', long, global = true)]
+    socket: Option<PathBuf>,
+    #[command(subcommand)]
+    action: Option<ServeAction>,
+}
+
+#[derive(Subcommand)]
+enum ServeAction {
+    /// Signal the owner (SIGTERM, then SIGKILL) and wait.
+    Stop,
+    /// Stop, then start detached.
+    Restart,
+    /// Print a live/pid/socket snapshot. Exit 0 if live, 1 otherwise.
+    Status {
+        /// Machine-readable object
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Shells `completions` can emit for.
@@ -675,6 +712,28 @@ fn run() -> Result<()> {
             emitln!("prefix: {}", layout.prefix());
             emitln!("root={}", layout.root().display());
             emitln!("prefix={}", layout.prefix());
+        }
+        Command::Serve(args) => {
+            let socket = args
+                .socket
+                .unwrap_or_else(vissue_control::default_socket_path);
+            let cfg = vissue_serve::ServeConfig {
+                layout,
+                socket,
+                exe: None,
+            };
+            let action = match args.action {
+                Some(ServeAction::Stop) => vissue_serve::Action::Stop,
+                Some(ServeAction::Restart) => vissue_serve::Action::Restart,
+                Some(ServeAction::Status { json }) => vissue_serve::Action::Status { json },
+                None if args.foreground => vissue_serve::Action::Foreground,
+                None if args.detach => vissue_serve::Action::Detach,
+                None => vissue_serve::Action::Foreground,
+            };
+            let code = vissue_serve::invoke(action, &cfg)?;
+            if code != 0 {
+                std::process::exit(code);
+            }
         }
     }
     // Flush here rather than at exit, so a full disk or a closed pipe reaches

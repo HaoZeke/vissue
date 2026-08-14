@@ -1664,3 +1664,83 @@ fn rewriting_an_escaped_body_is_stable() {
     let twice = fs::read_to_string(&path).unwrap();
     assert_eq!(once, twice, "the escape moved the text on a second write");
 }
+
+#[test]
+fn appending_records_a_report_under_the_heading() {
+    let (_dir, layout) = writable_copy();
+    let before = CatalogService::from_recs(&load_recs(&layout).unwrap())
+        .detail("atlas-2c3d")
+        .unwrap()
+        .body;
+
+    let out = vissue_core::ops::append_body_as(
+        &layout,
+        "atlas-2c3d",
+        "## What changed\n\n* took a Read instead of a String\n\nOpen doubt: back-pressure.",
+        "worker-1",
+    )
+    .unwrap();
+    assert!(out.contains("atlas-2c3d"), "{out}");
+
+    let after = CatalogService::from_recs(&load_recs(&layout).unwrap())
+        .detail("atlas-2c3d")
+        .unwrap()
+        .body;
+    // What was already there is kept, and the report is added under it.
+    assert!(after.starts_with(before.trim_end()), "{after}");
+    assert!(after.contains("worker-1"), "the report names who wrote it");
+    assert!(after.contains("## What changed"), "{after}");
+    assert!(after.contains("Open doubt: back-pressure."), "{after}");
+    // Markdown bullets do not end the issue.
+    assert_eq!(load_recs(&layout).unwrap().len(), 6);
+    assert_eq!(report::check(&layout).unwrap().errors, 0);
+}
+
+#[test]
+fn two_reports_stack_rather_than_replace() {
+    let (_dir, layout) = writable_copy();
+    vissue_core::ops::append_body_as(&layout, "atlas-2c3d", "first pass", "worker-1").unwrap();
+    vissue_core::ops::append_body_as(&layout, "atlas-2c3d", "second pass", "worker-2").unwrap();
+    let body = CatalogService::from_recs(&load_recs(&layout).unwrap())
+        .detail("atlas-2c3d")
+        .unwrap()
+        .body;
+    let first = body.find("first pass").expect("first");
+    let second = body.find("second pass").expect("second");
+    assert!(first < second, "reports are in the order they were written");
+    assert!(
+        body.contains("worker-1") && body.contains("worker-2"),
+        "{body}"
+    );
+}
+
+#[test]
+fn appending_to_an_issue_with_no_body_does_not_lead_with_blank_lines() {
+    let (_dir, layout) = writable_copy();
+    let id = vissue_core::ops::create(
+        &layout,
+        "atlas",
+        "Nothing written yet",
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    vissue_core::ops::append_body_as(&layout, &id, "the first word on it", "worker-1").unwrap();
+    let body = CatalogService::from_recs(&load_recs(&layout).unwrap())
+        .detail(&id)
+        .unwrap()
+        .body;
+    assert!(!body.starts_with('\n'), "{body:?}");
+    assert!(body.contains("the first word on it"), "{body}");
+}
+
+#[test]
+fn appending_nothing_is_refused() {
+    let (_dir, layout) = writable_copy();
+    assert!(vissue_core::ops::append_body_as(&layout, "atlas-2c3d", "   \n\n", "w").is_err());
+    assert!(vissue_core::ops::append_body_as(&layout, "atlas-zzzz", "text", "w").is_err());
+}

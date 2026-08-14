@@ -126,6 +126,14 @@ pub struct ClaimArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct AppendArgs {
+    /// Issue id to append to.
+    pub issue_id: String,
+    /// Prose to record under the heading. Markdown is safe.
+    pub text: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct NoteArgs {
     /// Issue id.
     pub issue_id: String,

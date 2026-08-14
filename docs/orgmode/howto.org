@@ -49,6 +49,24 @@ Plain =show= prints the metadata and then the body, and =show --json=
 carries both along with the logbook, so a caller that already fetched
 the issue does not need a second read to learn what it asks for.
 
+* Record what was done
+
+=append= adds a dated, attributed report to the issue's body.
+
+#+begin_src console
+$ vissue append parser-1a2b --file SUMMARY.md
+$ vissue append parser-1a2b --text "landed; back-pressure still open"
+#+end_src
+
+=--file -= reads stdin. Markdown is safe: a line that would otherwise end
+the issue is indented on the way out, so a bullet list does not split the
+heading in two.
+
+This is the counterpart to =note=. A note is one line in the logbook,
+which is the audit trail of what happened to the issue; a report is prose
+about the work, which belongs under the heading where a reader looks for
+what the issue is about.
+
 * Follow the graph
 
 =tree= walks children and blockers below an id; =graph= emits the whole thing

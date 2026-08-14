@@ -439,3 +439,55 @@ fn show_org_and_json_are_not_asked_for_together() {
     let out = vissue(&["show", "--org", "--json", "atlas-1a2b"]);
     assert!(!out.status.success(), "{}", stdout(&out));
 }
+
+/// Recording a worker's report, the return half of handing work out.
+#[test]
+fn append_reads_a_file_and_stdin() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("Software")).unwrap();
+    let mk = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", root.to_str().unwrap()];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    let id = String::from_utf8_lossy(
+        &mk(&["create", "-p", "atlas", "--quiet", "Streaming exporter"]).stdout,
+    )
+    .trim()
+    .to_string();
+
+    let report = dir.path().join("SUMMARY.md");
+    std::fs::write(&report, "## What changed\n\n* took a Read\n").unwrap();
+    let out = mk(&["append", &id, "--file", report.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let shown = String::from_utf8_lossy(&mk(&["show", &id]).stdout).to_string();
+    assert!(shown.contains("## What changed"), "{shown}");
+    assert!(shown.contains("took a Read"), "{shown}");
+
+    // --text is the same thing without a file.
+    assert!(mk(&["append", &id, "--text", "second pass"])
+        .status
+        .success());
+    let shown = String::from_utf8_lossy(&mk(&["show", &id]).stdout).to_string();
+    assert!(shown.contains("second pass"), "{shown}");
+
+    // The tracker still reads back cleanly after markdown went in.
+    let check = mk(&["check"]);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stdout)
+    );
+
+    // Neither source given is an error, not an empty append.
+    assert!(!mk(&["append", &id]).status.success());
+}

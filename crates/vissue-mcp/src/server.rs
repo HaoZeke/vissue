@@ -142,6 +142,16 @@ impl VissueServer {
         ))
     }
 
+    #[tool(
+        description = "Append a dated report to an issue's body. Use this to record work that was done: the logbook holds one line per event, so a written report belongs in the body. Markdown is safe."
+    )]
+    async fn vissue_append(
+        &self,
+        Parameters(args): Parameters<AppendArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(ops::append_body(&self.layout, &args.issue_id, &args.text))
+    }
+
     #[tool(description = "Add a dated note to an issue's logbook without touching state or claim.")]
     async fn vissue_note(
         &self,
@@ -579,7 +589,21 @@ mod tests {
                 .is_error,
             Some(false)
         );
+        // A written report goes into the body, where markdown is safe.
+        assert_eq!(
+            server
+                .vissue_append(Parameters(AppendArgs {
+                    issue_id: id.clone(),
+                    text: "## What changed\n\n* rotated the key\n".into(),
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
         let after = std::fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+        assert!(after.contains("## What changed"), "{after}");
         assert!(after.contains(":CLAIMED_BY:"), "{after}");
         assert!(after.contains("vault rotation window"), "{after}");
 

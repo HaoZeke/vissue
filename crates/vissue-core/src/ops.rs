@@ -435,6 +435,51 @@ pub fn note(layout: &Layout, id: &str, text: &str) -> Result<String> {
     })
 }
 
+/// Append prose to an issue's body, stamped with the date and identity.
+///
+/// The logbook holds one line per event, so a written report does not fit in
+/// it: [`note`] folds its text to a single line by design. Work that has been
+/// done and needs recording belongs under the heading as prose, which is
+/// where a reader looks for what the issue is about.
+///
+/// The text is kept as given. Lines that would end the issue are indented on
+/// the way out, so markdown is safe to append.
+pub fn append_body(layout: &Layout, id: &str, text: &str) -> Result<String> {
+    append_body_as(layout, id, text, &crate::config::identity(layout))
+}
+
+/// [`append_body`] with the recorded identity passed in.
+pub fn append_body_as(layout: &Layout, id: &str, text: &str, identity: &str) -> Result<String> {
+    let text = text.trim_end();
+    if text.trim().is_empty() {
+        bail!("append text is empty");
+    }
+    let (_h0, path, project) =
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+    with_issues_lock(&path, || {
+        let mut doc = IssueDoc::parse_file(&project, &path)?;
+        let h = doc
+            .headings
+            .iter_mut()
+            .find(|x| x.id == id)
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+        let stamp = format!("{} {identity}", today_inactive_bracket());
+        if !h.body.trim().is_empty() {
+            h.body = h.body.trim_end().to_string();
+            h.body.push_str("\n\n");
+        } else {
+            h.body.clear();
+        }
+        h.body.push_str(&stamp);
+        h.body.push('\n');
+        h.body.push_str(text);
+        h.body.push('\n');
+        doc.write()?;
+        let lines = text.lines().count();
+        Ok(format!("{id}: appended {lines} line(s)\n"))
+    })
+}
+
 /// Fold an inbox-convention org file into tracked issues.
 ///
 /// Each top-level `* TODO <title>` heading that does not already carry a

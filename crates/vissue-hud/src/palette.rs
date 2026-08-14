@@ -608,7 +608,7 @@ impl Palette {
                 text.push(c);
                 self.note_draft = Some(text);
             }
-            PaletteKey::Up | PaletteKey::Down | PaletteKey::Space => {
+            PaletteKey::Up | PaletteKey::Down | PaletteKey::Space | PaletteKey::Tab => {
                 self.note_draft = Some(text);
             }
         }
@@ -625,7 +625,7 @@ impl Palette {
                 self.add_draft.pop();
             }
             PaletteKey::Char(c) => self.add_draft.push(c),
-            PaletteKey::Up | PaletteKey::Down | PaletteKey::Space => {}
+            PaletteKey::Up | PaletteKey::Down | PaletteKey::Space | PaletteKey::Tab => {}
         }
     }
 
@@ -647,6 +647,7 @@ impl Palette {
                 let _ = self.reload();
             }
             PaletteKey::Space => self.query.push(' '),
+            PaletteKey::Tab => self.set_filter(self.filter.next()),
             PaletteKey::Char(c) => {
                 self.query.push(c);
                 self.excerpt = None;
@@ -950,7 +951,8 @@ impl Palette {
     }
 
     pub fn reload(&mut self) -> anyhow::Result<()> {
-        let project = self.project.as_deref();
+        let project = self.project.clone();
+        let project = project.as_deref();
         match self.filter {
             BoardFilter::Ready => self.reload_ready(project),
             BoardFilter::List => self.reload_list(project),

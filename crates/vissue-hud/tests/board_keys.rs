@@ -241,8 +241,9 @@ fn slash_opens_search_and_typing_narrows_the_rows() {
     assert_eq!(palette.focus(), Focus::Search);
     assert_eq!(palette.filter(), BoardFilter::Search);
 
-    press(&mut palette, "summary");
-    assert_eq!(palette.query(), "summary");
+    let typed = "summary";
+    press(&mut palette, typed);
+    assert_eq!(palette.query(), typed);
     let shown = titles(&palette);
     assert!(
         shown.iter().any(|t| t.contains("Emit a summary")),
@@ -250,12 +251,13 @@ fn slash_opens_search_and_typing_narrows_the_rows() {
     );
 
     // Backspace walks the query back.
+    let shorter = &typed[..typed.len() - 1];
     palette.handle_key(PaletteKey::Backspace);
-    assert_eq!(palette.query(), "summar");
+    assert_eq!(palette.query(), shorter);
 
     // Space is text while the search field owns typing.
     palette.handle_key(PaletteKey::Space);
-    assert_eq!(palette.query(), "summar ");
+    assert_eq!(palette.query(), format!("{shorter} "));
 }
 
 #[test]

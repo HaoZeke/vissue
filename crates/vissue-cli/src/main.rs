@@ -747,7 +747,10 @@ fn run() -> Result<()> {
             clap_mangen::Man::new(Cli::command())
                 .render(&mut buffer)
                 .context("render the manual page")?;
-            emit!("{}", String::from_utf8_lossy(&buffer));
+            emit!(
+                "{}",
+                trim_man_trailing_space(&String::from_utf8_lossy(&buffer))
+            );
         }
         Command::Identity => {
             let exe = std::env::current_exe()
@@ -821,6 +824,22 @@ fn run() -> Result<()> {
     // the caller as a status instead of being dropped on the way out.
     std::io::stdout().flush()?;
     Ok(())
+}
+
+/// clap_mangen pads `.TH` with a trailing space. prek trailing-whitespace
+/// rejects that, so strip per-line padding from the generated page.
+fn trim_man_trailing_space(page: &str) -> String {
+    let mut out = String::with_capacity(page.len());
+    for line in page.lines() {
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    if page.ends_with('\n') || page.is_empty() {
+        out
+    } else {
+        out.pop();
+        out
+    }
 }
 
 /// clap_complete still emits `hide = true` flags. Drop the supervisor

@@ -29,7 +29,7 @@ hooks = [
     args = [
       "--skip=*.lock,Cargo.lock",
       "-L",
-      "unparseable,unparsable,brin,hendler",
+      "unparseable,unparsable,brin,hendler,ratatui",
     ],
   },
 ]

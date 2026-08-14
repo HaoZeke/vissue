@@ -293,6 +293,33 @@ fn completions_omit_foreground() {
 }
 
 #[test]
+fn man_page_has_no_trailing_whitespace() {
+    let out = Command::new(bin()).args(["man"]).output().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    for (i, line) in text.lines().enumerate() {
+        assert_eq!(
+            line,
+            line.trim_end(),
+            "man line {} has trailing space: {line:?}",
+            i + 1
+        );
+    }
+    let committed = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../man/vissue.1"),
+    )
+    .unwrap();
+    for (i, line) in committed.lines().enumerate() {
+        assert_eq!(
+            line,
+            line.trim_end(),
+            "committed man line {} has trailing space",
+            i + 1
+        );
+    }
+}
+
+#[test]
 fn committed_completions_omit_foreground() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     for name in [

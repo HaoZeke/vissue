@@ -169,7 +169,10 @@ fn status_json_and_socket_modes() {
     assert_eq!(value["live"], true);
     assert_eq!(value["prefix"], "Software");
     assert!(value["pid"].as_u64().is_some());
-    assert_eq!(value["revision"], 0);
+    assert!(
+        value["revision"].as_u64().unwrap() >= 1,
+        "live owner starts catalog revision at 1: {value}"
+    );
 }
 
 #[test]
@@ -306,6 +309,64 @@ fn committed_completions_omit_foreground() {
             !text.contains("--no-detach"),
             "{name} still contains --no-detach"
         );
+    }
+}
+
+#[test]
+fn claim_uses_client_agent_not_process_env() {
+    use vissue_control::client::Client;
+    use vissue_control::Error;
+
+    let h = Harness::new();
+    let start = Command::new(bin())
+        .arg("--root")
+        .arg(&h.root)
+        .arg("--prefix")
+        .arg("Software")
+        .args(["serve", "-d"])
+        .arg("-s")
+        .arg(&h.socket)
+        .env("VISSUE_AGENT", "daemon")
+        .output()
+        .unwrap();
+    assert!(
+        start.status.success(),
+        "{}{}",
+        stdout(&start),
+        stderr(&start)
+    );
+    assert!(wait_accepts(&h.socket, Duration::from_secs(5)));
+
+    let mut client = Client::connect(&h.socket).unwrap();
+    client
+        .request(
+            "initialize",
+            serde_json::json!({"protocolVersion": 1, "agent": "tui"}),
+        )
+        .unwrap();
+    let claimed = client
+        .request("issue/claim", serde_json::json!({"id": "atlas-2c3d"}))
+        .unwrap();
+    assert_eq!(claimed["issue"]["claimed_by"], "tui");
+    let text = fs::read_to_string(h.root.join("Software/atlas/issues.org")).unwrap();
+    assert!(
+        text.contains("tui"),
+        "claim stamp must be the client agent: {text}"
+    );
+    assert!(
+        !text.contains(":CLAIMED_BY: daemon") && !text.contains("CLAIMED_BY:         daemon"),
+        "process VISSUE_AGENT must not stamp the claim: {text}"
+    );
+
+    let err = client
+        .request(
+            "issue/claim",
+            serde_json::json!({"id": "atlas-2c3d", "agent": "other"}),
+        )
+        .unwrap_err();
+    match err {
+        Error::Rpc(e) => assert_eq!(e.code, -32009),
+        other => panic!("{other:?}"),
     }
 }
 

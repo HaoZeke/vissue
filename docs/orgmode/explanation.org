@@ -150,8 +150,10 @@ did, so =gen= reads a counter and =events= reads only the tail of a log.
 
 The costs are linear and the constant is a file read, which stays comfortable
 into the thousands of issues and would not stay comfortable into the millions.
-That is the trade the format buys: no daemon, no schema migration, and a
-backlog that diffs.
+That is the trade the format buys: no schema migration, and a backlog that
+diffs. An optional =vissue serve= is a cache of that parse plus a push of
+=vault/changed=; it is not a second store. Crashing it loses nothing, and
+every verb still works with it down.
 
 * Why =related= does not write edges
 

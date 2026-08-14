@@ -171,6 +171,22 @@ $ vissue ping --detail "external change"       # wake pollers by hand
 Set =VISSUE_EVENTS=0= to suppress emission when the tracker must stay
 untouched.
 
+* Attach to the optional serve cache
+
+=vissue serve -d= owns the control socket and keeps a parsed catalog in
+memory. Interactive clients attach for =issue/ready= and push
+notifications instead of polling =wait=. The files stay the store: stop
+serve, delete the socket directory, and every CLI verb still works.
+
+#+begin_src console
+$ vissue serve -d
+$ vissue serve status
+live: true
+#+end_src
+
+=initialize= must send a non-empty =agent=. A claim over the socket
+stamps that agent, not the process =VISSUE_AGENT= that started serve.
+
 * Point at a different layout
 
 Use =--prefix=, =VISSUE_PREFIX=, or a =vissue.toml= at the root:

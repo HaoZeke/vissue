@@ -159,9 +159,30 @@ pub fn update(
     block_add: Option<&str>,
     block_clear: Option<&str>,
 ) -> Result<UpdateOutcome> {
+    let identity = crate::config::identity(layout);
+    update_as(
+        layout,
+        id,
+        new_state,
+        new_priority,
+        block_add,
+        block_clear,
+        &identity,
+    )
+}
+
+/// [`update`] with an explicit identity instead of [`crate::config::identity`].
+pub fn update_as(
+    layout: &Layout,
+    id: &str,
+    new_state: Option<&str>,
+    new_priority: Option<char>,
+    block_add: Option<&str>,
+    block_clear: Option<&str>,
+    identity: &str,
+) -> Result<UpdateOutcome> {
     let (_h0, path, project) =
         find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
-    let identity = crate::config::identity(layout);
 
     let (final_state, changed) = with_issues_lock(&path, || {
         // Read the graph inside the lock. Built before it, the check answers
@@ -188,7 +209,7 @@ pub fn update(
                 let from = h.state.clone();
                 h.record_state_change(s);
                 changed.push(format!("state {from} -> {s}"));
-                for note in settle_claim(h, &from, s, &identity) {
+                for note in settle_claim(h, &from, s, identity) {
                     changed.push(note);
                 }
             }
@@ -232,7 +253,7 @@ pub fn update(
                         let from = h.state.clone();
                         h.record_state_change("TODO");
                         changed.push("state BLOCKED -> TODO (auto on unblock)".to_string());
-                        for note in settle_claim(h, &from, "TODO", &identity) {
+                        for note in settle_claim(h, &from, "TODO", identity) {
                             changed.push(note);
                         }
                     }
@@ -389,14 +410,14 @@ pub fn note(layout: &Layout, id: &str, text: &str) -> Result<String> {
         bail!("note text is empty");
     }
     let (_h0, path, project) =
-        find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
     with_issues_lock(&path, || {
         let mut doc = IssueDoc::parse_file(&project, &path)?;
         let h = doc
             .headings
             .iter_mut()
             .find(|x| x.id == id)
-            .ok_or_else(|| anyhow!("issue {id} not found"))?;
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
         // Newest first, matching state transitions and claim releases. A
         // drawer written from both ends reads as sorted by neither.
         h.logbook.insert(
@@ -525,7 +546,7 @@ pub fn refile(layout: &Layout, id: &str, to_project: &str) -> Result<String> {
     let to_project = resolve_existing_project_case(layout, to_project)?;
     let target_path = layout.project_issues_path(&to_project);
     let (_heading, src_path, src_project) =
-        find_by_id(layout, id)?.ok_or_else(|| anyhow!("issue {id} not found"))?;
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
     if src_project == to_project {
         return Ok(format!("{id} already in {to_project}; nothing to do\n"));
     }
@@ -533,7 +554,7 @@ pub fn refile(layout: &Layout, id: &str, to_project: &str) -> Result<String> {
         let mut src_doc = IssueDoc::parse_file(&src_project, &src_path)?;
         let heading = src_doc
             .remove(id)
-            .ok_or_else(|| anyhow!("issue {id} not found in {}", src_path.display()))?;
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
 
         // Two files cannot be replaced in one atomic step, so choose which
         // half-finished state a failure leaves behind. Writing the target

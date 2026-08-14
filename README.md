@@ -16,11 +16,12 @@ stores the nodes. `:PARENT:` groups work under a plan. `:BLOCKED_BY:` is
 the partial order. `ready` is the frontier any agent can pick up. `claim`
 is the lock so two agents do not take the same node.
 
-An issue is a top-level org heading. The file is the database: no daemon, no
-SQLite, no server. Every command parses the files it needs and every mutation
-rewrites one file under a lock, so the tracker diffs, merges, and greps like the
-rest of the repository it lives in. A CLI and a Model Context Protocol server
-share the same library.
+An issue is a top-level org heading. The file is the database: no SQLite, no
+second store. A command parses the files it needs. An optional `vissue serve`
+caches a parse and pushes change notifications; crashing it loses nothing, and
+every verb still works with it down. Every mutation rewrites one file under a
+lock, so the tracker diffs, merges, and greps like the rest of the repository
+it lives in. A CLI and a Model Context Protocol server share the same library.
 
 The store is an Org file [1]. The graph has several justifications, and
 they are not interchangeable. `:PARENT:` plus `:TYPE:` and tags

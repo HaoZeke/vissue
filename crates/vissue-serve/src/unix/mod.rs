@@ -1,13 +1,18 @@
 //! Unix owner: bind, accept, detach, stop, status.
 
+mod bus;
+mod catalog;
+mod dispatch;
 mod lifecycle;
 mod owner;
+mod watcher;
 
 use anyhow::Result;
 
 use crate::{Action, ServeConfig};
 
 pub use lifecycle::{ensure_serve, socket_accepts};
+pub use owner::OwnerHandle;
 
 pub fn invoke(action: Action, cfg: &ServeConfig) -> Result<i32> {
     match action {

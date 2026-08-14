@@ -698,6 +698,152 @@ pub fn backlinks_from(issues: &[IssueRec], target_id: &str) -> Result<Vec<WalkHi
     Ok(out)
 }
 
+/// Children and blockers below `id` as indented text or Graphviz DOT.
+pub fn tree_text_from(issues: &[IssueRec], id: &str, format: &str) -> Result<String, Error> {
+    if !issues.iter().any(|r| r.heading.id == id) {
+        return Err(Error::IssueNotFound { id: id.to_string() });
+    }
+    let mut by_id: HashMap<&str, &IssueHeading> = HashMap::new();
+    let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut blockers: HashMap<&str, Vec<String>> = HashMap::new();
+    for rec in issues {
+        by_id.insert(rec.heading.id.as_str(), &rec.heading);
+        if let Some(parent) = rec.heading.parent() {
+            children
+                .entry(parent)
+                .or_default()
+                .push(rec.heading.id.as_str());
+        }
+        let blocked = rec.heading.blocked_by();
+        if !blocked.is_empty() {
+            blockers.insert(rec.heading.id.as_str(), blocked);
+        }
+    }
+    for kids in children.values_mut() {
+        kids.sort_unstable();
+    }
+    let mut out = String::new();
+    match format {
+        "ascii" | "text" => tree_ascii_from(
+            id,
+            0,
+            &by_id,
+            &children,
+            &blockers,
+            &mut HashSet::new(),
+            &mut out,
+        ),
+        "dot" => tree_dot_from(id, &by_id, &children, &blockers, &mut out),
+        other => {
+            return Err(Error::Other(anyhow::anyhow!(
+                "unknown format {other:?}; allowed: ascii, dot"
+            )));
+        }
+    }
+    Ok(out)
+}
+
+fn tree_ascii_from<'a>(
+    id: &'a str,
+    depth: usize,
+    by_id: &HashMap<&str, &IssueHeading>,
+    children: &HashMap<&str, Vec<&'a str>>,
+    blockers: &'a HashMap<&str, Vec<String>>,
+    seen: &mut HashSet<&'a str>,
+    out: &mut String,
+) {
+    use std::fmt::Write as _;
+    if !seen.insert(id) {
+        let _ = writeln!(out, "{}{id} (cycle, stopping)", "  ".repeat(depth));
+        return;
+    }
+    let Some(h) = by_id.get(id) else {
+        let _ = writeln!(out, "{}{id} (missing)", "  ".repeat(depth));
+        return;
+    };
+    let _ = writeln!(
+        out,
+        "{}{id} {:<9} [#{}]  {}",
+        "  ".repeat(depth),
+        h.state,
+        h.priority,
+        h.title
+    );
+    if let Some(blocked) = blockers.get(id) {
+        for blocker in blocked {
+            let _ = writeln!(out, "{}* blocked-by {blocker}", "  ".repeat(depth + 1));
+        }
+    }
+    if let Some(kids) = children.get(id) {
+        for kid in kids {
+            tree_ascii_from(kid, depth + 1, by_id, children, blockers, seen, out);
+        }
+    }
+}
+
+fn tree_dot_from<'a>(
+    root_id: &'a str,
+    by_id: &HashMap<&str, &IssueHeading>,
+    children: &HashMap<&str, Vec<&'a str>>,
+    blockers: &'a HashMap<&str, Vec<String>>,
+    out: &mut String,
+) {
+    use std::fmt::Write as _;
+    let _ = writeln!(out, "digraph vissue_tree {{");
+    let _ = writeln!(out, "  rankdir=LR;");
+    let _ = writeln!(
+        out,
+        "  node [shape=box, fontname=\"Jost\", style=filled, fillcolor=\"#E0F2F1\"];"
+    );
+    let mut visited: HashSet<&str> = HashSet::new();
+    let mut stack = vec![root_id];
+    while let Some(id) = stack.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        if let Some(h) = by_id.get(id) {
+            let _ = writeln!(
+                out,
+                "  \"{}\" [label=\"{}\\n{} [#{}]\"];",
+                dot_quoted(&h.id),
+                dot_quoted(&h.title),
+                dot_quoted(&h.state),
+                dot_quoted(&h.priority.to_string())
+            );
+            if let Some(kids) = children.get(id) {
+                for kid in kids {
+                    let _ = writeln!(
+                        out,
+                        "  \"{}\" -> \"{}\" [color=\"#00897B\"];",
+                        dot_quoted(&h.id),
+                        dot_quoted(kid)
+                    );
+                    stack.push(kid);
+                }
+            }
+            if let Some(blocked) = blockers.get(id) {
+                for b in blocked {
+                    let _ = writeln!(
+                        out,
+                        "  \"{}\" -> \"{}\" [style=dashed, color=\"#FF7043\", label=\"blocks\"];",
+                        dot_quoted(b),
+                        dot_quoted(&h.id)
+                    );
+                    stack.push(b.as_str());
+                }
+            }
+        }
+    }
+    let _ = writeln!(out, "}}");
+}
+
+fn dot_quoted(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "")
+}
+
 fn known_issue_id(issues: &[IssueRec], id: &str) -> bool {
     issues.iter().any(|r| r.heading.id == id)
 }

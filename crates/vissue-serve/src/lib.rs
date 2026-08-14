@@ -1,7 +1,7 @@
-//! Control-socket owner: bind, detach, stop, and the initialize handshake.
+//! Control-socket owner: bind, detach, stop, catalog cache, and RPC dispatch.
 //!
-//! This crate does not cache a catalog. Methods other than `initialize` and
-//! `identity/get` return method-not-found.
+//! Serve is a cache. Mutations go through `vissue-core` ops; a crash loses
+//! nothing. The hot path never calls `load_all`.
 
 use std::path::PathBuf;
 
@@ -16,7 +16,7 @@ mod unix;
 #[cfg(not(unix))]
 pub use stub::{ensure_serve, invoke, socket_accepts};
 #[cfg(unix)]
-pub use unix::{ensure_serve, invoke, socket_accepts};
+pub use unix::{ensure_serve, invoke, socket_accepts, OwnerHandle};
 
 /// How the CLI (or a later TUI/HUD) wants to talk to the owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,9 +74,9 @@ impl EnsureResult {
 }
 
 /// Methods this release actually answers.
-pub const LIVE_CAPABILITIES: &[&str] = &["identity/get"];
+pub const LIVE_CAPABILITIES: &[&str] = vissue_control::V1_CAPABILITIES;
 
-/// Serve-local catalog revision. Stays 0 until the catalog owner lands.
+/// Fallback revision when no owner is live. A running owner starts at 1.
 pub const SERVE_REVISION: u64 = 0;
 
 /// How long a detach parent waits for the child to accept.
@@ -88,7 +88,10 @@ mod tests {
 
     #[test]
     fn live_capabilities_are_the_implemented_methods() {
-        assert_eq!(LIVE_CAPABILITIES, ["identity/get"]);
+        assert_eq!(LIVE_CAPABILITIES, vissue_control::V1_CAPABILITIES);
+        assert!(LIVE_CAPABILITIES.contains(&"issue/list"));
+        assert!(LIVE_CAPABILITIES.contains(&"issue/ready"));
+        assert!(LIVE_CAPABILITIES.contains(&"identity/get"));
         assert_eq!(SERVE_REVISION, 0);
     }
 

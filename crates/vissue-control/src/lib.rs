@@ -24,6 +24,7 @@ pub use rpc::{
     error_from_core, invalid_params, invalid_request, method_not_found, parse_error,
     parse_initialize_params, Error, Event, InitializeParams, InitializeResult, JsonRpcError,
     JsonRpcId, JsonRpcRequest, JsonRpcResponse, Method, Notification, Request, Response,
-    PROTOCOL_VERSION, V1_CAPABILITIES,
+    NOTIFY_ISSUE_SELECTED, NOTIFY_SHUTTING_DOWN, NOTIFY_VAULT_CHANGED, PROTOCOL_VERSION,
+    V1_CAPABILITIES,
 };
 pub use vissue_core::views::*;

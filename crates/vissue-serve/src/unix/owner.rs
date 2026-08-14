@@ -1,4 +1,4 @@
-//! Bind, flock, accept, and the initialize / identity/get handshake.
+//! Bind, flock, accept, and the per-connection read loop.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Write};
@@ -6,31 +6,101 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use fs2::FileExt;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::net::UnixListener;
+use tokio::sync::Semaphore;
 use vissue_control::frame::{read_message, write_message, FrameError, Framing};
 use vissue_control::peercred::accept_socket;
-use vissue_control::rpc::IdentityResult;
+use vissue_control::rpc::{invalid_request, parse_error, JsonRpcResponse, Notification};
 use vissue_control::{beside_socket, socket_lock_path, socket_pid_path};
-use vissue_control::{
-    invalid_params, invalid_request, method_not_found, parse_error, parse_initialize_params,
-    InitializeResult, JsonRpcId, JsonRpcRequest, JsonRpcResponse, PROTOCOL_VERSION,
-};
-use vissue_core::events;
 
-use crate::{ServeConfig, LIVE_CAPABILITIES, SERVE_REVISION};
+use super::bus::Bus;
+use super::catalog::Catalog;
+use super::dispatch::dispatch_ex;
+use crate::ServeConfig;
 
 pub(super) struct OwnerState {
     pub layout: vissue_core::config::Layout,
     pub clients: AtomicUsize,
+    pub catalog: RwLock<Catalog>,
+    pub selection: Mutex<Option<(String, String)>>,
+    pub bus: Bus,
+    pub reload_sem: Semaphore,
+}
+
+impl OwnerState {
+    pub(super) fn new(layout: vissue_core::config::Layout) -> Result<Self> {
+        let catalog = Catalog::load(&layout)?;
+        Ok(Self {
+            layout,
+            clients: AtomicUsize::new(0),
+            catalog: RwLock::new(catalog),
+            selection: Mutex::new(None),
+            bus: Bus::new(),
+            reload_sem: Semaphore::new(2),
+        })
+    }
 }
 
 pub(super) struct Session {
     pub agent: Option<String>,
+}
+
+/// In-process owner for tests and later attach helpers.
+pub struct OwnerHandle {
+    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    pub socket: PathBuf,
+}
+
+impl OwnerHandle {
+    pub fn spawn(cfg: ServeConfig) -> Result<Self> {
+        use super::lifecycle::wait_until_accepts;
+
+        let socket = cfg.socket.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let thread = std::thread::spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(err) => {
+                    eprintln!("vissue serve: runtime: {err}");
+                    return;
+                }
+            };
+            rt.block_on(async move {
+                if let Err(err) = run_owner(cfg, rx).await {
+                    eprintln!("vissue serve: {err:#}");
+                }
+            });
+        });
+        if !wait_until_accepts(&socket, Duration::from_secs(5)) {
+            bail!("owner did not accept on {}", socket.display());
+        }
+        Ok(Self {
+            shutdown: Some(tx),
+            thread: Some(thread),
+            socket,
+        })
+    }
+}
+
+impl Drop for OwnerHandle {
+    fn drop(&mut self) {
+        if let Some(tx) = self.shutdown.take() {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 struct Owner {
@@ -63,9 +133,27 @@ async fn serve(cfg: &ServeConfig) -> Result<()> {
     eprintln!("  root={}", cfg.layout.root().display());
     eprintln!("  prefix={}", cfg.layout.prefix());
     eprintln!("  pid={}", std::process::id());
+    let state = Arc::clone(&owner.state);
     tokio::select! {
         result = owner.accept_loop() => result,
-        _ = shutdown_signal() => Ok(()),
+        result = super::watcher::run(state.clone()) => result,
+        _ = shutdown_signal() => {
+            state.bus.broadcast(&Notification::ServeShuttingDown);
+            Ok(())
+        }
+    }
+}
+
+async fn run_owner(cfg: ServeConfig, shutdown: tokio::sync::oneshot::Receiver<()>) -> Result<()> {
+    let owner = Owner::bind(&cfg)?;
+    let state = Arc::clone(&owner.state);
+    tokio::select! {
+        result = owner.accept_loop() => result,
+        result = super::watcher::run(state.clone()) => result,
+        _ = shutdown => {
+            state.bus.broadcast(&Notification::ServeShuttingDown);
+            Ok(())
+        }
     }
 }
 
@@ -99,10 +187,7 @@ impl Owner {
             lock,
             pid_path: socket_pid_path(&socket),
             socket,
-            state: Arc::new(OwnerState {
-                layout: cfg.layout.clone(),
-                clients: AtomicUsize::new(0),
-            }),
+            state: Arc::new(OwnerState::new(cfg.layout.clone())?),
         })
     }
 
@@ -307,132 +392,86 @@ fn handle_client(stream: StdUnixStream, state: &OwnerState) {
         Err(_) => return,
     };
     let mut reader = BufReader::new(cloned);
-    let mut writer = stream;
+    let writer = Arc::new(Mutex::new(stream));
     let mut session = Session { agent: None };
+    let mut sink_id: Option<u64> = None;
     loop {
         let (payload, framing) = match read_message(&mut reader) {
             Ok(v) => v,
             Err(FrameError::Incomplete) => break,
             Err(FrameError::Io(err)) if err.kind() == io::ErrorKind::UnexpectedEof => break,
             Err(_) => {
-                let _ = write_response(
-                    &mut writer,
-                    &JsonRpcResponse::err(Some(JsonRpcId::Null), parse_error()),
+                let _ = write_locked(
+                    &writer,
+                    &JsonRpcResponse::err(Some(vissue_control::JsonRpcId::Null), parse_error()),
                     Framing::Jsonl,
                 );
                 break;
             }
         };
+        if sink_id.is_none() {
+            sink_id = Some(state.bus.register(Arc::clone(&writer), framing));
+        }
         if payload.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
         let value: Value = match serde_json::from_slice(&payload) {
             Ok(v) => v,
             Err(_) => {
-                let _ = write_response(
-                    &mut writer,
-                    &JsonRpcResponse::err(Some(JsonRpcId::Null), parse_error()),
+                let _ = write_locked(
+                    &writer,
+                    &JsonRpcResponse::err(Some(vissue_control::JsonRpcId::Null), parse_error()),
                     framing,
                 );
                 continue;
             }
         };
-        let req: JsonRpcRequest = match serde_json::from_value(value) {
+        let req: vissue_control::JsonRpcRequest = match serde_json::from_value(value) {
             Ok(r) => r,
             Err(_) => {
-                let _ = write_response(
-                    &mut writer,
-                    &JsonRpcResponse::err(Some(JsonRpcId::Null), invalid_request()),
+                let _ = write_locked(
+                    &writer,
+                    &JsonRpcResponse::err(Some(vissue_control::JsonRpcId::Null), invalid_request()),
                     framing,
                 );
                 continue;
             }
         };
-        if let Some(resp) = dispatch(state, &mut session, &req) {
-            let _ = write_response(&mut writer, &resp, framing);
+        let out = dispatch_ex(state, &mut session, &req);
+        if let Some(resp) = out.response {
+            let _ = write_locked(&writer, &resp, framing);
         }
+        for note in out.after {
+            state.bus.broadcast(&note);
+        }
+    }
+    if let Some(id) = sink_id {
+        state.bus.unregister(id);
     }
 }
 
-fn write_response(
-    writer: &mut StdUnixStream,
+fn write_locked(
+    writer: &Mutex<StdUnixStream>,
     resp: &JsonRpcResponse,
     framing: Framing,
 ) -> io::Result<()> {
     let bytes = serde_json::to_vec(resp)?;
-    write_message(writer, &bytes, framing)?;
-    writer.flush()
-}
-
-pub(super) fn dispatch(
-    state: &OwnerState,
-    session: &mut Session,
-    req: &JsonRpcRequest,
-) -> Option<JsonRpcResponse> {
-    if req.is_notification() {
-        return None;
-    }
-    let id = req.id.clone();
-    let result = match req.method.as_str() {
-        "initialize" => dispatch_initialize(state, session, req.params.as_ref()),
-        "identity/get" => dispatch_identity(state, session),
-        other => Err(method_not_found(other)),
-    };
-    Some(match result {
-        Ok(value) => JsonRpcResponse::ok(id, value),
-        Err(err) => JsonRpcResponse::err(id, err),
-    })
-}
-
-fn dispatch_initialize(
-    state: &OwnerState,
-    session: &mut Session,
-    params: Option<&Value>,
-) -> Result<Value, vissue_control::JsonRpcError> {
-    let params = parse_initialize_params(params.unwrap_or(&json!({})))?;
-    session.agent = Some(params.agent.clone());
-    let result = InitializeResult {
-        protocol_version: PROTOCOL_VERSION,
-        capabilities: LIVE_CAPABILITIES.iter().map(|s| (*s).to_string()).collect(),
-        root: state.layout.root().display().to_string(),
-        prefix: state.layout.prefix().to_string(),
-        generation: events::generation(&state.layout),
-        revision: SERVE_REVISION,
-        identity: params.agent,
-    };
-    serde_json::to_value(result).map_err(|e| vissue_control::rpc::internal_error(e.to_string()))
-}
-
-fn dispatch_identity(
-    state: &OwnerState,
-    session: &Session,
-) -> Result<Value, vissue_control::JsonRpcError> {
-    let identity = session
-        .agent
-        .clone()
-        .ok_or_else(|| invalid_params("initialize required"))?;
-    let result = IdentityResult {
-        identity,
-        root: state.layout.root().display().to_string(),
-        prefix: state.layout.prefix().to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-    };
-    serde_json::to_value(result).map_err(|e| vissue_control::rpc::internal_error(e.to_string()))
+    let mut guard = writer.lock().unwrap_or_else(|p| p.into_inner());
+    write_message(&mut *guard, &bytes, framing)?;
+    guard.flush()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SERVE_REVISION;
     use serde_json::json;
     use std::os::unix::net::UnixListener as StdUnixListener;
+    use vissue_control::JsonRpcId;
+    use vissue_control::JsonRpcRequest;
     use vissue_core::config::Layout;
 
     fn state(dir: &Path) -> OwnerState {
-        OwnerState {
-            layout: Layout::new(dir, "Software"),
-            clients: AtomicUsize::new(0),
-        }
+        OwnerState::new(Layout::new(dir, "Software")).unwrap()
     }
 
     #[test]
@@ -445,7 +484,7 @@ mod tests {
             "initialize",
             json!({"protocolVersion": 1, "client": "tui"}),
         );
-        let resp = dispatch(&state, &mut session, &req).unwrap();
+        let resp = dispatch_ex(&state, &mut session, &req).response.unwrap();
         let err = resp.error.unwrap();
         assert_eq!(err.code, -32602);
         assert_eq!(err.message, "agent is required");
@@ -462,7 +501,11 @@ mod tests {
             "initialize",
             json!({"protocolVersion": 1, "agent": "  "}),
         );
-        let err = dispatch(&state, &mut session, &req).unwrap().error.unwrap();
+        let err = dispatch_ex(&state, &mut session, &req)
+            .response
+            .unwrap()
+            .error
+            .unwrap();
         assert_eq!(err.code, -32602);
     }
 
@@ -476,7 +519,11 @@ mod tests {
             "initialize",
             json!({"protocolVersion": 2, "agent": "tui"}),
         );
-        let err = dispatch(&state, &mut session, &req).unwrap().error.unwrap();
+        let err = dispatch_ex(&state, &mut session, &req)
+            .response
+            .unwrap()
+            .error
+            .unwrap();
         assert_eq!(err.code, -32602);
         assert_eq!(err.data, Some(json!({"supported": 1})));
     }
@@ -491,15 +538,16 @@ mod tests {
             "initialize",
             json!({"protocolVersion": 1, "client": "tui", "agent": "tui-agent"}),
         );
-        let resp = dispatch(&state, &mut session, &req).unwrap();
+        let resp = dispatch_ex(&state, &mut session, &req).response.unwrap();
         let result = resp.result.unwrap();
         assert_eq!(result["protocolVersion"], 1);
         assert_eq!(result["identity"], "tui-agent");
         assert_eq!(result["prefix"], "Software");
-        assert_eq!(result["revision"], SERVE_REVISION);
+        assert_eq!(result["revision"], 1);
         let caps = result["capabilities"].as_array().unwrap();
-        assert_eq!(caps, &vec![json!("identity/get")]);
-        assert!(!caps.iter().any(|c| c == "issue/list"));
+        assert!(caps.iter().any(|c| c == "identity/get"));
+        assert!(caps.iter().any(|c| c == "issue/list"));
+        assert!(caps.iter().any(|c| c == "issue/ready"));
         assert_eq!(session.agent.as_deref(), Some("tui-agent"));
     }
 
@@ -509,7 +557,11 @@ mod tests {
         let state = state(dir.path());
         let mut session = Session { agent: None };
         let req = JsonRpcRequest::call(JsonRpcId::Number(2), "identity/get", json!({}));
-        let err = dispatch(&state, &mut session, &req).unwrap().error.unwrap();
+        let err = dispatch_ex(&state, &mut session, &req)
+            .response
+            .unwrap()
+            .error
+            .unwrap();
         assert_eq!(err.code, -32602);
         assert_eq!(err.message, "initialize required");
     }
@@ -522,7 +574,8 @@ mod tests {
             agent: Some("tui-agent".into()),
         };
         let req = JsonRpcRequest::call(JsonRpcId::Number(2), "identity/get", json!({}));
-        let result = dispatch(&state, &mut session, &req)
+        let result = dispatch_ex(&state, &mut session, &req)
+            .response
             .unwrap()
             .result
             .unwrap();
@@ -537,10 +590,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state = state(dir.path());
         let mut session = Session { agent: None };
-        let req = JsonRpcRequest::call(JsonRpcId::Number(3), "issue/list", json!({}));
-        let err = dispatch(&state, &mut session, &req).unwrap().error.unwrap();
+        let req = JsonRpcRequest::call(JsonRpcId::Number(3), "issue/fold", json!({}));
+        let err = dispatch_ex(&state, &mut session, &req)
+            .response
+            .unwrap()
+            .error
+            .unwrap();
         assert_eq!(err.code, -32601);
-        assert_eq!(err.data, Some(json!({"method": "issue/list"})));
+        assert_eq!(err.data, Some(json!({"method": "issue/fold"})));
     }
 
     #[test]
@@ -549,7 +606,7 @@ mod tests {
         let state = state(dir.path());
         let mut session = Session { agent: None };
         let req = JsonRpcRequest::notification("serve/shutting_down", json!({}));
-        assert!(dispatch(&state, &mut session, &req).is_none());
+        assert!(dispatch_ex(&state, &mut session, &req).response.is_none());
     }
 
     #[test]
@@ -650,59 +707,16 @@ mod tests {
         );
     }
 
-    struct TestOwner {
-        shutdown: Option<tokio::sync::oneshot::Sender<()>>,
-        thread: Option<std::thread::JoinHandle<()>>,
-        socket: PathBuf,
-    }
-
-    impl Drop for TestOwner {
-        fn drop(&mut self) {
-            if let Some(tx) = self.shutdown.take() {
-                let _ = tx.send(());
-            }
-            if let Some(handle) = self.thread.take() {
-                let _ = handle.join();
-            }
-        }
-    }
-
-    fn start_test_owner(dir: &Path) -> TestOwner {
-        use super::super::lifecycle::wait_until_accepts;
-        use std::time::Duration;
-
+    fn start_test_owner(dir: &Path) -> OwnerHandle {
         let socket = dir.join("run/control.sock");
         let layout = Layout::new(dir.join("vault"), "Software");
         let _ = fs::create_dir_all(layout.projects_dir());
-        let cfg = ServeConfig {
+        OwnerHandle::spawn(ServeConfig {
             layout,
-            socket: socket.clone(),
-            exe: None,
-        };
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let thread = std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("test runtime");
-            rt.block_on(async move {
-                let owner = Owner::bind(&cfg).expect("bind test owner");
-                tokio::select! {
-                    _ = owner.accept_loop() => {}
-                    _ = rx => {}
-                }
-            });
-        });
-        assert!(
-            wait_until_accepts(&socket, Duration::from_secs(2)),
-            "test owner did not accept on {}",
-            socket.display()
-        );
-        TestOwner {
-            shutdown: Some(tx),
-            thread: Some(thread),
             socket,
-        }
+            exe: None,
+        })
+        .expect("spawn test owner")
     }
 
     #[test]
@@ -728,11 +742,10 @@ mod tests {
         let ident = client.request("identity/get", json!({})).unwrap();
         assert_eq!(ident["identity"], "test-agent");
 
-        let err = client.request("issue/list", json!({})).unwrap_err();
-        match err {
-            vissue_control::Error::Rpc(e) => assert_eq!(e.code, -32601),
-            other => panic!("{other:?}"),
-        }
+        let list = client.request("issue/list", json!({})).unwrap();
+        assert_eq!(list["unchanged"], false);
+        assert!(list["issues"].as_array().unwrap().is_empty());
+        assert_eq!(list["revision"], 1);
     }
 
     #[test]

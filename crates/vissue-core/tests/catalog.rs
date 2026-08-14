@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use vissue_core::catalog::{
     agenda_rows_from, backlinks_from, children_from, claims_from, excerpt_from, issues_rows_from,
-    search_hits_from, tree_from, CatalogService,
+    search_hits_from, tree_from, tree_text_from, CatalogService,
 };
 use vissue_core::error::Error;
 use vissue_core::model::IssueHeading;
@@ -400,4 +400,16 @@ fn an_excerpt_of_a_file_that_is_gone_is_an_error_not_a_panic() {
     let mut rec = issue("demo", "demo-aaaa", "TODO", "Missing file");
     rec.path = PathBuf::from("/nonexistent/does/not/exist.org");
     assert!(matches!(excerpt_from(&rec).unwrap_err(), Error::Other(_)));
+}
+
+#[test]
+fn tree_text_from_ascii_and_dot_name_the_root() {
+    let recs = corpus();
+    let root = tree_from(&recs, "atlas-1a2b").unwrap().id;
+    let ascii = tree_text_from(&recs, &root, "ascii").unwrap();
+    assert!(ascii.contains("atlas-1a2b"), "{ascii}");
+    let dot = tree_text_from(&recs, &root, "dot").unwrap();
+    assert!(dot.contains("digraph"), "{dot}");
+    let err = tree_text_from(&recs, "missing-zzzz", "ascii").unwrap_err();
+    assert!(matches!(err, Error::IssueNotFound { .. }));
 }

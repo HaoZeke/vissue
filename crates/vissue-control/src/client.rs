@@ -3,6 +3,7 @@
 use std::io::{BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -96,11 +97,41 @@ impl Client {
         self.write_rpc(&JsonRpcRequest::notification(method, params))
     }
 
+    /// Block until the next JSON-RPC notification, or `timeout`.
+    pub fn wait_notification(&mut self, timeout: Duration) -> Result<Notification, Error> {
+        self.reader.get_ref().set_read_timeout(Some(timeout))?;
+        let result = read_next_notification(&mut self.reader);
+        let _ = self.reader.get_ref().set_read_timeout(None);
+        result
+    }
+
     fn write_rpc(&mut self, msg: &JsonRpcRequest) -> Result<(), Error> {
         let bytes = serde_json::to_vec(msg)?;
         write_message(&mut self.writer, &bytes, self.framing)?;
         self.writer.flush()?;
         Ok(())
+    }
+}
+
+fn read_next_notification(reader: &mut BufReader<UnixStream>) -> Result<Notification, Error> {
+    loop {
+        let (payload, _) = read_message(reader)?;
+        if payload.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        let value: Value = serde_json::from_slice(&payload)?;
+        if is_notification(&value) {
+            let method = value
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let params = value.get("params").cloned().unwrap_or(Value::Null);
+            return Ok(Notification::parse(&method, params));
+        }
+        let mut err = invalid_request();
+        err.message = "expected notification".into();
+        return Err(Error::Rpc(err));
     }
 }
 
@@ -336,6 +367,35 @@ mod tests {
             Error::Rpc(e) => assert_eq!(e.code, -32601),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn wait_notification_reads_a_push() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("control.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
+        thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut writer = stream;
+            let note = json!({
+                "jsonrpc":"2.0",
+                "method": NOTIFY_VAULT_CHANGED,
+                "params": {"generation": 2, "revision": 4, "projects": []}
+            });
+            write_message(
+                &mut writer,
+                &serde_json::to_vec(&note).unwrap(),
+                Framing::Jsonl,
+            )
+            .unwrap();
+            writer.flush().unwrap();
+            thread::sleep(std::time::Duration::from_millis(50));
+        });
+        let mut client = Client::connect(&sock).unwrap();
+        let note = client
+            .wait_notification(std::time::Duration::from_secs(2))
+            .unwrap();
+        assert_eq!(note.method(), NOTIFY_VAULT_CHANGED);
     }
 
     #[test]

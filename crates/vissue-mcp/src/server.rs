@@ -262,6 +262,16 @@ impl VissueServer {
         text(agent::body_excerpt(&self.layout, &args.issue_id))
     }
 
+    #[tool(
+        description = "One issue's org text in full, untruncated, screened for secrets. Use this when handing an issue to someone as the thing to work from; body_excerpt is a capped preview."
+    )]
+    async fn vissue_org(
+        &self,
+        Parameters(args): Parameters<IdArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(agent::org_text(&self.layout, &args.issue_id))
+    }
+
     #[tool(description = "Children and blockers below an id, as ascii indent or Graphviz DOT.")]
     async fn vissue_tree(
         &self,
@@ -718,6 +728,14 @@ mod tests {
         assert!(!server
             .vissue_waiting_on(Parameters(IdArgs {
                 issue_id: "atlas-1a2b".into(),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap_or(false));
+        assert!(!server
+            .vissue_org(Parameters(IdArgs {
+                issue_id: "atlas-2c3d".into(),
             }))
             .await
             .unwrap()

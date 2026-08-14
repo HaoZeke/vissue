@@ -502,6 +502,111 @@ mod tests {
         assert_eq!(counted.is_error, Some(false));
     }
 
+    /// The tools that write, exercised in the order an agent uses them.
+    ///
+    /// The read-only surface is covered above; the create/update/claim/note
+    /// path was not, and it is the half that changes the corpus.
+    #[tokio::test]
+    async fn the_write_tools_carry_their_arguments_through_to_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        std::fs::create_dir_all(layout.projects_dir()).unwrap();
+        let server = VissueServer::with_layout(layout.clone());
+
+        let made = server
+            .vissue_create(Parameters(CreateArgs {
+                project: "atlas".into(),
+                title: "Rotate the signing key".into(),
+                priority: Some("A".into()),
+                issue_type: Some("chore".into()),
+                tags: Some("ops,security".into()),
+                parent: None,
+                body: Some("The old one expires this quarter.".into()),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(made.is_error, Some(false));
+
+        let file = std::fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+        assert!(file.contains("Rotate the signing key"), "{file}");
+        assert!(file.contains("[#A]"), "priority not carried: {file}");
+        assert!(file.contains(":TYPE:       chore"), "{file}");
+        assert!(
+            file.contains("expires this quarter"),
+            "body missing: {file}"
+        );
+        assert!(
+            file.contains(":ops:") && file.contains(":security:"),
+            "{file}"
+        );
+
+        let id = file
+            .lines()
+            .find_map(|l| l.trim().strip_prefix(":ID:"))
+            .map(|s| s.trim().to_string())
+            .expect("an id");
+
+        // Claim, then note: neither may disturb the other's stamp.
+        assert_eq!(
+            server
+                .vissue_claim(Parameters(ClaimArgs {
+                    issue_id: id.clone(),
+                    force: None,
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            server
+                .vissue_note(Parameters(NoteArgs {
+                    issue_id: id.clone(),
+                    text: "waiting on the vault rotation window".into(),
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        let after = std::fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+        assert!(after.contains(":CLAIMED_BY:"), "{after}");
+        assert!(after.contains("vault rotation window"), "{after}");
+
+        // Closing reports the change; the tool surfaces hints alongside it.
+        let closed = server
+            .vissue_update(Parameters(UpdateArgs {
+                issue_id: id.clone(),
+                state: Some("DONE".into()),
+                priority: Some("C".into()),
+                block: None,
+                unblock: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(closed.is_error, Some(false));
+        let done = std::fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+        assert!(done.contains("DONE"), "{done}");
+        assert!(done.contains("[#C]"), "{done}");
+    }
+
+    #[tokio::test]
+    async fn a_write_tool_reports_an_unknown_id_as_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        std::fs::create_dir_all(layout.projects_dir()).unwrap();
+        let server = VissueServer::with_layout(layout);
+
+        let err = server
+            .vissue_note(Parameters(NoteArgs {
+                issue_id: "atlas-zzzz".into(),
+                text: "into the void".into(),
+            }))
+            .await
+            .unwrap_err();
+        assert!(format!("{err:?}").contains("atlas-zzzz"), "{err:?}");
+    }
+
     #[tokio::test]
     async fn an_unknown_mirror_format_is_an_invalid_parameter() {
         let dir = tempfile::tempdir().unwrap();

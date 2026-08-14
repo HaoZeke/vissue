@@ -356,6 +356,7 @@ fn load_overlay(path: &Path) -> Result<KeyMap, String> {
     }
     let table = value.get("board").and_then(|v| v.as_table());
     if let Some(table) = table {
+        let mut pending: Vec<(ActionId, String)> = Vec::new();
         for (id, chord) in table {
             let Some(action) = ActionId::parse(id) else {
                 return Err(format!("unknown action {id}"));
@@ -369,12 +370,16 @@ fn load_overlay(path: &Path) -> Result<KeyMap, String> {
             if !row.remappable {
                 return Err(format!("{id} is not remappable"));
             }
-            let chord_l = chord.to_string();
-            if RESERVED.contains(&chord_l.to_ascii_lowercase().as_str()) {
+            if RESERVED.contains(&chord.to_ascii_lowercase().as_str()) {
                 return Err(format!("cannot steal reserved chord {chord}"));
             }
-            map.by_chord.retain(|_, id| *id != action);
-            if let Some(prev) = map.by_chord.insert(chord_l.clone(), action) {
+            pending.push((action, chord.to_string()));
+        }
+        for (action, _) in &pending {
+            map.by_chord.retain(|_, id| id != action);
+        }
+        for (action, chord) in pending {
+            if let Some(prev) = map.by_chord.insert(chord.clone(), action) {
                 return Err(format!("chord {chord} already bound to {}", prev.as_str()));
             }
         }
@@ -429,7 +434,11 @@ mod tests {
     fn overlay_remaps_list_down() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("keys.toml");
-        std::fs::write(&path, "leader = \";\"\n[board]\n\"list.down\" = \"n\"\n").unwrap();
+        std::fs::write(
+            &path,
+            "leader = \";\"\n[board]\n\"list.down\" = \"n\"\n\"issue.note\" = \"leader+n\"\n",
+        )
+        .unwrap();
         let map = load_overlay(&path).unwrap();
         assert_eq!(map.leader, Some(';'));
         assert_eq!(map.get("n"), Some(ActionId::ListDown));

@@ -1051,6 +1051,11 @@ impl Palette {
         if matches!(self.filter, BoardFilter::Ready | BoardFilter::List) {
             self.items = apply_forest(std::mem::take(&mut self.items));
         }
+        if !self.query.is_empty() && self.filter != BoardFilter::Search {
+            self.filtered = rank_indices(&self.query, &self.items);
+        } else {
+            self.filtered = (0..self.items.len()).collect();
+        }
         if self.selected >= self.filtered.len() {
             self.selected = self.filtered.len().saturating_sub(1);
         }

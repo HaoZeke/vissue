@@ -147,7 +147,7 @@ fn tui_help_names_offline() {
 }
 
 #[test]
-fn hud_help_names_summon_flags() {
+fn hud_help_names_rofi_and_iced() {
     let out = vissue(&["hud", "--help"]);
     assert!(
         out.status.success(),
@@ -155,21 +155,20 @@ fn hud_help_names_summon_flags() {
         String::from_utf8_lossy(&out.stderr)
     );
     let text = stdout(&out);
-    assert!(text.contains("--offline"), "{text}");
+    assert!(text.contains("--mode"), "{text}");
+    assert!(text.contains("rofi"), "{text}");
+    assert!(text.contains("--iced"), "{text}");
     assert!(text.contains("--toggle"), "{text}");
-    assert!(text.contains("--show"), "{text}");
-    assert!(text.contains("--hide"), "{text}");
-    assert!(text.contains("--foreground"), "{text}");
 }
 
 #[test]
-fn hud_without_binary_exits_127() {
+fn iced_hud_without_binary_exits_127() {
     let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
-        .args(["--root", fixture_root().to_str().unwrap(), "hud"])
+        .args(["--root", fixture_root().to_str().unwrap(), "hud", "--iced"])
         .env_remove("VISSUE_HUD_BIN")
         .env("PATH", "/nonexistent")
         .output()
-        .expect("run vissue hud");
+        .expect("run vissue hud --iced");
     assert_eq!(out.status.code(), Some(127));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("cargo install vissue-hud"), "{err}");
@@ -178,10 +177,10 @@ fn hud_without_binary_exits_127() {
 #[test]
 fn hud_missing_override_bin_exits_127() {
     let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
-        .args(["--root", fixture_root().to_str().unwrap(), "hud"])
+        .args(["--root", fixture_root().to_str().unwrap(), "hud", "--iced"])
         .env("VISSUE_HUD_BIN", "/nonexistent/vissue-hud")
         .output()
-        .expect("run vissue hud");
+        .expect("run vissue hud --iced");
     assert_eq!(out.status.code(), Some(127));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("cargo install vissue-hud"), "{err}");

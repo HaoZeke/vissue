@@ -152,19 +152,16 @@ attaches to `vissue serve`, starting serve when the socket is free. A
 socket bound to another root stays on the files so a claim cannot hit
 the wrong vault. `q` quits; `?` lists the keys.
 
-`vissue hud` execs `vissue-hud` (install it separately so `cargo install
-vissue-cli` stays small). The overlay filters ready plus search. Enter
-shows an excerpt; `c` claims; `n` notes; Esc hides (the process stays).
-`--toggle` / `--show` / `--hide` talk to a summon socket for compositor
-binds. Default detach uses `process_group(0)` only; `--foreground` stays
-on the terminal. The socket protocol is on
-[Control](https://vissue.rgoswami.me/control).
+`vissue hud` opens a rofi picker over the ready set and uses the seat
+rofi theme (font, colours, window). Return opens the heading in
+`$EDITOR`. Alt+c claims. Alt+n notes. `--mode list|claims|stale|new`
+changes the list. `--iced` execs the optional `vissue-hud` overlay.
 
 ```console
 $ vissue tui
 $ vissue tui --offline
-$ vissue hud --foreground
-$ vissue hud --toggle
+$ vissue hud
+$ vissue hud --mode new
 ```
 
 ## Install

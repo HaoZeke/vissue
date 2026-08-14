@@ -1550,12 +1550,16 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__hud)
-            opts="-s -h --offline --toggle --show --hide --socket --root --prefix --help"
+            opts="-s -h --mode --offline --toggle --show --hide --iced --socket --root --prefix --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --mode)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --socket)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0

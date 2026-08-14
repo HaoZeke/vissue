@@ -226,21 +226,18 @@ Body edits stay in the file.
 
 * Summon the desktop palette
 
-=vissue hud= execs =vissue-hud=. First paint is the files, then the same
-attach story as the board. =--offline= never probes a socket and never
-starts serve. A live serve bound to another root stays on the files.
+=vissue hud= opens a rofi picker over the ready set and uses the seat
+rofi theme. Return opens the heading in =$EDITOR=. Alt+c claims.
+Alt+n notes.
 
 #+begin_src console
-$ cargo install vissue-hud
-$ vissue hud --foreground
-$ vissue hud --toggle
+$ vissue hud
+$ vissue hud --mode list
+$ vissue hud --mode new
 #+end_src
 
-The overlay filters ready plus search. Enter shows an excerpt; =c=
-claims; =n= notes; Esc hides (the process stays). Bind the compositor
-to =vissue hud --toggle=. Default detach places the child in its own
-process group; =--foreground= stays on the terminal. A second =vissue
-hud= is a no-op when the summon socket already accepts.
+Bind the compositor to =vissue hud=. =--iced= execs the optional
+=vissue-hud= overlay if that binary is installed.
 
 * Point at a different layout
 

@@ -23,7 +23,7 @@
 | =projects=, =identity=                                                    | Layout introspection                                                     |
 | =serve=                                                                   | Own the per-user Unix control socket (= -d=, =stop=, =restart=, =status=) |
 | =tui=                                                                     | Terminal board (=--offline= never attaches)                              |
-| =hud=                                                                     | Exec =vissue-hud= (=--toggle=, =--show=, =--hide=, =--offline=, =--foreground=) |
+| =hud=                                                                     | Rofi picker over ready (=--mode=, =--iced=) |
 | =completions=, =man=                                                      | Shell completion scripts and the manual page                             |
 
 * States and priorities
@@ -138,14 +138,10 @@ stays offline and refuses mutations against the other vault. Status:
 =serve:live|offline|mismatch gen=N rev=M agent=...=. Keys are on =?=.
 On Windows only =tui --offline= runs.
 
-=vissue hud= execs =vissue-hud= (PATH or =VISSUE_HUD_BIN=). Same attach
-story as the board, including claim and note when serve is down or
-mismatched. A second =vissue hud= is a no-op when =hud.sock= accepts.
-=--toggle= / =--show= / =--hide= send one line on that socket. Default
-detach uses =process_group(0)= only (the child can still see SIGHUP);
-=--foreground= stays on the terminal. Missing binary prints
-=cargo install vissue-hud= and exits 127. On Windows only
-=hud --offline= runs.
+=vissue hud= is a rofi picker over the ready set. It uses the seat
+rofi theme. Return opens the heading in =$EDITOR=. Alt+c claims.
+Alt+n notes. =--mode list|claims|stale|new= changes the list.
+=--iced= execs the optional overlay.
 
 * Exit statuses
 

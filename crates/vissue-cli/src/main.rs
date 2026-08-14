@@ -11,6 +11,8 @@ use vissue_core::ops::{self, CreateOpts};
 use vissue_core::store;
 use vissue_core::{agent, events, report};
 
+mod rofi;
+
 /// Write to stdout, surfacing a closed pipe as an error the caller handles.
 ///
 /// The `print!` family unwraps the write and aborts the process instead, so
@@ -374,29 +376,32 @@ enum Command {
         #[arg(short = 's', long)]
         socket: Option<PathBuf>,
     },
-    /// Exec `vissue-hud` (PATH or VISSUE_HUD_BIN). Does not compile it.
+    /// Summonable palette. Default is rofi over the ready set (seat theme).
     ///
-    /// First paint reads the files. Unless `--offline`, the palette then
-    /// attaches to `vissue serve` (starting it when the socket is free).
-    /// A second `vissue hud` is a no-op when the summon socket accepts.
-    /// Default detach uses process_group(0) only; `--foreground` stays
-    /// on the terminal. Missing binary: print cargo install and exit 127.
+    /// Return opens the heading in `$EDITOR`. Alt+c claims. Alt+n notes.
+    /// `--iced` execs `vissue-hud` if that binary is installed.
     Hud {
-        /// Never attach, never spawn serve; CatalogService plus generation poll.
+        /// ready, list (all), claims, stale, or new
+        #[arg(long, default_value = "ready")]
+        mode: String,
+        /// Never attach, never spawn serve; used by `--iced`.
         #[arg(long)]
         offline: bool,
-        /// Stay on the terminal. Default detach uses process_group(0) only.
+        /// Stay on the terminal. Used by `--iced`.
         #[arg(long)]
         foreground: bool,
-        /// Show or hide a running HUD.
+        /// Show or hide a running iced HUD, or dismiss a live rofi picker.
         #[arg(long, group = "summon")]
         toggle: bool,
-        /// Show a running HUD.
+        /// Show a running iced HUD.
         #[arg(long, group = "summon")]
         show: bool,
-        /// Hide a running HUD.
+        /// Hide a running iced HUD, or dismiss a live rofi picker.
         #[arg(long, group = "summon")]
         hide: bool,
+        /// Use the iced overlay instead of rofi.
+        #[arg(long)]
+        iced: bool,
         /// Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then
         /// $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock.
         #[arg(short = 's', long)]
@@ -799,25 +804,33 @@ fn run() -> Result<()> {
             })?;
         }
         Command::Hud {
+            mode,
             offline,
             foreground,
             toggle,
             show,
             hide,
+            iced,
             socket,
         } => {
-            if !offline && cfg!(not(unix)) {
-                bail!("vissue hud is Unix-only");
+            if iced {
+                if !offline && cfg!(not(unix)) {
+                    bail!("vissue hud --iced is Unix-only");
+                }
+                exec_hud(ExecHud {
+                    layout,
+                    socket,
+                    offline,
+                    foreground,
+                    toggle,
+                    show,
+                    hide,
+                })?;
+            } else {
+                let _ = (toggle, show, hide, offline, foreground, socket);
+                let mode = rofi::Mode::parse(&mode)?;
+                rofi::run(rofi::RofiOpts::from_env(layout, mode)?)?;
             }
-            exec_hud(ExecHud {
-                layout,
-                socket,
-                offline,
-                foreground,
-                toggle,
-                show,
-                hide,
-            })?;
         }
     }
     // Flush here rather than at exit, so a full disk or a closed pipe reaches

@@ -221,9 +221,9 @@ $ vissue serve status       # exit 0 if live, 1 otherwise
 $ vissue serve status --json
 $ vissue tui                # board; auto-start serve if the socket is free
 $ vissue tui --offline      # never attach, never spawn
-$ vissue hud                # exec vissue-hud
-$ vissue hud --toggle
-$ vissue hud --offline
+$ vissue hud                # rofi over ready
+$ vissue hud --mode new
+$ vissue hud --iced         # optional overlay
 #+end_src
 
 =serve -d= places the child in its own process group
@@ -252,14 +252,9 @@ the files and refuses mutations against the other vault. Status names
 live, offline, or mismatch, then generation, revision, and agent.
 Keys are on =?=. On Windows only =tui --offline= runs.
 
-=vissue hud= execs =vissue-hud= (PATH or =VISSUE_HUD_BIN=). Same
-attach story as the board, including claim and note when serve is down
-or mismatched. A second =vissue hud= is a no-op when =hud.sock=
-accepts. =--toggle= / =--show= / =--hide= send one line on that
-socket. Default detach is the same =process_group(0)= as serve;
-=--foreground= stays on the terminal. Missing binary prints
-=cargo install vissue-hud= and exits 127. On Windows only
-=hud --offline= runs.
+=vissue hud= is a rofi dmenu over the files. It does not need serve.
+Return opens the heading. Alt+c claims. Alt+n notes. =--iced= execs
+=vissue-hud= when that binary is installed.
 
 How-to covers the board keys and the overlay; this page is the wire.
 

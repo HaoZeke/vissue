@@ -235,10 +235,11 @@ fn search_bar(palette: &Palette) -> Element<'_, Message> {
     }
 }
 
-fn task_row(item: &HudItem, selected: bool) -> Element<'static, Message> {
+fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
     let done = item.state == "DONE";
     let title_color = if done { theme::OVERLAY } else { theme::TEXT };
     let id = item.id.clone();
+    let pip_color = theme::priority_color(&item.priority);
     let mut meta = format!("{}  {}  {}", item.project, item.state, item.id);
     if let Some(due) = item.due.as_deref() {
         meta = format!("{meta}  {due}");
@@ -249,7 +250,7 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'static, Message> {
 
     let pip = container(Space::new().width(4).height(28))
         .style(move |_| container::Style {
-            background: Some(Background::Color(theme::priority_color(&item.priority))),
+            background: Some(Background::Color(pip_color)),
             border: Border {
                 radius: 2.0.into(),
                 width: 0.0,
@@ -276,7 +277,7 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'static, Message> {
         checkbox(done)
             .on_toggle(move |_| Message::ToggleDone(id.clone()))
             .size(18)
-            .style(|_, status| check_style(status, done)),
+            .style(move |_, status| check_style(status, done)),
         pip,
         titles,
     ]

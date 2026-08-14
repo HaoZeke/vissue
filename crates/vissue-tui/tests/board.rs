@@ -326,3 +326,174 @@ fn empty_search_and_project_clear() {
     app.handle_key(key(KeyCode::Enter));
     assert!(app.project.is_none());
 }
+
+/// Second Ready/List fetch returns `{unchanged: true, issues: []}`, like
+/// serve when `since_revision` matches the catalog head.
+struct UnchangedAfterFirst {
+    inner: CoreBackend,
+    ready_calls: std::sync::atomic::AtomicUsize,
+    list_calls: std::sync::atomic::AtomicUsize,
+}
+
+impl UnchangedAfterFirst {
+    fn new(inner: CoreBackend) -> Self {
+        Self {
+            inner,
+            ready_calls: std::sync::atomic::AtomicUsize::new(0),
+            list_calls: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+}
+
+impl BoardBackend for UnchangedAfterFirst {
+    fn layout(&self) -> &vissue_core::config::Layout {
+        self.inner.layout()
+    }
+    fn generation(&self) -> u64 {
+        self.inner.generation()
+    }
+    fn revision(&self) -> u64 {
+        5
+    }
+    fn live(&self) -> vissue_tui::BackendKind {
+        vissue_tui::BackendKind::Control
+    }
+    fn identity(&self) -> &str {
+        self.inner.identity()
+    }
+    fn list(
+        &self,
+        q: vissue_core::views::ListQuery,
+    ) -> Result<vissue_tui::ListPage, vissue_core::error::Error> {
+        let n = self
+            .list_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if n == 0 {
+            self.inner.list(q)
+        } else {
+            Ok(vissue_tui::ListPage {
+                unchanged: true,
+                revision: 5,
+                ..vissue_tui::ListPage::default()
+            })
+        }
+    }
+    fn ready(
+        &self,
+        project: Option<&str>,
+    ) -> Result<vissue_tui::ListPage, vissue_core::error::Error> {
+        let n = self
+            .ready_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if n == 0 {
+            self.inner.ready(project)
+        } else {
+            Ok(vissue_tui::ListPage {
+                unchanged: true,
+                revision: 5,
+                ..vissue_tui::ListPage::default()
+            })
+        }
+    }
+    fn get(&self, id: &str) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
+        self.inner.get(id)
+    }
+    fn excerpt(&self, id: &str) -> Result<vissue_core::views::Excerpt, vissue_core::error::Error> {
+        self.inner.excerpt(id)
+    }
+    fn search(
+        &self,
+        q: &str,
+        n: usize,
+    ) -> Result<Vec<vissue_core::views::SearchHit>, vissue_core::error::Error> {
+        self.inner.search(q, n)
+    }
+    fn claims(
+        &self,
+        h: Option<&str>,
+        p: Option<&str>,
+    ) -> Result<Vec<vissue_core::views::ClaimRow>, vissue_core::error::Error> {
+        self.inner.claims(h, p)
+    }
+    fn agenda(
+        &self,
+        d: i64,
+        p: Option<&str>,
+    ) -> Result<Vec<vissue_core::views::AgendaRow>, vissue_core::error::Error> {
+        self.inner.agenda(d, p)
+    }
+    fn tree(&self, id: &str) -> Result<vissue_core::views::TreeNode, vissue_core::error::Error> {
+        self.inner.tree(id)
+    }
+    fn related(
+        &self,
+        id: &str,
+        d: usize,
+        n: usize,
+    ) -> Result<Vec<vissue_core::views::RelatedHit>, vissue_core::error::Error> {
+        self.inner.related(id, d, n)
+    }
+    fn projects(&self) -> Result<Vec<String>, vissue_core::error::Error> {
+        self.inner.projects()
+    }
+    fn claim(&self, id: &str, f: bool) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+        self.inner.claim(id, f)
+    }
+    fn note(&self, id: &str, t: &str) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+        self.inner.note(id, t)
+    }
+    fn update(
+        &self,
+        r: vissue_tui::UpdateReq,
+    ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+        self.inner.update(r)
+    }
+    fn open(&self, id: &str) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
+        self.inner.open(id)
+    }
+    fn wait(&self, last: u64, ms: u64) -> Result<u64, vissue_core::error::Error> {
+        self.inner.wait(last, ms)
+    }
+}
+
+#[test]
+fn unchanged_list_does_not_wipe_rows() {
+    let backend = UnchangedAfterFirst::new(CoreBackend::open(fixture_layout(), "snap").unwrap());
+    let mut app = App::with_backend(Box::new(backend), "snap".into(), ServeStatus::Live).unwrap();
+    let first: Vec<_> = app.rows.iter().map(|r| r.id.clone()).collect();
+    assert!(first.contains(&"atlas-1a2b".into()), "{first:?}");
+    assert!(first.contains(&"atlas-2c3d".into()), "{first:?}");
+    app.reload().unwrap();
+    let second: Vec<_> = app.rows.iter().map(|r| r.id.clone()).collect();
+    assert_eq!(first, second);
+    let text = render_plain(&app, 100, 24).unwrap();
+    assert!(text.contains("atlas-1a2b"), "{text}");
+    assert!(!text.contains("(empty)"), "{text}");
+}
+
+#[test]
+fn claims_and_search_draw_extra() {
+    let backend = CoreBackend::open(fixture_layout(), "snap").unwrap();
+    let mut app =
+        App::with_backend(Box::new(backend), "snap".into(), ServeStatus::Offline).unwrap();
+    app.handle_key(ch('3'));
+    assert_eq!(app.pane, vissue_tui::Pane::Claims);
+    let holder = app
+        .rows
+        .iter()
+        .find(|r| r.id == "atlas-1a2b")
+        .map(|r| r.extra.clone())
+        .unwrap();
+    assert!(holder.contains("fixture-agent"), "{holder}");
+    let text = render_plain(&app, 120, 24).unwrap();
+    assert!(text.contains("fixture-agent"), "{text}");
+
+    app.handle_key(ch('/'));
+    type_text(&mut app, "retry");
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.selected_id(), Some("beacon-5j6k"));
+    let snippet = &app.rows[0].extra;
+    assert!(!snippet.is_empty(), "search extra empty");
+    let text = render_plain(&app, 120, 24).unwrap();
+    assert!(text.contains(snippet.trim()), "{text}");
+}

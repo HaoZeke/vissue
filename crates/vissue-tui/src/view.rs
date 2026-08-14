@@ -71,10 +71,17 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App) {
     } else {
         for (i, row) in app.rows.iter().enumerate() {
             let marker = if i == app.selected { ">" } else { " " };
-            let text = format!(
-                "{marker} {} [{:>8}] [#{}] {}  {}",
-                row.id, row.state, row.priority, row.title, row.project
-            );
+            let text = if row.extra.is_empty() {
+                format!(
+                    "{marker} {} [{:>8}] [#{}] {}  {}",
+                    row.id, row.state, row.priority, row.title, row.project
+                )
+            } else {
+                format!(
+                    "{marker} {} [{:>8}] [#{}] {}  {}  {}",
+                    row.id, row.state, row.priority, row.title, row.project, row.extra
+                )
+            };
             let style = if i == app.selected {
                 Style::default().add_modifier(Modifier::REVERSED)
             } else {

@@ -8,7 +8,7 @@ use vissue_core::config::Layout;
 use vissue_core::views::{IssueDetail, ListQuery};
 
 use crate::attach::{try_attach, AttachHooks, AttachOutcome, ServeStatus};
-use crate::backend::{BoardBackend, UpdateReq};
+use crate::backend::{BoardBackend, ListPage, UpdateReq};
 use crate::core_backend::CoreBackend;
 use crate::keys::{
     char_of, is_press, Action, ConfirmKind, DetailTab, Focus, Pane, PromptKind, HELP,
@@ -164,38 +164,30 @@ impl App {
 
     pub fn reload(&mut self) -> anyhow::Result<()> {
         let project = self.project.as_deref();
-        self.rows = match self.pane {
-            Pane::Ready => self
-                .backend
-                .ready(project)?
-                .issues
-                .into_iter()
-                .map(row_from_issue)
-                .collect(),
-            Pane::List => self
-                .backend
-                .list(ListQuery {
-                    project: project.map(str::to_string),
-                    ..ListQuery::default()
-                })?
-                .issues
-                .into_iter()
-                .map(row_from_issue)
-                .collect(),
-            Pane::Claims => self
-                .backend
-                .claims(None, project)?
-                .into_iter()
-                .map(row_from_claim)
-                .collect(),
-            Pane::Agenda => self
-                .backend
-                .agenda(14, project)?
-                .into_iter()
-                .map(row_from_agenda)
-                .collect(),
+        match self.pane {
+            Pane::Ready => self.apply_issue_page(self.backend.ready(project)?),
+            Pane::List => self.apply_issue_page(self.backend.list(ListQuery {
+                project: project.map(str::to_string),
+                ..ListQuery::default()
+            })?),
+            Pane::Claims => {
+                self.rows = self
+                    .backend
+                    .claims(None, project)?
+                    .into_iter()
+                    .map(row_from_claim)
+                    .collect();
+            }
+            Pane::Agenda => {
+                self.rows = self
+                    .backend
+                    .agenda(14, project)?
+                    .into_iter()
+                    .map(row_from_agenda)
+                    .collect();
+            }
             Pane::Search => {
-                if self.search_query.is_empty() {
+                self.rows = if self.search_query.is_empty() {
                     Vec::new()
                 } else {
                     self.backend
@@ -203,14 +195,23 @@ impl App {
                         .into_iter()
                         .map(row_from_search)
                         .collect()
-                }
+                };
             }
-        };
+        }
         if self.selected >= self.rows.len() {
             self.selected = self.rows.len().saturating_sub(1);
         }
         self.refresh_detail();
         Ok(())
+    }
+
+    /// Serve answers `{unchanged: true, issues: []}` when `since_revision`
+    /// matches the catalog. Keep the rows from the last full page.
+    fn apply_issue_page(&mut self, page: ListPage) {
+        if page.unchanged {
+            return;
+        }
+        self.rows = page.issues.into_iter().map(row_from_issue).collect();
     }
 
     pub fn poll_updates(&mut self) {

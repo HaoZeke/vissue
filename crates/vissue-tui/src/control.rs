@@ -28,6 +28,8 @@ pub struct ControlBackend {
     client: Mutex<Client>,
     generation: AtomicU64,
     revision: AtomicU64,
+    /// Revision of the last full list/ready page, not the last mut/notify.
+    page_revision: AtomicU64,
     since: SinceGate,
     last_since: Mutex<Option<Option<u64>>>,
 }
@@ -61,6 +63,7 @@ impl ControlBackend {
             client: Mutex::new(client),
             generation: AtomicU64::new(init.generation),
             revision: AtomicU64::new(init.revision),
+            page_revision: AtomicU64::new(0),
             since: SinceGate::after_attach(),
             last_since: Mutex::new(None),
         })
@@ -72,8 +75,10 @@ impl ControlBackend {
     }
 
     fn list_params(&self, q: ListQuery) -> IssueListParams {
-        let revision = self.revision.load(Ordering::SeqCst);
-        let since = self.since.next(revision);
+        // Send the last full-page revision, not the mut/notify stamp. A
+        // matching head is `unchanged`; a newer head returns rows.
+        let page = self.page_revision.load(Ordering::SeqCst);
+        let since = self.since.next(page);
         *self.last_since.lock().expect("since") = Some(since);
         IssueListParams {
             project: q.project,
@@ -88,6 +93,7 @@ impl ControlBackend {
 
     fn apply_list(&self, result: IssueListResult) -> ListPage {
         if !result.unchanged {
+            self.page_revision.store(result.revision, Ordering::SeqCst);
             self.revision.store(result.revision, Ordering::SeqCst);
             self.generation.store(result.generation, Ordering::SeqCst);
         }
@@ -530,6 +536,68 @@ mod tests {
         );
         assert_eq!(backend.open("atlas-1a2b").unwrap().id, "atlas-1a2b");
         assert_eq!(backend.wait(3, 5).unwrap(), 3);
+    }
+
+    #[test]
+    fn after_claim_next_list_sends_page_revision_not_head() {
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("control.sock");
+        let layout = Layout::new(dir.path().join("vault"), "Software");
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_cb = Arc::clone(&seen);
+        let root = layout.root().display().to_string();
+        let listener = UnixListener::bind(&sock).unwrap();
+        thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut writer = stream;
+            while let Ok((payload, framing)) = read_message(&mut reader) {
+                let req: JsonRpcRequest = serde_json::from_slice(&payload).unwrap();
+                let result = match req.method.as_str() {
+                    "initialize" => json!({
+                        "protocolVersion":1,"capabilities":[],"root":root,
+                        "prefix":"Software","generation":2,"revision":10,"identity":"tui"
+                    }),
+                    "issue/ready" | "issue/list" => {
+                        let since = req
+                            .params
+                            .as_ref()
+                            .and_then(|p| p.get("since_revision"))
+                            .cloned();
+                        seen_cb.lock().unwrap().push(since);
+                        json!({
+                            "issues":[{
+                                "id":"atlas-2c3d","state":"TODO","priority":"B",
+                                "title":"Emit a summary table","project":"atlas",
+                                "blocked_by":[],"claimed_by":null,"claimed_at":null
+                            }],
+                            "total":1,"matched":1,"revision":10,
+                            "generation":2,"unchanged":false
+                        })
+                    }
+                    "issue/claim" => json!({
+                        "ok":true,"report":"claimed","issue":null,
+                        "revision":11,"generation":3
+                    }),
+                    other => panic!("unexpected {other}"),
+                };
+                let body = json!({"jsonrpc":"2.0","id":req.id,"result":result});
+                write_message(&mut writer, &serde_json::to_vec(&body).unwrap(), framing).unwrap();
+                writer.flush().unwrap();
+            }
+        });
+
+        let backend = ControlBackend::connect(&sock, &layout, "tui").unwrap();
+        let page = backend.ready(None).unwrap();
+        assert_eq!(page.issues[0].id, "atlas-2c3d");
+        assert_eq!(backend.last_since_revision(), Some(None));
+        assert!(backend.claim("atlas-2c3d", false).unwrap().ok);
+        assert_eq!(backend.revision(), 11);
+        backend.ready(None).unwrap();
+        assert_eq!(backend.last_since_revision(), Some(Some(10)));
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0], None);
+        assert_eq!(seen[1], Some(json!(10)));
     }
 
     #[test]

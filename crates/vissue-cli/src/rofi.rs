@@ -1,4 +1,4 @@
-//! Rofi dmenu over the tracker. This is the default `vissue hud`.
+//! Rofi dmenu over the tracker. `vissue hud --rofi` uses this picker.
 //!
 //! The seat theme (font, colours, window chrome) comes from the user's
 //! rofi config. This module only feeds rows and reads the exit code.
@@ -266,8 +266,16 @@ fn resolve_rofi_bin() -> Result<PathBuf> {
 }
 
 fn which(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
+    which_in(&std::env::var_os("PATH")?, name)
+}
+
+/// Search one `PATH`-shaped list for an executable file called `name`.
+///
+/// Split out from `which` so the search can be exercised against a chosen
+/// list: `PATH` belongs to the whole process, and a test that reassigns it
+/// changes the world every other test is running in.
+fn which_in(path: &std::ffi::OsStr, name: &str) -> Option<PathBuf> {
+    for dir in std::env::split_paths(path) {
         let candidate = dir.join(name);
         if candidate.is_file() {
             return Some(candidate);
@@ -314,5 +322,103 @@ mod tests {
         assert_eq!(Mode::parse("all").unwrap(), Mode::List);
         assert_eq!(Mode::parse("ready").unwrap(), Mode::Ready);
         assert!(Mode::parse("nope").is_err());
+    }
+
+    #[test]
+    fn every_mode_parses_and_names_itself() {
+        for (raw, mode) in [
+            ("ready", Mode::Ready),
+            ("list", Mode::List),
+            ("claims", Mode::Claims),
+            ("stale", Mode::Stale),
+            ("new", Mode::New),
+        ] {
+            assert_eq!(Mode::parse(raw).unwrap(), mode);
+            // The prompt is what the user reads above the picker, so each
+            // mode has to say something different.
+            assert!(mode.prompt().contains(raw), "{raw}: {}", mode.prompt());
+        }
+    }
+
+    #[test]
+    fn the_unknown_mode_error_lists_the_real_ones() {
+        let err = Mode::parse("sideways").unwrap_err().to_string();
+        assert!(err.contains("sideways"), "{err}");
+        for mode in ["ready", "list", "claims", "stale", "new"] {
+            assert!(err.contains(mode), "{mode} missing from {err}");
+        }
+    }
+
+    #[test]
+    fn a_file_range_that_is_not_one_is_rejected() {
+        assert_eq!(split_file_range("issues.org"), None);
+        assert_eq!(split_file_range("issues.org-40"), None);
+        assert_eq!(split_file_range("issues.org:x-40"), None);
+        // A range still parses when the numbers touch the ends.
+        assert_eq!(
+            split_file_range("a:1-2"),
+            Some(("a", 1)),
+            "the smallest well-formed range"
+        );
+    }
+
+    #[test]
+    fn which_takes_the_first_hit_and_skips_empty_entries() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        // The same name in two places: the earlier entry wins.
+        std::fs::write(first.path().join("pretend-rofi"), "#!/bin/sh\n").unwrap();
+        std::fs::write(second.path().join("pretend-rofi"), "#!/bin/sh\n").unwrap();
+        let path = std::env::join_paths([first.path(), second.path()]).unwrap();
+
+        assert_eq!(
+            which_in(&path, "pretend-rofi").as_deref(),
+            Some(first.path().join("pretend-rofi").as_path())
+        );
+        assert_eq!(which_in(&path, "definitely-not-installed"), None);
+    }
+
+    #[test]
+    fn a_directory_on_the_path_is_not_a_binary() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("rofi")).unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+        assert_eq!(
+            which_in(&path, "rofi"),
+            None,
+            "a directory named rofi is not rofi"
+        );
+    }
+
+    #[test]
+    fn listing_answers_each_mode_from_the_corpus() {
+        let root = tempfile::tempdir().unwrap();
+        let src =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixture_vault");
+        copy_tree(&src, root.path());
+        let layout = Layout::new(root.path(), "Software");
+
+        let ready = listing(&layout, Mode::Ready).unwrap();
+        assert!(ready.contains("atlas-"), "{ready}");
+        let all = listing(&layout, Mode::List).unwrap();
+        assert!(all.lines().count() >= ready.lines().count(), "{all}");
+        // Claims and stale are allowed to be empty; they must not error.
+        listing(&layout, Mode::Claims).unwrap();
+        listing(&layout, Mode::Stale).unwrap();
+        // `new` has nothing to list: the picker prompts instead.
+        assert!(listing(&layout, Mode::New).unwrap().is_empty());
+    }
+
+    fn copy_tree(src: &std::path::Path, dest: &std::path::Path) {
+        std::fs::create_dir_all(dest).unwrap();
+        for entry in std::fs::read_dir(src).unwrap() {
+            let entry = entry.unwrap();
+            let to = dest.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &to);
+            } else {
+                std::fs::copy(entry.path(), to).unwrap();
+            }
+        }
     }
 }

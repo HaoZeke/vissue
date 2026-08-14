@@ -65,27 +65,37 @@ impl Catalog {
         self.reindex();
     }
 
-    pub fn replace_project(&mut self, layout: &Layout, project: &str, fresh: Vec<IssueRec>) {
-        self.issues.retain(|rec| rec.project != project);
-        self.issues.extend(fresh);
-        if !self.projects.iter().any(|p| p == project) {
-            if layout.project_issues_path(project).exists() {
-                self.projects.push(project.to_string());
-                self.projects.sort();
+    /// Swap recs for every dirty project in one invalidation: one revision
+    /// tick, unioned `dirty_projects` / `dirty_ids`.
+    pub fn replace_projects(
+        &mut self,
+        layout: &Layout,
+        parts: impl IntoIterator<Item = (String, Vec<IssueRec>)>,
+    ) {
+        let mut dirty_projects = Vec::new();
+        let mut dirty_ids = Vec::new();
+        for (project, fresh) in parts {
+            self.issues.retain(|rec| rec.project != project);
+            dirty_ids.extend(fresh.iter().map(|rec| rec.heading.id.clone()));
+            self.issues.extend(fresh);
+            if !self.projects.iter().any(|p| p == &project) {
+                if layout.project_issues_path(&project).exists() {
+                    self.projects.push(project.clone());
+                    self.projects.sort();
+                }
+            } else if !layout.project_issues_path(&project).exists() {
+                self.projects.retain(|p| p != &project);
             }
-        } else if !layout.project_issues_path(project).exists() {
-            self.projects.retain(|p| p != project);
+            dirty_projects.push(project);
         }
+        dirty_projects.sort();
+        dirty_projects.dedup();
+        dirty_ids.sort();
+        dirty_ids.dedup();
         self.generation = events::generation(layout);
         self.revision = self.revision.saturating_add(1);
-        self.dirty_projects = vec![project.to_string()];
-        self.dirty_ids = Some(
-            self.issues
-                .iter()
-                .filter(|rec| rec.project == project)
-                .map(|rec| rec.heading.id.clone())
-                .collect(),
-        );
+        self.dirty_projects = dirty_projects;
+        self.dirty_ids = Some(dirty_ids);
         self.reindex();
     }
 }
@@ -171,9 +181,53 @@ mod tests {
         )
         .unwrap();
         let fresh = load_project_recs(&layout, "atlas").unwrap();
-        cat.replace_project(&layout, "atlas", fresh);
+        cat.replace_projects(&layout, [("atlas".into(), fresh)]);
         assert_eq!(cat.revision, 2);
         assert_eq!(cat.issues.len(), 1);
         assert_eq!(cat.issues[0].heading.id, "atlas-bbbb");
+        assert_eq!(cat.dirty_projects, ["atlas"]);
+    }
+
+    #[test]
+    fn replace_projects_unions_dirty_and_bumps_revision_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), "Software");
+        for (name, id) in [("atlas", "atlas-aaaa"), ("beacon", "beacon-bbbb")] {
+            let project = layout.projects_dir().join(name);
+            fs::create_dir_all(&project).unwrap();
+            fs::write(
+                project.join("issues.org"),
+                format!("* TODO [#C] One\n:PROPERTIES:\n:ID:         {id}\n:END:\n"),
+            )
+            .unwrap();
+        }
+        let mut cat = Catalog::load(&layout).unwrap();
+        assert_eq!(cat.revision, INITIAL_REVISION);
+        assert_eq!(cat.issues.len(), 2);
+
+        fs::write(
+            layout.projects_dir().join("atlas/issues.org"),
+            "* TODO [#C] Two\n:PROPERTIES:\n:ID:         atlas-cccc\n:END:\n",
+        )
+        .unwrap();
+        fs::write(
+            layout.projects_dir().join("beacon/issues.org"),
+            "* TODO [#C] Two\n:PROPERTIES:\n:ID:         beacon-dddd\n:END:\n",
+        )
+        .unwrap();
+        let parts = vec![
+            ("atlas".into(), load_project_recs(&layout, "atlas").unwrap()),
+            (
+                "beacon".into(),
+                load_project_recs(&layout, "beacon").unwrap(),
+            ),
+        ];
+        cat.replace_projects(&layout, parts);
+        assert_eq!(cat.revision, 2);
+        assert_eq!(cat.dirty_projects, ["atlas", "beacon"]);
+        let mut ids = cat.dirty_ids.clone().unwrap();
+        ids.sort();
+        assert_eq!(ids, ["atlas-cccc", "beacon-dddd"]);
+        assert_eq!(cat.issues.len(), 2);
     }
 }

@@ -204,9 +204,7 @@ async fn rebuild(state: &OwnerState, dirty: HashSet<String>, full: bool) {
                 cat.apply_full(&state.layout, recs, dirty, ids);
             }
             Reload::Partial(parts) => {
-                for (project, recs) in parts {
-                    cat.replace_project(&state.layout, &project, recs);
-                }
+                cat.replace_projects(&state.layout, parts);
             }
         }
         Notification::VaultChanged(VaultChanged {

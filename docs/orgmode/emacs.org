@@ -69,3 +69,15 @@ $ bash tests/org_interop.sh ./target/release/vissue
 
 It is run in CI against a real Emacs, because the claim it checks is the whole
 reason the file format is what it is.
+
+* The control socket is attachable
+
+=vissue serve= owns a Unix socket a later Emacs attach can use.
+=vissue.el= is a sibling package, not this repository, and still shells
+out to the CLI. Nothing in this tree is Elisp.
+
+Attach with JSON-RPC JSONL to =$XDG_RUNTIME_DIR/vissue/control.sock=
+(or =VISSUE_CONTROL_SOCKET=). =initialize= with =protocolVersion= 1 and
+a non-empty =agent=. =issue/ready=, =issue/claim=, and =issue/get=
+replace process-file calls. If the socket is down, keep shelling out to
+the CLI. The wire is on [[file:control.org][Control]].

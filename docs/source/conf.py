@@ -44,6 +44,7 @@ html_theme_options = {
         {"title": "Get started", "url": "getting-started"},
         {"title": "How-to", "url": "howto"},
         {"title": "Reference", "url": "reference"},
+        {"title": "Control", "url": "control"},
         {"title": "Explanation", "url": "explanation"},
         {"title": "Emacs", "url": "emacs"},
     ],

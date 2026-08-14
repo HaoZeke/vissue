@@ -157,7 +157,8 @@ vissue-cli` stays small). The overlay filters ready plus search. Enter
 shows an excerpt; `c` claims; `n` notes; Esc hides (the process stays).
 `--toggle` / `--show` / `--hide` talk to a summon socket for compositor
 binds. Default detach uses `process_group(0)` only; `--foreground` stays
-on the terminal.
+on the terminal. The socket protocol is on
+[Control](https://vissue.rgoswami.me/control).
 
 ```console
 $ vissue tui
@@ -199,6 +200,7 @@ Full documentation is at **[vissue.rgoswami.me](https://vissue.rgoswami.me)**.
 | [Getting started](https://vissue.rgoswami.me/getting-started) | An empty directory to a backlog two workers share |
 | [How-to](https://vissue.rgoswami.me/howto) | One task at a time: filter, share, watch, fold, validate |
 | [Reference](https://vissue.rgoswami.me/reference) | Commands, properties, config, export schema, exit statuses |
+| [Control](https://vissue.rgoswami.me/control) | Unix socket protocol, framing, and serve / tui / hud |
 | [Explanation](https://vissue.rgoswami.me/explanation) | Why the file is the database, and what the citations justify |
 | [Emacs](https://vissue.rgoswami.me/emacs) | The agenda, tag search, and `id:` links, with nothing installed |
 

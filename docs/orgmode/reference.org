@@ -110,6 +110,8 @@ reports an exhausted space rather than failing obscurely.
 
 * Control socket
 
+The wire protocol, framing, and method list are on [[file:control.org][Control]].
+
 =vissue serve= binds =$XDG_RUNTIME_DIR/vissue/control.sock= (or
 =~/.vissue/run/control.sock=). It is Unix-only. =serve -d= detaches after
 the socket accepts; the child is placed in its own process group and can

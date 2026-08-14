@@ -11,7 +11,7 @@
          <p class="vi-hero-name">vissue</p>
        </div>
      </div>
-     <p class="vi-hero-tagline">A plan is a directed acyclic graph of Org headings. One file per project holds the nodes. No daemon, no database, no server.</p>
+     <p class="vi-hero-tagline">A plan is a directed acyclic graph of Org headings. One file per project holds the nodes. The file is the database: no SQLite, no second store.</p>
      <div class="vi-hero-pills">
        <span>Org mode</span>
        <span>Plain text</span>
@@ -49,6 +49,8 @@ the lock that stops two workers taking the same node.
   is a partial order, and what the citations do and do not justify.
 - [[file:emacs.org][Emacs]] is the other reader of the same file: the agenda, tag
   search, and =id:= links, with nothing installed.
+- [[file:control.org][Control]] is the optional Unix socket: framing, methods, and
+  how the board and HUD attach.
 
 * Install
 
@@ -74,6 +76,7 @@ $ vissue man > ~/.local/share/man/man1/vissue.1
    getting-started
    howto
    reference
+   control
    explanation
    emacs
 #+end_export

@@ -186,6 +186,7 @@ live: true
 
 =initialize= must send a non-empty =agent=. A claim over the socket
 stamps that agent, not the process =VISSUE_AGENT= that started serve.
+The wire is on [[file:control.org][Control]].
 
 * Browse the terminal board
 

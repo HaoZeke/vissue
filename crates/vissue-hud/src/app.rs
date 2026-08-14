@@ -243,7 +243,7 @@ fn run_iced(palette: Palette) -> iced::Result {
     .title(|_: &HudApp| "vissue".to_string())
     .default_font(icedtea::typo::UI)
     .settings(iced::Settings {
-        default_text_size: Pixels(icedtea::typo::BODY),
+        default_text_size: Pixels::from(icedtea::typo::BODY),
         default_font: icedtea::typo::UI,
         ..Default::default()
     })

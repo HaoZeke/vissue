@@ -1,5 +1,10 @@
 //! Board face on icedtea constructors. Drawing only; logic lives in [`crate::palette`].
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+
+use iced::widget::markdown;
 use iced::widget::{column, container, mouse_area, row, text, Space};
 use iced::{Alignment, Element, Fill, Length};
 use icedtea::a11y::{A11y, Role};
@@ -445,14 +450,35 @@ fn note_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     )
 }
 
+thread_local! {
+    static MD_ITEMS: RefCell<HashMap<u64, &'static [markdown::Item]>> =
+        RefCell::new(HashMap::new());
+}
+
+fn intern_md(src: &str) -> &'static [markdown::Item] {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    src.hash(&mut hasher);
+    let key = hasher.finish();
+    MD_ITEMS.with(|map| {
+        let mut map = map.borrow_mut();
+        if let Some(items) = map.get(&key) {
+            return *items;
+        }
+        let leaked: &'static [markdown::Item] =
+            Box::leak(icedtea::widget::parse(src).items.into_boxed_slice());
+        map.insert(key, leaked);
+        leaked
+    })
+}
+
 fn help_overlay(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
-    let doc = icedtea::widget::parse(palette.help_text());
+    let items = intern_md(palette.help_text());
     container(
         column![
             widget::label("vissue", tea, A11y::new("help", Role::Header)),
             widget::themed_scroll(
                 widget::markdown_view(
-                    &doc.items,
+                    items,
                     tea,
                     |url| Message::MdLink(url.to_string()),
                     A11y::new("help-md", Role::Group),

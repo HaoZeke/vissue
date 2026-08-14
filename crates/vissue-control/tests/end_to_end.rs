@@ -21,7 +21,7 @@ use serde_json::{json, Value};
 use vissue_control::client::Client;
 use vissue_control::frame::{read_message, write_message, Framing};
 use vissue_control::rpc::{
-    error_from_core, method_not_found, JsonRpcRequest, JsonRpcResponse, Method,
+    error_from_core, method_not_found, IssueGetResult, JsonRpcRequest, JsonRpcResponse, Method,
 };
 use vissue_core::catalog::{issues_rows_from, CatalogService};
 use vissue_core::model::IssueHeading;
@@ -92,8 +92,18 @@ fn serve(listener: UnixListener, count: usize) {
                     .and_then(Value::as_str)
                     .unwrap_or("");
                 match service.detail(id) {
+                    // The real server flattens the detail into the result, so
+                    // a stand-in that nests it would let a client pass here
+                    // and fail against `vissue serve`.
                     Ok(detail) => {
-                        JsonRpcResponse::ok(request.id.clone(), json!({ "issue": detail }))
+                        let body = IssueGetResult {
+                            issue: detail,
+                            revision: 1,
+                        };
+                        match serde_json::to_value(body) {
+                            Ok(value) => JsonRpcResponse::ok(request.id.clone(), value),
+                            Err(err) => panic!("encode detail: {err}"),
+                        }
                     }
                     Err(err) => JsonRpcResponse::err(request.id.clone(), error_from_core(&err)),
                 }
@@ -148,7 +158,7 @@ fn a_request_crosses_the_socket_and_comes_back_answered() {
     let one = client
         .request(Method::IssueGet.as_str(), json!({ "id": "atlas-2c3d" }))
         .expect("issue/get");
-    assert_eq!(one["issue"]["title"], "Emit a summary table");
+    assert_eq!(one["title"], "Emit a summary table");
     drop(client);
 
     // A core error has to arrive as a JSON-RPC error, not as a broken pipe.

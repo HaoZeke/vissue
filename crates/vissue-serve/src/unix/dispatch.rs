@@ -12,7 +12,7 @@ use vissue_control::rpc::{
     NoteParams, Notification, ProjectListResult, RefileParams, RelatedParams, SearchParams,
     TreeParams, TreeResult, UpdateParams, WalkParams, PROTOCOL_VERSION,
 };
-use vissue_core::catalog::{tree_text_from, CatalogService};
+use vissue_core::catalog::{load_recs, tree_text_from, CatalogService};
 use vissue_core::config::Layout;
 use vissue_core::error::Error as CoreError;
 use vissue_core::events;
@@ -39,7 +39,7 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
     let id = req.id.clone();
     let started = Instant::now();
     let mut after = Vec::new();
-    let result = match req.method.as_str() {
+    let mut result = match req.method.as_str() {
         "initialize" => dispatch_initialize(state, session, req.params.as_ref()),
         "identity/get" => dispatch_identity(state, session),
         "issue/list" => dispatch_list(state, req.params.as_ref(), false),
@@ -67,6 +67,12 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
         other => Err(method_not_found(other)),
     };
     if is_mutating(req.method.as_str()) {
+        if let Ok(value) = result.as_mut() {
+            let revision = refresh_after_write(state);
+            if let Some(slot) = value.get_mut("revision") {
+                *slot = json!(revision);
+            }
+        }
         let ms = started.elapsed().as_millis();
         let id_label = req
             .params
@@ -87,6 +93,30 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
         }),
         after,
     }
+}
+
+/// Rebuild the catalog from disk and hand back the revision it now carries.
+///
+/// Mutations go through `ops`, which write the org files directly. The
+/// catalog learns about a write from the watcher, which polls on its own
+/// cadence, so a client that writes and then reads over the same connection
+/// reads a catalog that predates its own write: `issue/get` on the id
+/// `issue/create` just handed back answers "not found". The write path
+/// therefore refreshes before it answers, and the watcher keeps its job of
+/// picking up edits made outside this process.
+///
+/// A full reload, rather than the watcher's partial path, because `refile`
+/// touches two projects and the handlers do not report which ones they wrote.
+/// If the catalog cannot be read the previous revision stands: the write
+/// already succeeded, and reporting it as failed would be worse than
+/// answering from a cache the watcher is about to replace.
+fn refresh_after_write(state: &OwnerState) -> u64 {
+    let Ok(recs) = load_recs(&state.layout) else {
+        return catalog_revision(state);
+    };
+    let mut cat = state.catalog.write().unwrap_or_else(|p| p.into_inner());
+    cat.apply_full(&state.layout, recs, Vec::new(), None);
+    cat.revision
 }
 
 fn is_mutating(method: &str) -> bool {

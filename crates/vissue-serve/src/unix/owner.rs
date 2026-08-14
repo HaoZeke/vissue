@@ -799,4 +799,81 @@ mod tests {
         };
         assert!(err.to_string().contains("already in use"), "{err:#}");
     }
+
+    /// A writer reads its own write without waiting for the watcher.
+    ///
+    /// No watcher runs in this test, which is the point: every read here is
+    /// served by the catalog the write path left behind. A create that does
+    /// not refresh leaves `issue/list` short by one and `issue/get` on the
+    /// freshly minted id answering "not found".
+    #[test]
+    fn a_write_is_visible_to_the_next_read_on_the_same_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state(dir.path());
+        let mut session = Session {
+            agent: Some("probe".to_string()),
+        };
+
+        let before = dispatch_ex(
+            &state,
+            &mut session,
+            &JsonRpcRequest::call(JsonRpcId::Number(1), "issue/list", json!({})),
+        )
+        .response
+        .unwrap()
+        .result
+        .unwrap()["issues"]
+            .as_array()
+            .unwrap()
+            .len();
+
+        let created = dispatch_ex(
+            &state,
+            &mut session,
+            &JsonRpcRequest::call(
+                JsonRpcId::Number(2),
+                "issue/create",
+                json!({"project": "atlas", "title": "Read your own write"}),
+            ),
+        )
+        .response
+        .unwrap();
+        assert!(created.error.is_none(), "{:?}", created.error);
+        let made = created.result.unwrap();
+        let id = made["issue"]["id"].as_str().unwrap().to_string();
+
+        let listed = dispatch_ex(
+            &state,
+            &mut session,
+            &JsonRpcRequest::call(JsonRpcId::Number(3), "issue/list", json!({})),
+        )
+        .response
+        .unwrap()
+        .result
+        .unwrap();
+        let ids: Vec<&str> = listed["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids.len(), before + 1, "{ids:?}");
+        assert!(ids.contains(&id.as_str()), "{id} missing from {ids:?}");
+
+        let got = dispatch_ex(
+            &state,
+            &mut session,
+            &JsonRpcRequest::call(JsonRpcId::Number(4), "issue/get", json!({ "id": id })),
+        )
+        .response
+        .unwrap();
+        assert!(got.error.is_none(), "issue/get {id}: {:?}", got.error);
+        // `IssueGetResult` flattens the detail, so the id sits at the top.
+        assert_eq!(got.result.unwrap()["id"], id.as_str());
+
+        // The revision the writer was handed is the one the catalog now has,
+        // so a client can use it to tell its own write from someone else's.
+        let revision = made["revision"].as_u64().unwrap();
+        assert_eq!(revision, state.catalog.read().unwrap().revision);
+    }
 }

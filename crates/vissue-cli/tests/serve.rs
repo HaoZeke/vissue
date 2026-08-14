@@ -305,10 +305,9 @@ fn man_page_has_no_trailing_whitespace() {
             i + 1
         );
     }
-    let committed = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../man/vissue.1"),
-    )
-    .unwrap();
+    let committed =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../man/vissue.1"))
+            .unwrap();
     for (i, line) in committed.lines().enumerate() {
         assert_eq!(
             line,

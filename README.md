@@ -153,9 +153,10 @@ socket bound to another root stays on the files so a claim cannot hit
 the wrong vault. `q` quits; `?` lists the keys.
 
 `vissue hud` is the same board as `vissue tui`, in a window: Ready,
-List, Claims, Agenda, and Search, with a show / excerpt / tree / related
-card for the selected row. `s` cycles TODO/STARTED/BLOCKED. `c` claims.
-`n` notes. `p` filters by project. `D`/`X` close with confirm. `--rofi`
+List, Claims, Agenda, and Search. Ready/List are parent/child forests.
+The selected row has show / excerpt / tree / related / notes. `n` opens
+the logbook and writes a note. Keys come from a catalog;
+`~/.config/vissue/keys.toml` (or `VISSUE_KEYS`) remaps them. `--rofi`
 is the seat dmenu picker.
 
 ```console

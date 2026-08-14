@@ -267,7 +267,9 @@ fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
     ]
     .spacing(2);
 
+    let indent = (item.depth as f32) * 18.0;
     let body = row![
+        Space::new().width(indent),
         checkbox(done)
             .on_toggle(move |_| Message::ToggleDone(id.clone()))
             .size(18)

@@ -172,6 +172,8 @@ mod tests {
             due: None,
             blocked_by: Vec::new(),
             extra: String::new(),
+            parent: None,
+            depth: 0,
         }
     }
 

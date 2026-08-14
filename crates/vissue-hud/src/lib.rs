@@ -8,6 +8,7 @@ pub mod attach;
 pub mod cli;
 pub mod detach;
 pub mod fuzzy;
+pub mod keys;
 pub mod log;
 pub mod palette;
 pub mod summon;

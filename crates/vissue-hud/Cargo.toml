@@ -34,6 +34,7 @@ iced = { version = "0.14", default-features = true, features = [
 ] }
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 vissue-control.workspace = true
 vissue-core.workspace = true
 vissue-serve.workspace = true

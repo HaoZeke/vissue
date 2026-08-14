@@ -11,6 +11,7 @@ use vissue_tui::CoreBackend;
 
 use crate::attach;
 use crate::fuzzy::rank_indices;
+use crate::keys::{ActionId, KeyMap};
 use crate::summon::{SummonAction, SummonRequest};
 
 const HELP: &str = "\
@@ -18,7 +19,7 @@ vissue hud  (same board as vissue tui)
 
 j/k, arrows   move
 Tab, 1-5      pane (Ready List Claims Agenda Search)
-Enter         cycle detail (show / excerpt / tree / related)
+Enter         cycle detail (show / excerpt / tree / related / notes)
 p             cycle project filter
 /             search
 a             add a task
@@ -89,10 +90,17 @@ pub enum DetailTab {
     Excerpt,
     Tree,
     Related,
+    Notes,
 }
 
 impl DetailTab {
-    pub const ALL: [Self; 4] = [Self::Show, Self::Excerpt, Self::Tree, Self::Related];
+    pub const ALL: [Self; 5] = [
+        Self::Show,
+        Self::Excerpt,
+        Self::Tree,
+        Self::Related,
+        Self::Notes,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -100,6 +108,7 @@ impl DetailTab {
             Self::Excerpt => "excerpt",
             Self::Tree => "tree",
             Self::Related => "related",
+            Self::Notes => "notes",
         }
     }
 
@@ -133,6 +142,8 @@ pub struct HudItem {
     pub due: Option<String>,
     pub blocked_by: Vec<String>,
     pub extra: String,
+    pub parent: Option<String>,
+    pub depth: usize,
 }
 
 impl HudItem {
@@ -147,7 +158,9 @@ impl HudItem {
             claimed_by: row.claimed_by.clone(),
             due: None,
             blocked_by: row.blocked_by,
-            extra: row.claimed_by.unwrap_or_default(),
+            extra: row.claimed_by.clone().unwrap_or_default(),
+            parent: row.parent,
+            depth: 0,
         }
     }
 
@@ -163,6 +176,8 @@ impl HudItem {
             due: None,
             blocked_by: Vec::new(),
             extra: hit.snippet,
+            parent: None,
+            depth: 0,
         }
     }
 
@@ -183,6 +198,8 @@ impl HudItem {
             due: None,
             blocked_by: Vec::new(),
             extra,
+            parent: None,
+            depth: 0,
         }
     }
 
@@ -199,6 +216,8 @@ impl HudItem {
             due: Some(row.date),
             blocked_by: Vec::new(),
             extra,
+            parent: None,
+            depth: 0,
         }
     }
 
@@ -250,6 +269,9 @@ pub struct Palette {
     agenda_count: usize,
     search_count: usize,
     visible: bool,
+    keymap: KeyMap,
+    leader_armed: bool,
+    leader_at: Option<std::time::Instant>,
 }
 
 /// Close or cancel confirmation.
@@ -307,7 +329,17 @@ impl Palette {
             agenda_count: 0,
             search_count: 0,
             visible: true,
+            keymap: KeyMap::from_defaults(),
+            leader_armed: false,
+            leader_at: None,
         };
+        #[cfg(not(test))]
+        {
+            palette.keymap = KeyMap::load();
+            if let Some(err) = palette.keymap.overlay_error.clone() {
+                palette.message = err;
+            }
+        }
         palette.reload()?;
         Ok(palette)
     }
@@ -529,6 +561,33 @@ impl Palette {
             self.handle_search_key(key);
             return;
         }
+        if self.leader_armed {
+            if let Some(at) = self.leader_at {
+                if at.elapsed().as_millis() as u64 > self.keymap.leader_timeout_ms {
+                    self.leader_armed = false;
+                }
+            }
+        }
+        if self.leader_armed {
+            self.leader_armed = false;
+            match key {
+                PaletteKey::Esc => return,
+                PaletteKey::Char(c) => {
+                    if let Some(action) = self.keymap.get(&format!("leader+{c}")) {
+                        self.dispatch(action);
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+        if let PaletteKey::Char(c) = key {
+            if self.keymap.leader == Some(c) {
+                self.leader_armed = true;
+                self.leader_at = Some(std::time::Instant::now());
+                return;
+            }
+        }
         match key {
             PaletteKey::Esc => {
                 if self.detail_tab != DetailTab::Show || self.excerpt.is_some() {
@@ -539,47 +598,61 @@ impl Palette {
                     self.hide();
                 }
             }
-            PaletteKey::Enter => self.cycle_detail_tab(),
-            PaletteKey::Tab => self.set_filter(self.filter.next()),
+            PaletteKey::Enter => self.dispatch(ActionId::DetailCycle),
+            PaletteKey::Tab => self.dispatch(ActionId::PaneNext),
             PaletteKey::Up => self.move_sel(-1),
             PaletteKey::Down => self.move_sel(1),
             PaletteKey::Backspace => {}
-            PaletteKey::Space => {
+            PaletteKey::Space => self.dispatch(ActionId::ListDone),
+            PaletteKey::Char(c) => {
+                if let Some(action) = self.keymap.get(&c.to_string()) {
+                    self.dispatch(action);
+                }
+            }
+        }
+    }
+
+    fn dispatch(&mut self, action: ActionId) {
+        match action {
+            ActionId::ListDown => self.move_sel(1),
+            ActionId::ListUp => self.move_sel(-1),
+            ActionId::ListSelect | ActionId::DetailCycle => self.cycle_detail_tab(),
+            ActionId::ListDone => {
                 if let Some(id) = self.selected_id().map(str::to_string) {
                     self.toggle_done(&id);
                 }
             }
-            PaletteKey::Char('j') => self.move_sel(1),
-            PaletteKey::Char('k') => self.move_sel(-1),
-            PaletteKey::Char('c') => self.claim_selected(),
-            PaletteKey::Char('n') => {
+            ActionId::PaneReady => self.set_filter(BoardFilter::Ready),
+            ActionId::PaneList => self.set_filter(BoardFilter::List),
+            ActionId::PaneClaims => self.set_filter(BoardFilter::Claims),
+            ActionId::PaneAgenda => self.set_filter(BoardFilter::Agenda),
+            ActionId::PaneSearch => self.set_filter(BoardFilter::Search),
+            ActionId::PaneNext => self.set_filter(self.filter.next()),
+            ActionId::ProjectCycle => self.cycle_project(),
+            ActionId::Search => {
+                self.set_filter(BoardFilter::Search);
+                self.focus_search();
+            }
+            ActionId::Add => self.focus_add(),
+            ActionId::Claim => self.claim_selected(),
+            ActionId::Note => {
                 if self.selected_id().is_some() {
+                    self.detail_tab = DetailTab::Notes;
+                    self.refresh_detail();
                     self.note_draft = Some(String::new());
                     self.focus = Focus::Note;
                 }
             }
-            PaletteKey::Char('a') => self.focus_add(),
-            PaletteKey::Char('/') => {
-                self.set_filter(BoardFilter::Search);
-                self.focus_search();
-            }
-            PaletteKey::Char('p') => self.cycle_project(),
-            PaletteKey::Char('s') => self.cycle_state(),
-            PaletteKey::Char('D') => self.confirm = Some(ConfirmKind::Done),
-            PaletteKey::Char('X') => self.confirm = Some(ConfirmKind::Cancelled),
-            PaletteKey::Char('o') => self.open_selected(),
-            PaletteKey::Char('y') => self.copy_selected(),
-            PaletteKey::Char('R') => {
+            ActionId::StateCycle => self.cycle_state(),
+            ActionId::ConfirmDone => self.confirm = Some(ConfirmKind::Done),
+            ActionId::ConfirmCancel => self.confirm = Some(ConfirmKind::Cancelled),
+            ActionId::Open => self.open_selected(),
+            ActionId::CopyId => self.copy_selected(),
+            ActionId::Reload => {
                 self.backend.invalidate_since();
                 let _ = self.reload();
             }
-            PaletteKey::Char('?') => self.focus = Focus::Help,
-            PaletteKey::Char('1') => self.set_filter(BoardFilter::Ready),
-            PaletteKey::Char('2') => self.set_filter(BoardFilter::List),
-            PaletteKey::Char('3') => self.set_filter(BoardFilter::Claims),
-            PaletteKey::Char('4') => self.set_filter(BoardFilter::Agenda),
-            PaletteKey::Char('5') => self.set_filter(BoardFilter::Search),
-            PaletteKey::Char(_) => {}
+            ActionId::Help => self.focus = Focus::Help,
         }
     }
 
@@ -810,7 +883,14 @@ impl Palette {
                 Err(err) => self.detail_body = err.to_string(),
             },
             DetailTab::Related => match self.backend.related(&id, 2, 20) {
-                Ok(hits) => self.detail_body = format_related(&hits),
+                Ok(hits) => self.detail_body = format_related_tree(&hits),
+                Err(err) => self.detail_body = err.to_string(),
+            },
+            DetailTab::Notes => match self.backend.get(&id) {
+                Ok(detail) => {
+                    self.detail_body = format_notes(&detail);
+                    self.detail = Some(detail);
+                }
                 Err(err) => self.detail_body = err.to_string(),
             },
         }
@@ -968,10 +1048,8 @@ impl Palette {
             BoardFilter::Agenda => self.reload_agenda(project),
             BoardFilter::Search => self.reload_search(),
         }
-        if !self.query.is_empty() && self.filter != BoardFilter::Search {
-            self.filtered = rank_indices(&self.query, &self.items);
-        } else {
-            self.filtered = (0..self.items.len()).collect();
+        if matches!(self.filter, BoardFilter::Ready | BoardFilter::List) {
+            self.items = apply_forest(std::mem::take(&mut self.items));
         }
         if self.selected >= self.filtered.len() {
             self.selected = self.filtered.len().saturating_sub(1);
@@ -1089,20 +1167,95 @@ fn format_tree(node: &vissue_core::views::TreeNode, depth: usize) -> String {
     out
 }
 
-fn format_related(hits: &[vissue_core::views::RelatedHit]) -> String {
+fn apply_forest(items: Vec<HudItem>) -> Vec<HudItem> {
+    use std::collections::{HashMap, HashSet};
+    if items.len() < 2 || items.iter().all(|i| i.parent.is_none()) {
+        return items;
+    }
+    let ids: HashSet<String> = items.iter().map(|i| i.id.clone()).collect();
+    let mut kids: HashMap<Option<String>, Vec<usize>> = HashMap::new();
+    for (i, item) in items.iter().enumerate() {
+        let parent = item.parent.clone().filter(|p| ids.contains(p));
+        kids.entry(parent).or_default().push(i);
+    }
+    let mut out = Vec::with_capacity(items.len());
+    fn walk(
+        items: &[HudItem],
+        kids: &HashMap<Option<String>, Vec<usize>>,
+        parent: Option<String>,
+        depth: usize,
+        out: &mut Vec<HudItem>,
+    ) {
+        let Some(ixs) = kids.get(&parent) else {
+            return;
+        };
+        for &i in ixs {
+            let mut row = items[i].clone();
+            row.depth = depth;
+            let id = row.id.clone();
+            out.push(row);
+            walk(items, kids, Some(id), depth + 1, out);
+        }
+    }
+    walk(&items, &kids, None, 0, &mut out);
+    if out.len() < items.len() {
+        for item in &items {
+            if !out.iter().any(|o| o.id == item.id) {
+                out.push(item.clone());
+            }
+        }
+    }
+    out
+}
+
+fn format_related_tree(hits: &[vissue_core::views::RelatedHit]) -> String {
     if hits.is_empty() {
         return "no related issues\n".into();
     }
-    let mut out = String::new();
+    use std::collections::BTreeMap;
+    let mut by_proj: BTreeMap<&str, Vec<&vissue_core::views::RelatedHit>> = BTreeMap::new();
     for hit in hits {
-        out.push_str(&format!(
-            "{} [{}] {}  {:.2}  {}\n",
-            hit.id,
-            hit.state,
-            hit.title,
-            hit.score,
-            hit.evidence.join(", ")
-        ));
+        by_proj.entry(hit.project.as_str()).or_default().push(hit);
+    }
+    let mut out = String::new();
+    for (project, rows) in by_proj {
+        out.push_str(&format!("{project}\n"));
+        for hit in rows {
+            out.push_str(&format!(
+                "  {} [{}] {}\n    score {:.2}\n    {}\n",
+                hit.id,
+                hit.state,
+                hit.title,
+                hit.score,
+                hit.evidence.join("\n    ")
+            ));
+        }
+    }
+    out
+}
+
+fn format_notes(d: &IssueDetail) -> String {
+    if d.logbook.is_empty() {
+        return "no logbook yet. n writes a note.\n".into();
+    }
+    let mut out = String::new();
+    for e in &d.logbook {
+        if let Some(raw) = &e.raw {
+            out.push_str(raw);
+            out.push('\n');
+            continue;
+        }
+        if let (Some(to), from) = (&e.to_state, &e.from_state) {
+            match from {
+                Some(from) => {
+                    out.push_str(&format!("{}  {} -> {}\n", e.timestamp, from, to));
+                }
+                None => out.push_str(&format!("{}  -> {}\n", e.timestamp, to)),
+            }
+        }
+        if let Some(note) = &e.note {
+            out.push_str(&format!("{}  note: {}\n", e.timestamp, note));
+        }
     }
     out
 }
@@ -1593,5 +1746,73 @@ mod tests {
             palette.backend().get("atlas-2c3d").unwrap().state,
             "BLOCKED"
         );
+    }
+
+    #[test]
+    fn notes_tab_shows_a_written_note() {
+        let (_dir, layout) = writable();
+        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        palette.set_query("atlas-2c3d");
+        palette.focus_list();
+        palette.handle_key(PaletteKey::Char('n'));
+        assert_eq!(palette.detail_tab(), DetailTab::Notes);
+        for c in "from the board".chars() {
+            palette.handle_key(PaletteKey::Char(c));
+        }
+        palette.handle_key(PaletteKey::Enter);
+        palette.set_detail_tab(DetailTab::Notes);
+        assert!(
+            palette.detail_body().contains("from the board"),
+            "{}",
+            palette.detail_body()
+        );
+    }
+
+    #[test]
+    fn list_forest_nests_a_child_under_its_parent() {
+        let (_dir, layout) = writable();
+        let parent = palette_create(&layout, "atlas", "root task");
+        let _child = vissue_core::ops::create(
+            &layout,
+            "atlas",
+            "child task",
+            vissue_core::ops::CreateOpts {
+                parent: Some(&parent),
+                quiet: true,
+                ..vissue_core::ops::CreateOpts::default()
+            },
+        )
+        .unwrap()
+        .trim()
+        .to_string();
+        let mut palette = Palette::open_core(layout, "hud-test".into()).unwrap();
+        palette.set_filter(BoardFilter::List);
+        let rows: Vec<_> = palette
+            .filtered_items()
+            .into_iter()
+            .map(|i| (i.title.as_str(), i.depth, i.parent.clone()))
+            .collect();
+        let parent_pos = rows.iter().position(|(t, _, _)| *t == "root task");
+        let child_pos = rows.iter().position(|(t, d, p)| {
+            *t == "child task" && *d >= 1 && p.as_deref() == Some(parent.as_str())
+        });
+        assert!(parent_pos.is_some(), "{rows:?}");
+        assert!(child_pos.is_some(), "{rows:?}");
+        assert!(parent_pos.unwrap() < child_pos.unwrap(), "{rows:?}");
+    }
+
+    fn palette_create(layout: &Layout, project: &str, title: &str) -> String {
+        vissue_core::ops::create(
+            layout,
+            project,
+            title,
+            vissue_core::ops::CreateOpts {
+                quiet: true,
+                ..vissue_core::ops::CreateOpts::default()
+            },
+        )
+        .unwrap()
+        .trim()
+        .to_string()
     }
 }

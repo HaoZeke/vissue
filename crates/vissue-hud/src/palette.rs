@@ -272,6 +272,8 @@ pub struct Palette {
     keymap: KeyMap,
     leader_armed: bool,
     leader_at: Option<std::time::Instant>,
+    collapsed: std::collections::BTreeSet<String>,
+    collapse_seeded: bool,
 }
 
 /// Close or cancel confirmation.
@@ -332,6 +334,8 @@ impl Palette {
             keymap: KeyMap::from_defaults(),
             leader_armed: false,
             leader_at: None,
+            collapsed: std::collections::BTreeSet::new(),
+            collapse_seeded: false,
         };
         #[cfg(not(test))]
         {
@@ -420,6 +424,57 @@ impl Palette {
 
     pub fn help_text(&self) -> &'static str {
         HELP
+    }
+
+    /// Project runs over the current filter, for collapsible headers.
+    pub fn sections(&self) -> Vec<ProjectSection<'_>> {
+        let mut out: Vec<ProjectSection<'_>> = Vec::new();
+        for (i, item) in self.filtered_items().into_iter().enumerate() {
+            match out.last_mut() {
+                Some(sec) if sec.project == item.project => {
+                    sec.end = i + 1;
+                    sec.rows.push((i, item));
+                }
+                _ => out.push(ProjectSection {
+                    project: item.project.as_str(),
+                    start: i,
+                    end: i + 1,
+                    collapsed: self.collapsed.contains(&item.project),
+                    rows: vec![(i, item)],
+                }),
+            }
+        }
+        out
+    }
+
+    pub fn toggle_project(&mut self, project: &str) {
+        if !self.collapsed.remove(project) {
+            self.collapsed.insert(project.to_string());
+        }
+    }
+
+    fn seed_collapse(&mut self) {
+        if self.collapse_seeded {
+            return;
+        }
+        let open = self
+            .selected_item()
+            .map(|i| i.project.clone())
+            .or_else(|| self.items.first().map(|i| i.project.clone()));
+        let mut seen = std::collections::BTreeSet::new();
+        for item in &self.items {
+            seen.insert(item.project.clone());
+        }
+        if seen.len() <= 1 {
+            self.collapse_seeded = true;
+            return;
+        }
+        for p in seen {
+            if open.as_deref() != Some(p.as_str()) {
+                self.collapsed.insert(p);
+            }
+        }
+        self.collapse_seeded = true;
     }
 
     pub fn backend(&self) -> &dyn BoardBackend {
@@ -903,6 +958,9 @@ impl Palette {
             .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
         {
             self.selected = pos;
+            if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
+                self.collapsed.remove(&p);
+            }
             self.refresh_detail();
         }
     }
@@ -1059,6 +1117,10 @@ impl Palette {
         if self.selected >= self.filtered.len() {
             self.selected = self.filtered.len().saturating_sub(1);
         }
+        self.seed_collapse();
+        if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
+            self.collapsed.remove(&p);
+        }
         self.refresh_detail();
         Ok(())
     }
@@ -1116,45 +1178,66 @@ impl Palette {
     }
 
     fn move_sel(&mut self, delta: i32) {
-        if self.filtered.is_empty() {
+        let vis = self.visible_indices();
+        if vis.is_empty() {
             return;
         }
-        let len = self.filtered.len() as i32;
-        let next = (self.selected as i32 + delta).clamp(0, len - 1) as usize;
+        let pos = vis.iter().position(|&i| i == self.selected).unwrap_or(0) as i32;
+        let next = (pos + delta).clamp(0, vis.len() as i32 - 1) as usize;
+        let next = vis[next];
         if next != self.selected {
             self.selected = next;
             self.refresh_detail();
         }
     }
+
+    fn visible_indices(&self) -> Vec<usize> {
+        let mut out = Vec::new();
+        for sec in self.sections() {
+            if sec.collapsed {
+                continue;
+            }
+            out.extend(sec.start..sec.end);
+        }
+        out
+    }
 }
 
 fn format_show(d: &IssueDetail) -> String {
-    let mut out = format!(
-        "{}  [{}]  [#{}]\n{}\nfile: {}\n",
-        d.id, d.state, d.priority, d.title, d.file
-    );
+    let mut out = format!("{} · {} · {}\n", d.state, d.priority, d.project);
     if let Some(parent) = &d.parent {
-        out.push_str(&format!("parent: {parent}\n"));
+        out.push_str(&format!("under {parent}\n"));
     }
     if !d.blocked_by.is_empty() {
-        out.push_str(&format!("blocked by: {}\n", d.blocked_by.join(", ")));
+        out.push_str(&format!("blocked by {}\n", d.blocked_by.join(", ")));
     }
     if let Some(who) = &d.claimed_by {
-        out.push_str(&format!("claimed by: {who}\n"));
+        out.push_str(&format!("held by {who}\n"));
     }
-    if !d.tags.is_empty() {
-        out.push_str(&format!("tags: {}\n", d.tags.join(", ")));
-    }
-    if !d.org_tags.is_empty() {
-        out.push_str(&format!("org tags: {}\n", d.org_tags.join(", ")));
-    }
-    for (k, v) in &d.properties {
-        if matches!(k.as_str(), "ID" | "CREATED") {
-            continue;
+    let mut tags = d.tags.clone();
+    for t in &d.org_tags {
+        if !tags.iter().any(|x| x == t) {
+            tags.push(t.clone());
         }
-        out.push_str(&format!("{k}: {v}\n"));
     }
+    if !tags.is_empty() {
+        out.push_str(&format!("{}\n", tags.join("  ·  ")));
+    }
+    if let Some(kind) = d.properties.get("TYPE") {
+        out.push_str(&format!("{kind}\n"));
+    }
+    out.push_str(&d.id);
+    out.push('\n');
     out
+}
+
+/// One project group in the current filter.
+pub struct ProjectSection<'a> {
+    pub project: &'a str,
+    pub start: usize,
+    pub end: usize,
+    pub collapsed: bool,
+    pub rows: Vec<(usize, &'a HudItem)>,
 }
 
 fn format_tree(node: &vissue_core::views::TreeNode, depth: usize) -> String {
@@ -1174,7 +1257,28 @@ fn format_tree(node: &vissue_core::views::TreeNode, depth: usize) -> String {
 
 fn apply_forest(items: Vec<HudItem>) -> Vec<HudItem> {
     use std::collections::{HashMap, HashSet};
-    if items.len() < 2 || items.iter().all(|i| i.parent.is_none()) {
+    if items.len() < 2 {
+        return items;
+    }
+    let mut order: Vec<String> = Vec::new();
+    for item in &items {
+        if !order.iter().any(|p| p == &item.project) {
+            order.push(item.project.clone());
+        }
+    }
+    if order.len() > 1 {
+        let mut out = Vec::with_capacity(items.len());
+        for project in order {
+            let group: Vec<HudItem> = items
+                .iter()
+                .filter(|i| i.project == project)
+                .cloned()
+                .collect();
+            out.extend(apply_forest(group));
+        }
+        return out;
+    }
+    if items.iter().all(|i| i.parent.is_none()) {
         return items;
     }
     let ids: HashSet<String> = items.iter().map(|i| i.id.clone()).collect();

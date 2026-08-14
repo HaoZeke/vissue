@@ -4,7 +4,7 @@ use iced::widget::{button, checkbox, column, container, row, scrollable, text, t
 use iced::{Alignment, Background, Border, Color, Element, Fill, Length};
 
 use crate::app::Message;
-use crate::palette::{BoardFilter, DetailTab, Focus, HudItem, Palette};
+use crate::palette::{BoardFilter, DetailTab, Focus, HudItem, Palette, ProjectSection};
 use crate::theme;
 
 /// Board face. Hidden state draws nothing so a `Mode::Hidden` frame is empty.
@@ -20,8 +20,8 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
         .spacing(10)
         .padding([14, 16]);
 
-    let items = palette.filtered_items();
-    if items.is_empty() {
+    let sections = palette.sections();
+    if sections.is_empty() {
         pane = pane.push(
             text(empty_copy(palette))
                 .size(theme::SIZE_BODY)
@@ -29,9 +29,16 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
                 .font(theme::FACE),
         );
     } else {
-        let mut list = column![].spacing(2);
-        for (i, item) in items.into_iter().enumerate() {
-            list = list.push(task_row(item, i == palette.selected_index()));
+        let mut list = column![].spacing(4);
+        let selected = palette.selected_index();
+        for section in sections {
+            list = list.push(project_header(&section));
+            if section.collapsed {
+                continue;
+            }
+            for (i, item) in section.rows {
+                list = list.push(task_row(item, i == selected));
+            }
         }
         pane = pane.push(scrollable(list).height(Length::FillPortion(3)));
     }
@@ -147,10 +154,14 @@ fn chip(
 ) -> Element<'static, Message> {
     let fg = if active { theme::BASE } else { theme::SUBTEXT };
     button(
-        text(format!("{label} {count}"))
-            .size(theme::SIZE_META)
-            .color(fg)
-            .font(theme::FACE),
+        text(if count > 0 {
+            format!("{label} {count}")
+        } else {
+            label.to_string()
+        })
+        .size(theme::SIZE_META)
+        .color(fg)
+        .font(theme::FACE),
     )
     .on_press(Message::Filter(filter))
     .padding([6, 12])
@@ -229,21 +240,57 @@ fn add_bar(palette: &Palette) -> Element<'_, Message> {
     }
 }
 
+fn project_header(section: &ProjectSection<'_>) -> Element<'static, Message> {
+    let mark = if section.collapsed { "+" } else { "-" };
+    let name = section.project.to_string();
+    let label = format!("{mark}  {}  {}", section.project, section.rows.len());
+    button(
+        text(label)
+            .size(theme::SIZE_BODY)
+            .color(theme::SUBTEXT)
+            .font(theme::FACE),
+    )
+    .on_press(Message::ToggleProject(name))
+    .padding([8, 10])
+    .width(Fill)
+    .style(|_, status| {
+        let hovered = matches!(status, button::Status::Hovered);
+        button::Style {
+            background: Some(Background::Color(if hovered {
+                theme::SURFACE0
+            } else {
+                theme::MANTLE
+            })),
+            text_color: theme::SUBTEXT,
+            border: Border {
+                radius: 8.0.into(),
+                width: 0.0,
+                color: Color::TRANSPARENT,
+            },
+            ..button::Style::default()
+        }
+    })
+    .into()
+}
+
 fn task_row(item: &HudItem, selected: bool) -> Element<'_, Message> {
     let done = item.state == "DONE";
     let title_color = if done { theme::OVERLAY } else { theme::TEXT };
     let id = item.id.clone();
     let pip_color = theme::priority_color(&item.priority);
-    let mut meta = format!(
-        "{}  [{}]  [#{}]  {}",
-        item.id, item.state, item.priority, item.project
-    );
+    let mut bits: Vec<String> = vec![item.state.to_lowercase()];
+    if let Some(parent) = item.parent.as_deref() {
+        if item.depth == 0 {
+            bits.push(format!("under {parent}"));
+        }
+    }
     if !item.blocked_by.is_empty() {
-        meta = format!("{meta}  blocked by {}", item.blocked_by.join(","));
+        bits.push(format!("blocked by {}", item.blocked_by.join(", ")));
     }
-    if !item.extra.is_empty() {
-        meta = format!("{meta}  {}", item.extra);
+    if !item.extra.is_empty() && item.claimed_by.is_none() {
+        bits.push(item.extra.clone());
     }
+    let meta = bits.join("  ·  ");
 
     let pip = container(Space::new().width(4).height(34)).style(move |_| container::Style {
         background: Some(Background::Color(pip_color)),
@@ -462,7 +509,6 @@ fn chip_style(status: button::Status, active: bool) -> button::Style {
 }
 
 fn check_style(status: checkbox::Status, done: bool) -> checkbox::Style {
-    let accent = if done { theme::GREEN } else { theme::SURFACE1 };
     let hovered = matches!(status, checkbox::Status::Hovered { .. });
     checkbox::Style {
         background: Background::Color(if done {
@@ -470,13 +516,13 @@ fn check_style(status: checkbox::Status, done: bool) -> checkbox::Style {
         } else if hovered {
             theme::SURFACE1
         } else {
-            theme::MANTLE
+            Color::TRANSPARENT
         }),
         icon_color: theme::BASE,
         border: Border {
             radius: 6.0.into(),
-            width: 1.5,
-            color: accent,
+            width: 2.0,
+            color: if done { theme::GREEN } else { theme::SUBTEXT },
         },
         text_color: Some(theme::TEXT),
     }

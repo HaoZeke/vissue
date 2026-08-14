@@ -1385,3 +1385,105 @@ fn a_clean_corpus_still_counts_what_it_checked() {
     assert_eq!(out.errors, 0, "{}", out.text);
     assert!(out.text.contains("checked 6 issue(s)"), "{}", out.text);
 }
+
+#[test]
+fn folding_an_inbox_stamps_each_heading_and_is_idempotent() {
+    let (dir, layout) = writable_copy();
+    let inbox = dir.path().join("inbox.org");
+    fs::write(
+        &inbox,
+        "* TODO Rotate the signing key\nThe old one expires this quarter.\n\
+         * TODO Write the migration note\n",
+    )
+    .unwrap();
+
+    let first = vissue_core::ops::fold(&layout, &inbox, "atlas").unwrap();
+    assert!(first.starts_with("folded 2:"), "{first}");
+
+    let stamped = fs::read_to_string(&inbox).unwrap();
+    assert_eq!(stamped.matches(":VISSUE_ID:").count(), 2, "{stamped}");
+    assert_eq!(stamped.matches("* DONE").count(), 2, "{stamped}");
+    assert!(!stamped.contains("* TODO"), "{stamped}");
+    // The body under a heading travels with it.
+    let body = vissue_core::report::search(&layout, "expires this quarter", 10).unwrap();
+    assert!(body.contains("Rotate the signing key"), "{body}");
+
+    // A stamped heading is skipped, so a second run creates nothing.
+    let second = vissue_core::ops::fold(&layout, &inbox, "atlas").unwrap();
+    assert_eq!(second, "folded 0 (nothing unstamped)\n");
+    assert_eq!(fs::read_to_string(&inbox).unwrap(), stamped);
+}
+
+#[test]
+fn folding_a_file_with_no_headings_leaves_it_alone() {
+    let (dir, layout) = writable_copy();
+    let inbox = dir.path().join("empty.org");
+    fs::write(&inbox, "Just a note to myself.\n").unwrap();
+    let out = vissue_core::ops::fold(&layout, &inbox, "atlas").unwrap();
+    assert_eq!(out, "folded 0 (nothing unstamped)\n");
+    assert_eq!(
+        fs::read_to_string(&inbox).unwrap(),
+        "Just a note to myself.\n"
+    );
+}
+
+#[test]
+fn refiling_into_the_project_an_issue_already_sits_in_does_nothing() {
+    let (_dir, layout) = writable_copy();
+    let before = fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+    let out = vissue_core::ops::refile(&layout, "atlas-2c3d", "atlas").unwrap();
+    assert!(out.contains("already in atlas"), "{out}");
+    assert_eq!(
+        fs::read_to_string(layout.project_issues_path("atlas")).unwrap(),
+        before,
+        "a no-op refile rewrote the file"
+    );
+}
+
+#[test]
+fn refiling_moves_the_heading_and_keeps_the_id() {
+    let (_dir, layout) = writable_copy();
+    let out = vissue_core::ops::refile(&layout, "atlas-2c3d", "beacon").unwrap();
+    assert!(out.contains("atlas-2c3d"), "{out}");
+    let atlas = fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+    let beacon = fs::read_to_string(layout.project_issues_path("beacon")).unwrap();
+    assert!(!atlas.contains("atlas-2c3d"), "{atlas}");
+    // The id does not follow the project, so cross-project edges still resolve.
+    assert!(beacon.contains("atlas-2c3d"), "{beacon}");
+    let detail = CatalogService::from_recs(&load_recs(&layout).unwrap())
+        .detail("atlas-2c3d")
+        .unwrap();
+    assert_eq!(detail.project, "beacon");
+}
+
+#[test]
+fn an_update_that_asks_for_what_is_already_true_reports_no_change() {
+    let (_dir, layout) = writable_copy();
+    // atlas-2c3d is already TODO.
+    let out =
+        vissue_core::ops::update(&layout, "atlas-2c3d", Some("TODO"), None, None, None).unwrap();
+    assert_eq!(out.report, "atlas-2c3d: no change\n");
+    assert!(out.hints.is_empty(), "{:?}", out.hints);
+}
+
+#[test]
+fn clearing_the_last_blocker_returns_a_blocked_issue_to_todo() {
+    let (_dir, layout) = writable_copy();
+    // atlas-3e4f is BLOCKED by atlas-1a2b in the fixture.
+    let out = vissue_core::ops::update(&layout, "atlas-3e4f", None, None, None, Some("atlas-1a2b"))
+        .unwrap();
+    assert!(
+        out.report.contains("blocked_by -= atlas-1a2b"),
+        "{}",
+        out.report
+    );
+    assert!(
+        out.report.contains("BLOCKED -> TODO"),
+        "nothing holds it now: {}",
+        out.report
+    );
+    let detail = CatalogService::from_recs(&load_recs(&layout).unwrap())
+        .detail("atlas-3e4f")
+        .unwrap();
+    assert_eq!(detail.state, "TODO");
+}

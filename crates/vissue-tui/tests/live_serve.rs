@@ -233,3 +233,30 @@ fn attaching_to_a_socket_nobody_serves_fails_rather_than_hanging() {
     assert!(!Path::new(&absent).exists());
     assert!(ControlBackend::connect(&absent, &layout, "live-test").is_err());
 }
+
+/// An idle server stays still.
+///
+/// The generation poll opens the projects directory every 250ms and the
+/// rebuild coalesces for 200ms. A watcher that counts its own reads as
+/// changes therefore rebuilds several times a second forever, on a tracker
+/// nobody is touching: every attached client is woken, and the revision
+/// they use to tell a stale page from a fresh one runs away on its own.
+///
+/// This has to wait to see it. A burst of quick reads finishes inside one
+/// poll interval and observes nothing.
+#[test]
+fn an_idle_server_does_not_rebuild_behind_the_client() {
+    let (_dir, layout, owner) = live();
+    let backend = attach(&owner, &layout);
+
+    let settled = backend.ready(None).expect("ready").revision;
+    std::thread::sleep(Duration::from_millis(1200));
+    let later = backend.ready(None).expect("ready").revision;
+
+    assert_eq!(
+        later,
+        settled,
+        "the catalog was rebuilt {} time(s) while nothing changed",
+        later.saturating_sub(settled)
+    );
+}

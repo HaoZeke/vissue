@@ -4,12 +4,12 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use serde_json::json;
@@ -20,6 +20,47 @@ use super::owner::{lock_is_free, log_path, prepare_socket_dir, read_pid_file, re
 use crate::{EnsureResult, ServeConfig, Status, ACCEPT_TIMEOUT_MS, SERVE_REVISION};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// `vissue-hud` is a separate binary. Spawning `current_exe() serve` then
+/// becomes `vissue-hud serve`, which clap rejects. Prefer an explicit path,
+/// then a sibling `vissue`, then `$PATH`.
+fn resolve_serve_exe(cfg: &ServeConfig) -> Result<PathBuf> {
+    if let Some(path) = &cfg.exe {
+        return Ok(path.clone());
+    }
+    let current = std::env::current_exe().context("resolve current executable")?;
+    serve_exe_from(&current, std::env::var_os("PATH").as_deref())
+}
+
+fn serve_exe_from(current: &Path, path_var: Option<&std::ffi::OsStr>) -> Result<PathBuf> {
+    let name = current
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    if name == "vissue" || name == "vissue.exe" {
+        return Ok(current.to_path_buf());
+    }
+    if let Some(dir) = current.parent() {
+        for candidate in ["vissue", "vissue.exe"] {
+            let sibling = dir.join(candidate);
+            if sibling.is_file() {
+                return Ok(sibling);
+            }
+        }
+    }
+    if let Some(path_var) = path_var {
+        for dir in std::env::split_paths(path_var) {
+            let candidate = dir.join("vissue");
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+    bail!(
+        "cannot find a vissue CLI to spawn serve (running as {})",
+        current.display()
+    );
+}
 const TERM_WAIT: Duration = Duration::from_secs(5);
 const KILL_WAIT: Duration = Duration::from_secs(2);
 
@@ -285,10 +326,7 @@ pub fn start_detached(cfg: &ServeConfig) -> Result<EnsureResult> {
         std::process::id()
     );
 
-    let exe = match &cfg.exe {
-        Some(path) => path.clone(),
-        None => std::env::current_exe().context("resolve current executable")?,
-    };
+    let exe = resolve_serve_exe(cfg)?;
     let stdout = log_file.try_clone().context("clone serve log for stdout")?;
     let mut cmd = Command::new(&exe);
     cmd.arg("serve")
@@ -497,6 +535,46 @@ mod tests {
         let ensured = ensure_serve(&cfg).unwrap();
         assert!(ensured.already_running);
         assert!(ensured.live());
+    }
+
+    #[test]
+    fn serve_exe_from_uses_current_when_named_vissue() {
+        let dir = tempfile::tempdir().unwrap();
+        let current = dir.path().join("vissue");
+        fs::write(&current, b"").unwrap();
+        assert_eq!(serve_exe_from(&current, None).unwrap(), current);
+    }
+
+    #[test]
+    fn serve_exe_from_prefers_sibling_when_running_as_hud() {
+        let dir = tempfile::tempdir().unwrap();
+        let hud = dir.path().join("vissue-hud");
+        let cli = dir.path().join("vissue");
+        fs::write(&hud, b"").unwrap();
+        fs::write(&cli, b"").unwrap();
+        assert_eq!(serve_exe_from(&hud, None).unwrap(), cli);
+    }
+
+    #[test]
+    fn serve_exe_from_searches_path_when_no_sibling() {
+        let dir = tempfile::tempdir().unwrap();
+        let hud = dir.path().join("vissue-hud");
+        fs::write(&hud, b"").unwrap();
+        let bindir = dir.path().join("bin");
+        fs::create_dir(&bindir).unwrap();
+        let cli = bindir.join("vissue");
+        fs::write(&cli, b"").unwrap();
+        let found = serve_exe_from(&hud, Some(bindir.as_os_str())).unwrap();
+        assert_eq!(found, cli);
+    }
+
+    #[test]
+    fn serve_exe_from_errors_when_hud_has_no_cli() {
+        let dir = tempfile::tempdir().unwrap();
+        let hud = dir.path().join("vissue-hud");
+        fs::write(&hud, b"").unwrap();
+        let err = serve_exe_from(&hud, None).unwrap_err().to_string();
+        assert!(err.contains("cannot find a vissue CLI"), "{err}");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! action catalog and keys.toml overlay.
+//! Action catalog and keys.toml overlay.
 //!
 //! Defaults live in code. Operator diffs live in `$VISSUE_KEYS` or
 //! `~/.config/vissue/keys.toml`. Invalid overlay is refused.

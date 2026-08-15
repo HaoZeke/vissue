@@ -270,7 +270,7 @@ Body edits stay in the file.
 forest; List / Claims / Agenda / Search then stay inside that project.
 Esc returns to the list. Ready and List nest children under =PARENT=.
 The selected row has show / excerpt / tree / related / notes. =n= shows
-the logbook and writes a note. Keys are a catalog ();
+the logbook and writes a note. Keys are a catalog;
 =~/.config/vissue/keys.toml= remaps them; reserved =Esc=/=Enter=/=Tab=/=?=.
 =s= cycles TODO/STARTED/BLOCKED, =c= claims, =p= project, =D=/=X= close,
 =o= opens, =?= help, =a= adds. =Tab= or =1=--=5= switch panes.

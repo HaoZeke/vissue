@@ -1,5 +1,5 @@
 # Copy to ~/.config/vissue/keys.toml
-# overlay: diffs only. Invalid file keeps defaults.
+# Overlay: diffs only. Invalid file keeps defaults.
 #
 # Colemak home-row nav steals n/e, so those verbs move under the leader.
 

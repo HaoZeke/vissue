@@ -329,8 +329,6 @@ fn the_read_only_command_surface_dispatches_against_the_fixture() {
         (&["backlinks", "atlas-1a2b"], "atlas-2c3d"),
         (&["roadmap", "--project", "atlas"], "## atlas"),
         (&["digest", "--json"], "\"issues\": 6"),
-        (&["events", "--since", "0"], "generation=0 since=0 count=0"),
-        (&["gen"], "0\n"),
     ];
 
     for (args, expected) in cases {
@@ -346,6 +344,27 @@ fn the_read_only_command_surface_dispatches_against_the_fixture() {
             "command {args:?} did not contain {expected:?}: {text}"
         );
     }
+
+    // `gen` and `events` read a log the fixture does not carry in git, so
+    // anything that writes one -- a `vissue ping` in a checkout, an earlier
+    // test -- would decide the answer. They are asked of a tracker this test
+    // owns instead.
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let own = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    assert_eq!(stdout(&own(&["gen"])), "0\n");
+    assert!(
+        stdout(&own(&["events", "--since", "0"])).contains("generation=0 since=0 count=0"),
+        "{}",
+        stdout(&own(&["events", "--since", "0"]))
+    );
 }
 
 /// `vissue export | head` closes the pipe once it has enough. The output has

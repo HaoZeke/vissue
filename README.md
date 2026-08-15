@@ -134,6 +134,21 @@ $ vissue claims --project keys
 keys-cata              STARTED   [#C]    0d  impl  Catalog of bindable actions (keys)
 ```
 
+A claim says who is working. It does not say what to work from, nor what
+came of it. `show --org` writes the heading out whole, dispatch note
+included, and that file goes to the worker. `append` records the result
+back under the heading, dated and attributed, where the next reader
+looks. `note` keeps its job: one line in the logbook, the audit trail of
+what happened to the issue.
+
+```console
+$ vissue show --org keys-cata > ISSUE.org
+$ vissue append keys-cata --file SUMMARY.md
+keys-cata: appended 12 line(s)
+```
+
+Markdown is safe in both directions, and `--file -` reads stdin.
+
 The tracker does not invent the children. Whoever plans the work splits
 it [2], [3], [4]; vissue stores the resulting directed graph, names the
 ready set [8], [9], and refuses a cyclic edit [5], [6].

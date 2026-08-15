@@ -1835,3 +1835,79 @@ fn a_file_from_another_editor_is_read_and_normalised() {
     assert_eq!(load_recs(&layout).unwrap().len(), before);
     assert_eq!(report::check(&layout).unwrap().errors, 0);
 }
+
+/// What another tool wrote is still there after vissue writes.
+///
+/// This is the promise the format rests on: an issues.org is shared with
+/// Emacs and with whatever else a person points at it, so a rewrite that
+/// dropped an unknown property or a preamble keyword would quietly destroy
+/// someone else's data. Nothing tested it.
+#[test]
+fn a_rewrite_keeps_what_another_tool_put_there() {
+    let (_dir, layout) = writable_copy();
+    let path = layout.project_issues_path("atlas");
+
+    let planted = fs::read_to_string(&path)
+        .unwrap()
+        // Preamble keywords vissue has no use for, and a plain comment.
+        .replace(
+            "#+TODO:",
+            "#+STARTUP: overview\n# a human comment in the preamble\n\
+             #+PROPERTY: Effort_ALL 1 2 3\n#+TODO:",
+        )
+        // Properties belonging to something else entirely.
+        .replacen(
+            ":CREATED:",
+            ":EXTERNAL_REF: abc123\n:CUSTOM_ID:  my-anchor\n:CREATED:",
+            1,
+        );
+    fs::write(&path, &planted).unwrap();
+    assert_eq!(report::check(&layout).unwrap().errors, 0, "planted file");
+
+    // Any write rewrites the whole file, so one note is the whole test.
+    vissue_core::ops::note(&layout, "atlas-1a2b", "touched").unwrap();
+
+    let after = fs::read_to_string(&path).unwrap();
+    for kept in [
+        "#+STARTUP: overview",
+        "# a human comment in the preamble",
+        "#+PROPERTY: Effort_ALL 1 2 3",
+        ":EXTERNAL_REF:",
+        ":CUSTOM_ID:",
+        "abc123",
+        "my-anchor",
+    ] {
+        assert!(after.contains(kept), "a rewrite dropped {kept:?}");
+    }
+
+    // They reach a consumer too, not just the file.
+    let detail = CatalogService::from_recs(&load_recs(&layout).unwrap())
+        .detail("atlas-1a2b")
+        .unwrap();
+    assert_eq!(
+        detail.properties.get("EXTERNAL_REF").map(String::as_str),
+        Some("abc123")
+    );
+    assert_eq!(
+        detail.properties.get("CUSTOM_ID").map(String::as_str),
+        Some("my-anchor")
+    );
+
+    // And they keep the order they were written in, after :ID:, which vissue
+    // hoists. A drawer reshuffled on every write is a diff on every write.
+    let drawer: Vec<&str> = after
+        .lines()
+        .skip_while(|l| !l.contains(":PROPERTIES:"))
+        .skip(1)
+        .take_while(|l| !l.contains(":END:"))
+        .filter_map(|l| l.trim().split(':').nth(1))
+        .collect();
+    assert_eq!(drawer.first(), Some(&"ID"), "{drawer:?}");
+    let trace = drawer.iter().position(|k| *k == "EXTERNAL_REF");
+    let custom = drawer.iter().position(|k| *k == "CUSTOM_ID");
+    let created = drawer.iter().position(|k| *k == "CREATED");
+    assert!(
+        trace < custom && custom < created,
+        "the drawer was reshuffled: {drawer:?}"
+    );
+}

@@ -246,3 +246,221 @@ fn after_mocked_initialize_next_list_has_no_since_revision() {
     let _ = backend.list(ListQuery::default()).unwrap();
     assert_eq!(backend.last_since_revision(), Some(Some(41)));
 }
+
+// The attach decision, one case per set of hooks.
+//
+// `try_attach` chooses between three outcomes: talk to a live serve, spawn
+// one and talk to it, or stay on the files and say why. Only the offline
+// branch was covered, so the branch that decides whether a board writes
+// through a socket or to the files directly was taken on trust.
+//
+// The hooks are plain function pointers, so each case needs its own pair
+// rather than a closure over test state.
+
+mod decision {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use vissue_tui::CoreBackend;
+
+    fn scratch(name: &str) -> (tempfile::TempDir, Layout) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let layout = Layout::new(dir.path(), "Software");
+        std::fs::create_dir_all(layout.projects_dir()).expect("projects dir");
+        let _ = name;
+        (dir, layout)
+    }
+
+    fn a_backend(layout: &Layout, agent: &str) -> Box<dyn BoardBackend> {
+        Box::new(CoreBackend::open(layout.clone(), agent).expect("core backend"))
+    }
+
+    fn socket() -> PathBuf {
+        PathBuf::from("/tmp/vissue-attach-decision.sock")
+    }
+
+    fn never_ensure(_: &ServeConfig) -> Result<vissue_serve::EnsureResult, String> {
+        panic!("a live socket must not be respawned")
+    }
+
+    // 1. The socket already answers.
+    fn live_probe(_: &Path) -> bool {
+        true
+    }
+    fn ok_connect(
+        _: &Path,
+        layout: &Layout,
+        agent: &str,
+    ) -> Result<Box<dyn BoardBackend>, AttachFail> {
+        Ok(a_backend(layout, agent))
+    }
+
+    #[test]
+    fn a_socket_that_answers_is_attached_to() {
+        let (_dir, layout) = scratch("live");
+        let hooks = AttachHooks {
+            probe: live_probe,
+            ensure: never_ensure,
+            connect: ok_connect,
+        };
+        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+            AttachOutcome::Switch {
+                status: ServeStatus::Live,
+                ..
+            } => {}
+            AttachOutcome::Stay { status, message } => {
+                panic!("stayed on the files: {status:?} {message}")
+            }
+            _ => panic!("attached with the wrong status"),
+        }
+    }
+
+    // 2. It answers, but it is serving another tracker.
+    fn mismatch_connect(
+        _: &Path,
+        _: &Layout,
+        _: &str,
+    ) -> Result<Box<dyn BoardBackend>, AttachFail> {
+        Err(AttachFail::Mismatch(
+            "want /a/Software got /b/Software".into(),
+        ))
+    }
+
+    #[test]
+    fn an_owner_on_another_tracker_leaves_the_board_on_the_files() {
+        let (_dir, layout) = scratch("mismatch");
+        let hooks = AttachHooks {
+            probe: live_probe,
+            ensure: never_ensure,
+            connect: mismatch_connect,
+        };
+        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+            AttachOutcome::Stay { status, message } => {
+                // Distinct from Offline: the board says which vault it is on,
+                // because writing into the wrong one is the harm being avoided.
+                assert_eq!(status, ServeStatus::Mismatch, "{message}");
+                assert!(message.contains("want"), "{message}");
+                assert!(message.contains("got"), "{message}");
+            }
+            _ => panic!("attached to an owner serving another tracker"),
+        }
+    }
+
+    // 3. It answers, then refuses for some other reason.
+    fn failing_connect(_: &Path, _: &Layout, _: &str) -> Result<Box<dyn BoardBackend>, AttachFail> {
+        Err(AttachFail::Other("connection reset".into()))
+    }
+
+    #[test]
+    fn a_refused_connection_stays_on_the_files_and_says_why() {
+        let (_dir, layout) = scratch("refused");
+        let hooks = AttachHooks {
+            probe: live_probe,
+            ensure: never_ensure,
+            connect: failing_connect,
+        };
+        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+            AttachOutcome::Stay { status, message } => {
+                assert_eq!(status, ServeStatus::Offline);
+                assert!(message.contains("connection reset"), "{message}");
+            }
+            _ => panic!("attached to a socket that refused"),
+        }
+    }
+
+    // 4. Nothing is listening, so serve is started and then attached to.
+    static SPAWNED: AtomicBool = AtomicBool::new(false);
+    static ENSURES: AtomicUsize = AtomicUsize::new(0);
+
+    fn probe_after_spawn(_: &Path) -> bool {
+        SPAWNED.load(Ordering::SeqCst)
+    }
+    fn spawning_ensure(_: &ServeConfig) -> Result<vissue_serve::EnsureResult, String> {
+        ENSURES.fetch_add(1, Ordering::SeqCst);
+        SPAWNED.store(true, Ordering::SeqCst);
+        Ok(vissue_serve::EnsureResult {
+            ok: true,
+            already_running: false,
+            spawned: true,
+            pid: Some(4242),
+            socket: socket(),
+            error: None,
+        })
+    }
+
+    #[test]
+    fn a_free_socket_is_served_first_and_then_attached_to() {
+        let (_dir, layout) = scratch("spawn");
+        SPAWNED.store(false, Ordering::SeqCst);
+        ENSURES.store(0, Ordering::SeqCst);
+        let hooks = AttachHooks {
+            probe: probe_after_spawn,
+            ensure: spawning_ensure,
+            connect: ok_connect,
+        };
+        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+            AttachOutcome::Switch {
+                status: ServeStatus::Live,
+                ..
+            } => {}
+            AttachOutcome::Stay { status, message } => {
+                panic!("did not attach after spawning: {status:?} {message}")
+            }
+            _ => panic!("wrong status after a spawn"),
+        }
+        assert_eq!(ENSURES.load(Ordering::SeqCst), 1, "serve was started twice");
+    }
+
+    // 5. Serve reports success but the socket still does not answer.
+    fn never_answers(_: &Path) -> bool {
+        false
+    }
+    fn silent_ensure(_: &ServeConfig) -> Result<vissue_serve::EnsureResult, String> {
+        Ok(vissue_serve::EnsureResult {
+            ok: true,
+            already_running: false,
+            spawned: true,
+            pid: Some(4243),
+            socket: socket(),
+            error: Some("started but never accepted".into()),
+        })
+    }
+
+    #[test]
+    fn a_serve_that_never_accepts_leaves_the_board_on_the_files() {
+        let (_dir, layout) = scratch("silent");
+        let hooks = AttachHooks {
+            probe: never_answers,
+            ensure: silent_ensure,
+            connect: ok_connect,
+        };
+        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+            AttachOutcome::Stay { status, message } => {
+                assert_eq!(status, ServeStatus::Offline);
+                assert!(message.contains("never accepted"), "{message}");
+            }
+            _ => panic!("attached to a socket that never answered"),
+        }
+    }
+
+    // 6. Serve could not be started at all.
+    fn failing_ensure(_: &ServeConfig) -> Result<vissue_serve::EnsureResult, String> {
+        Err("no such binary".into())
+    }
+
+    #[test]
+    fn a_serve_that_will_not_start_is_reported_not_hidden() {
+        let (_dir, layout) = scratch("nostart");
+        let hooks = AttachHooks {
+            probe: never_answers,
+            ensure: failing_ensure,
+            connect: ok_connect,
+        };
+        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+            AttachOutcome::Stay { status, message } => {
+                assert_eq!(status, ServeStatus::Offline);
+                assert!(message.contains("no such binary"), "{message}");
+            }
+            _ => panic!("attached without a serve"),
+        }
+    }
+}

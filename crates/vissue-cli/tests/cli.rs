@@ -1094,3 +1094,81 @@ fn a_blocker_ring_is_refused_and_a_planted_one_does_not_spin() {
         stdout(&ready)
     );
 }
+
+/// Concurrent writers do not lose each other's work.
+///
+/// Every mutation is a read-modify-write of a whole `issues.org`, so two
+/// processes that overlap without the advisory lock will each write a file
+/// built from what they read before the other landed. The loser's issue is
+/// gone, and nothing reports it: the tracker stays valid, just smaller.
+///
+/// Separate processes rather than threads, because that is the case the lock
+/// exists for and the only one an in-process mutex cannot cover.
+#[test]
+fn concurrent_writers_all_land() {
+    use std::process::Stdio;
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join("Software")).unwrap();
+
+    const WRITERS: usize = 12;
+    let mut kids = Vec::with_capacity(WRITERS);
+    for i in 0..WRITERS {
+        kids.push(
+            Command::new(env!("CARGO_BIN_EXE_vissue"))
+                .args([
+                    "--root",
+                    root.to_str().unwrap(),
+                    "create",
+                    "-p",
+                    "atlas",
+                    "--quiet",
+                    &format!("writer {i}"),
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+    }
+    for (i, kid) in kids.into_iter().enumerate() {
+        let out = kid.wait_with_output().unwrap();
+        assert!(
+            out.status.success(),
+            "writer {i} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let run = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", root.to_str().unwrap()];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+
+    // Every writer reported success, so every issue has to be there.
+    let count: usize = stdout(&run(&["count"])).trim().parse().expect("a count");
+    assert_eq!(count, WRITERS, "a write was lost: {count} of {WRITERS}");
+
+    // Each one by title, so a count that happens to match cannot hide a
+    // duplicate standing in for a loser.
+    let listed = stdout(&run(&["list"]));
+    for i in 0..WRITERS {
+        assert!(
+            listed.contains(&format!("writer {i}")),
+            "writer {i} is missing: {listed}"
+        );
+    }
+
+    // The file a race leaves behind is usually still valid, which is what
+    // makes the loss quiet. Check anyway.
+    assert!(
+        run(&["check"]).status.success(),
+        "{}",
+        stdout(&run(&["check"]))
+    );
+}

@@ -41,18 +41,29 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: HUD system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev
+
       # Builds each packaged tarball exactly as `cargo publish` would, so a
       # crate that cannot be consumed from the registry fails here rather
-      # than after an irreversible upload. The two consumers are packaged
-      # against the local vissue-core, because the version they depend on is
-      # not on the registry until this run puts it there.
+      # than after an irreversible upload. Every crate is packaged against
+      # its siblings' local paths, because the versions they depend on are
+      # not on the registry until this run puts them there.
       - name: Package
         run: |
           set -euo pipefail
-          cargo publish --dry-run --locked -p vissue-core
-          core_patch='patch.crates-io.vissue-core.path="${{ github.workspace }}/crates/vissue-core"'
-          cargo --config "$core_patch" publish --dry-run --locked -p vissue-cli
-          cargo --config "$core_patch" publish --dry-run --locked -p vissue-mcp
+          mapfile -t crates < <(scripts/publish-order.py)
+          echo "publishing order: ${crates[*]}"
+          for target in "${crates[@]}"; do
+            args=()
+            for dep in "${crates[@]}"; do
+              [ "$dep" = "$target" ] && continue
+              args+=(--config "patch.crates-io.$dep.path=\"$GITHUB_WORKSPACE/crates/$dep\"")
+            done
+            echo "::group::package $target"
+            cargo "${args[@]}" publish --dry-run --locked -p "$target"
+            echo "::endgroup::"
+          done
 
   publish:
     name: Publish to crates.io
@@ -91,23 +102,31 @@ jobs:
         id: auth
         uses: rust-lang/crates-io-auth-action@v1.0.5
 
-      # Dependency order. vissue-cli and vissue-mcp both name vissue-core by
-      # version, so the registry has to have it before either resolves; the
-      # wait is that propagation and nothing else.
+      # Dependency order, computed from the manifests rather than written
+      # out here: a crate names its siblings by version, so the registry has
+      # to hold each one before the next resolves. The wait between uploads
+      # is that propagation and nothing else.
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
           DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
         run: |
           set -euo pipefail
-          cargo publish --locked -p vissue-core $DRY_RUN
-          if [ -z "$DRY_RUN" ]; then
+          version=$(sed -n '0,/^version = /s/^version = "\([^"]*\)"/\1/p' Cargo.toml)
+          test -n "$version"
+          mapfile -t crates < <(scripts/publish-order.py)
+          echo "publishing order: ${crates[*]}"
+          for crate in "${crates[@]}"; do
+            echo "::group::publish $crate"
+            cargo publish --locked -p "$crate" $DRY_RUN
+            echo "::endgroup::"
+            if [ -n "$DRY_RUN" ]; then
+              continue
+            fi
             for _ in $(seq 1 30); do
-              if cargo info vissue-core@"$(sed -n '0,/^version = /s/^version = "\([^"]*\)"/\1/p' Cargo.toml)" >/dev/null 2>&1; then
+              if cargo info "$crate@$version" >/dev/null 2>&1; then
                 break
               fi
               sleep 10
             done
-          fi
-          cargo publish --locked -p vissue-cli $DRY_RUN
-          cargo publish --locked -p vissue-mcp $DRY_RUN
+          done

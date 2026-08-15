@@ -768,8 +768,8 @@ fn show_reports_the_metadata_the_range_and_the_body() {
     assert!(text.contains("State:    TODO"), "{text}");
     assert!(text.contains("Priority: [#B]"), "{text}");
     assert!(text.contains("atlas/issues.org:"), "{text}");
-    // The body is the part that says what to do, so printing the range and
-    // stopping leaves every reader to go fetch it by hand.
+    // The body says what to do, so printing the range and stopping leaves
+    // every reader to go fetch it by hand.
     assert!(
         text.contains("Scope: one row per parsed record"),
         "show must print the body: {text}"
@@ -1880,7 +1880,7 @@ fn a_rewrite_keeps_what_another_tool_put_there() {
         assert!(after.contains(kept), "a rewrite dropped {kept:?}");
     }
 
-    // They reach a consumer too, not just the file.
+    // They reach a consumer as well as the file.
     let detail = CatalogService::from_recs(&load_recs(&layout).unwrap())
         .detail("atlas-1a2b")
         .unwrap();

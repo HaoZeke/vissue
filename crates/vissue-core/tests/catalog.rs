@@ -213,7 +213,7 @@ fn detail_carries_the_tags_and_the_file_range() {
     assert_eq!(detail.org_tags, vec!["parser", "core"]);
     assert!(detail.tags.contains(&"parser".to_string()));
     assert_eq!(detail.line_start, 1);
-    // `file` is the range an editor opens, not just the path.
+    // `file` carries the range an editor opens: path, start, end.
     assert!(detail.file.ends_with("issues.org:1-6"), "{}", detail.file);
 }
 

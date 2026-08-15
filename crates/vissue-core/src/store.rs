@@ -619,7 +619,7 @@ pub fn detect_project_from_ctx(start: &Path) -> Option<String> {
 }
 
 /// Every `:ID:` value in any org file under the layout prefix. A `:PARENT:`
-/// may point at a design document, not only at another issue.
+/// may point at a design document rather than at another issue.
 /// Look for `wanted` among the `:ID:` values in the tree, stopping as soon
 /// as every one has been seen.
 ///

@@ -1076,7 +1076,7 @@ fn a_blocker_ring_is_refused_and_a_planted_one_does_not_spin() {
     )
     .unwrap();
 
-    // It is named rather than merely counted, so it can be repaired.
+    // The ring is named, not counted, so it can be repaired.
     let found = stdout(&run(&["cycles"]));
     for id in [&a, &b, &c] {
         assert!(found.contains(id.as_str()), "{found}");

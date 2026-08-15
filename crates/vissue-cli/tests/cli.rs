@@ -667,3 +667,52 @@ fn a_body_can_be_piped_in() {
         String::from_utf8_lossy(&shown.stdout)
     );
 }
+
+/// The reference documents every subcommand the binary offers.
+///
+/// The command table is what a reader consults to find out what vissue can
+/// do, so a verb missing from it is a verb that effectively does not exist.
+/// Reading `--help` rather than a second list keeps the two together.
+#[test]
+fn the_reference_lists_every_subcommand() {
+    let help = stdout(&vissue(&["--help"]));
+    let mut in_commands = false;
+    let mut commands: Vec<String> = Vec::new();
+    for line in help.lines() {
+        if line.starts_with("Commands:") {
+            in_commands = true;
+            continue;
+        }
+        if in_commands && line.starts_with("Options:") {
+            break;
+        }
+        if !in_commands {
+            continue;
+        }
+        // Subcommand rows are indented; continuation lines of a long
+        // description are indented further and carry no verb.
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || line.len() - trimmed.len() > 4 {
+            continue;
+        }
+        if let Some(name) = trimmed.split_whitespace().next() {
+            if name != "help" {
+                commands.push(name.to_string());
+            }
+        }
+    }
+    assert!(commands.len() > 20, "no subcommands parsed: {commands:?}");
+
+    let reference = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/orgmode/reference.org"),
+    )
+    .expect("reference");
+    let missing: Vec<&String> = commands
+        .iter()
+        .filter(|name| !reference.contains(&format!("={name}=")))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "not in docs/orgmode/reference.org: {missing:?}"
+    );
+}

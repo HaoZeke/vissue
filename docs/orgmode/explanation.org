@@ -20,8 +20,8 @@ own tool can see is a worse tracker, and the tool grows an =agenda= verb to
 paper over it.
 
 Worse, =TAGS=, =DEADLINE=, and =SCHEDULED= are names Org reserves for its own
-special properties, so a drawer claiming them is not merely unread but wrong;
-=org-lint= says so. Writing them where Org keeps them costs nothing and buys
+special properties, so a drawer claiming them is wrong; Org ignores it and
+=org-lint= says so. Writing them where Org keeps them costs nothing and gives
 the agenda, tag search, and every other Org tool. See [[file:emacs.org][Emacs]] for what
 that enables.
 
@@ -85,8 +85,8 @@ $B$ induces a relation on $I$: $b \prec i$ when $b \in B(i)$. vissue keeps its
 transitive closure irreflexive, which is to say the graph stays acyclic, and
 refuses an edge that would close a cycle.
 
-The alternative is a total order, which is what a numbered list or a sprint
-backlog is. A total order over-specifies: it asserts that the terminal UI
+The alternative is a total order, the shape of a numbered list or a sprint
+backlog. A total order over-specifies: it asserts that the terminal UI
 comes after the schema *and* that the docs pass comes after the catalog, when
 only the first is true. The partial order says exactly what is known, and
 =ready= is the antichain of currently-minimal open elements, which is the set
@@ -95,7 +95,7 @@ that can proceed in parallel.
 Acyclicity is checked at two moments and they are not the same check.
 =update --block= tests the prospective edge against the corpus read inside the
 lock, so a cycle is refused before it is written. =check= and =cycles= test
-the corpus as it stands, which is what catches an edge added by hand in an
+the corpus as it stands, catching an edge added by hand in an
 editor, or two edges added at the same instant in different project files.
 
 * How =related= ranks
@@ -125,7 +125,7 @@ $(\ln \lvert I \rvert)^2$, which for a corpus of ten thousand issues is under
 you actually wrote down, which is the property that matters: the ranking may
 reorder guesses among themselves, but it may not outvote a fact.
 
-Squaring the idf rather than summing it is the same reason. It widens the gap
+Squaring the idf rather than summing it serves that end. It widens the gap
 between a term that appears twice and one that appears everywhere, so
 =keymap= carries the match and =the= carries nothing. Stop words are dropped
 outright, and tokens shorter than three characters with them.
@@ -133,7 +133,7 @@ outright, and tokens shorter than three characters with them.
 * What each verb costs
 
 There is no index. The file is the store, so a query is a parse, and the
-honest table is:
+table is:
 
 | Verb                                    | Cost                                                |
 |-----------------------------------------+-----------------------------------------------------|
@@ -144,13 +144,13 @@ honest table is:
 | =related=                               | The above, plus a term index over the corpus        |
 | =gen=                                   | Read one integer                                    |
 
-That last row is why the change stream exists. A poller that wants to know
-whether anything moved should not pay for a corpus parse to find out nothing
+That last row is why the change stream exists. A poller asking whether
+anything moved should not pay for a corpus parse to find out nothing
 did, so =gen= reads a counter and =events= reads only the tail of a log.
 
 The costs are linear and the constant is a file read, which stays comfortable
 into the thousands of issues and would not stay comfortable into the millions.
-That is the trade the format buys: no schema migration, and a backlog that
+That is the trade the format makes: no schema migration, and a backlog that
 diffs. An optional =vissue serve= is a cache of that parse plus a push of
 =vault/changed=; it is not a second store. Crashing it loses nothing, and
 every verb still works with it down.
@@ -217,6 +217,7 @@ resolved there before it was pasted.
 | Issues are the entities                 | headings with =:ID:=                      | Hogan et al. [23]                                                                       | analogizes |
 | Do not extract a second graph           | =related= writes nothing                  | Rasmussen et al. [24]; Edge et al. [25]; Gutierrez et al. [26]                          | refuses    |
 
+# vale off
 * References
 Resolved and collected through OokCite into =vissue-dag=. Each entry has
 a relation in the audit table above.
@@ -309,3 +310,4 @@ See also the [[https://orgmode.org/manual/][Org mode manual]], the
 [[https://modelcontextprotocol.io/][Model Context Protocol]],
 [[https://github.com/petgraph/petgraph][petgraph]], and
 [[https://github.com/mitchmindtree/daggy][daggy]].
+# vale on

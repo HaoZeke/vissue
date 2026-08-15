@@ -846,3 +846,110 @@ fn the_detached_daemon_starts_reports_restarts_and_stops() {
     // The socket goes with the daemon; a stale one would refuse the next bind.
     assert!(!socket.exists(), "the socket outlived the daemon");
 }
+
+/// The change stream a poller lives on: `gen`, `wait`, `events`.
+///
+/// A tool that watches a tracker asks for the generation, blocks until it
+/// moves, then reads what happened. The contract is in the exit code, so a
+/// `wait` that returned the wrong one would send a poller into a spin or
+/// leave it asleep through a change, and neither shows up as an error.
+#[test]
+fn the_change_stream_reports_and_blocks_the_way_a_poller_needs() {
+    use std::time::Instant;
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join("Software")).unwrap();
+    let run = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", root.to_str().unwrap()];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    let gen_now = |run: &dyn Fn(&[&str]) -> std::process::Output| -> u64 {
+        stdout(&run(&["gen"])).trim().parse().expect("a generation")
+    };
+
+    // An untouched tracker sits at zero and has nothing to report.
+    assert_eq!(gen_now(&run), 0);
+    let empty = stdout(&run(&["events", "--since", "0"]));
+    assert!(empty.contains("count=0"), "{empty}");
+
+    let id = stdout(&run(&["create", "-p", "atlas", "--quiet", "watch me"]))
+        .trim()
+        .to_string();
+    let after_create = gen_now(&run);
+    assert!(after_create > 0, "a write did not move the generation");
+
+    // Already moved past --last: return at once rather than wait out the
+    // timeout, or a poller that fell behind never catches up.
+    let started = Instant::now();
+    let caught_up = run(&["wait", "--last", "0", "--timeout-ms", "5000"]);
+    assert!(
+        caught_up.status.success(),
+        "wait reported no change though the generation had moved"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(3),
+        "wait sat out the timeout on a generation that had already moved"
+    );
+    assert_eq!(
+        stdout(&caught_up).trim(),
+        after_create.to_string(),
+        "wait did not print the generation it woke at"
+    );
+
+    // Nothing changing is exit 2, which is how a poller tells a quiet
+    // interval from a change it missed.
+    let quiet = run(&[
+        "wait",
+        "--last",
+        &after_create.to_string(),
+        "--timeout-ms",
+        "700",
+    ]);
+    assert_eq!(quiet.status.code(), Some(2), "{}", stdout(&quiet));
+
+    // A write from another process wakes it.
+    let mut poker = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "sleep 1; {} --root {} note {id} poke >/dev/null 2>&1",
+            env!("CARGO_BIN_EXE_vissue"),
+            root.to_str().unwrap()
+        ))
+        .spawn()
+        .unwrap();
+    let woken = run(&[
+        "wait",
+        "--last",
+        &after_create.to_string(),
+        "--timeout-ms",
+        "15000",
+    ]);
+    let _ = poker.wait();
+    assert!(
+        woken.status.success(),
+        "wait slept through another process's write"
+    );
+
+    // The log says what happened, in both shapes it offers.
+    let events = stdout(&run(&["events", "--since", "0"]));
+    assert!(events.contains("issues_write"), "{events}");
+    assert!(events.contains("atlas"), "{events}");
+    let json = events
+        .split("---json---")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no json block: {events}"));
+    let parsed: serde_json::Value = serde_json::from_str(json.trim()).expect("events JSON");
+    let recorded = parsed["events"].as_array().expect("an events array");
+    assert!(recorded.len() >= 2, "{parsed}");
+    assert_eq!(recorded[0]["kind"], "issues_write", "{parsed}");
+    assert_eq!(recorded[0]["project"], "atlas", "{parsed}");
+
+    // Asking from the far end returns nothing rather than repeating.
+    let tail = stdout(&run(&["events", "--since", &gen_now(&run).to_string()]));
+    assert!(tail.contains("count=0"), "{tail}");
+}

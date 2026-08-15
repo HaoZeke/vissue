@@ -1744,3 +1744,94 @@ fn appending_nothing_is_refused() {
     assert!(vissue_core::ops::append_body_as(&layout, "atlas-2c3d", "   \n\n", "w").is_err());
     assert!(vissue_core::ops::append_body_as(&layout, "atlas-zzzz", "text", "w").is_err());
 }
+
+/// Text that is not ASCII survives a write and a read.
+///
+/// The parser works in bytes in places, and slicing a multi-byte character
+/// in half has already cost this file one panic. Accents, an em dash, a
+/// non-Latin script and an emoji all go through a title, which is the field
+/// most likely to be sliced.
+#[test]
+fn unicode_survives_the_round_trip() {
+    let (_dir, layout) = writable_copy();
+    let title = "Café não inicia — 日本語 🧪";
+    let body = "Résumé du problème: le café ne démarre pas.\n日本語の本文もある。\nEmoji: 🧪🔬";
+    let id = vissue_core::ops::create(
+        &layout,
+        "atlas",
+        title,
+        vissue_core::ops::CreateOpts {
+            quiet: true,
+            body: Some(body),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+
+    let read = || {
+        CatalogService::from_recs(&load_recs(&layout).unwrap())
+            .detail(&id)
+            .unwrap()
+    };
+    assert_eq!(read().title, title);
+    assert!(
+        read().body.contains("日本語の本文もある。"),
+        "{}",
+        read().body
+    );
+    assert!(read().body.contains("🧪🔬"), "{}", read().body);
+
+    // The priority cookie sits immediately before the title, so setting one
+    // moves the boundary the parser slices at.
+    vissue_core::ops::update(&layout, &id, None, Some('A'), None, None).unwrap();
+    let after = read();
+    assert_eq!(after.title, title, "the title lost a byte to the cookie");
+    assert_eq!(after.priority, "A");
+    assert_eq!(report::check(&layout).unwrap().errors, 0);
+}
+
+/// A file written by another editor still parses.
+///
+/// Org files are edited by people and by other tools, so vissue reads what
+/// it is given: a missing final newline, and CRLF endings. A write of its
+/// own normalises the endings to LF, which is worth knowing because it
+/// shows up as a whole-file diff the first time.
+#[test]
+fn a_file_from_another_editor_is_read_and_normalised() {
+    let (_dir, layout) = writable_copy();
+    let path = layout.project_issues_path("atlas");
+    let before = load_recs(&layout).unwrap().len();
+
+    // No final newline.
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, text.trim_end_matches('\n')).unwrap();
+    assert_eq!(load_recs(&layout).unwrap().len(), before, "lost an issue");
+    assert_eq!(report::check(&layout).unwrap().errors, 0);
+
+    // CRLF throughout.
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, text.replace('\n', "\r\n")).unwrap();
+    let recs = load_recs(&layout).unwrap();
+    assert_eq!(recs.len(), before, "CRLF cost an issue");
+    let first = recs
+        .iter()
+        .find(|r| r.heading.id == "atlas-1a2b")
+        .expect("atlas-1a2b");
+    assert!(
+        !first.heading.title.contains('\r'),
+        "a carriage return reached the title: {:?}",
+        first.heading.title
+    );
+
+    // A vissue write settles the file on LF.
+    vissue_core::ops::note(&layout, "atlas-1a2b", "after crlf").unwrap();
+    let bytes = fs::read(&path).unwrap();
+    assert!(
+        !bytes.contains(&b'\r'),
+        "a carriage return survived a vissue write"
+    );
+    assert_eq!(load_recs(&layout).unwrap().len(), before);
+    assert_eq!(report::check(&layout).unwrap().errors, 0);
+}

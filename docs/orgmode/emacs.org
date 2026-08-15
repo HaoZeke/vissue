@@ -65,6 +65,11 @@ it. Typing that line in Emacs makes a real heading, so what runs into this is
 a body written by a tool: =create --body-file= and =append= both take
 markdown, where =* = is a bullet.
 
+Line endings are the other thing that does not come back byte for byte. A
+file with CRLF endings, or without a final newline, is read without
+complaint; a write settles the whole file on LF. That shows up once, as a
+whole-file diff, and not again.
+
 * Checking the two agree
 
 =tests/org_interop.sh= drives real Emacs over a real tracker: =org-lint=

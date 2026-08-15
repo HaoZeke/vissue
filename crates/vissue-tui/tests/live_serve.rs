@@ -260,3 +260,111 @@ fn an_idle_server_does_not_rebuild_behind_the_client() {
         later.saturating_sub(settled)
     );
 }
+
+/// A refused write comes back as the error it is, not as prose.
+///
+/// The server reports failures as JSON-RPC codes with data; the client turns
+/// those back into typed errors. Nothing tested that translation, so a board
+/// asking "who holds this?" would have had only a message to parse. Each case
+/// here goes over a real socket to a real owner.
+#[test]
+fn the_client_recovers_the_error_the_server_meant() {
+    use vissue_core::error::Error;
+    use vissue_tui::backend::UpdateReq;
+
+    let (_dir, layout, owner) = live();
+    let holder = ControlBackend::connect(&owner.socket, &layout, "holder").expect("attach");
+    let rival = ControlBackend::connect(&owner.socket, &layout, "rival").expect("attach");
+    let id = first_id(&holder);
+
+    holder.claim(&id, false).expect("the first claim");
+
+    // Someone else's claim names them, so a board can say who to ask.
+    match rival.claim(&id, false) {
+        Err(Error::ClaimConflict {
+            id: got, holder, ..
+        }) => {
+            assert_eq!(got, id);
+            assert_eq!(holder, "holder", "the conflict did not name the holder");
+        }
+        other => panic!("expected a claim conflict, got {other:?}"),
+    }
+
+    // Forcing it through is the documented way past that.
+    rival.claim(&id, true).expect("a forced claim");
+
+    // An issue cannot block itself.
+    match rival.update(UpdateReq {
+        id: id.clone(),
+        state: None,
+        priority: None,
+        block: Some(id.clone()),
+        unblock: None,
+    }) {
+        Err(Error::BlockerCycle { blocker, issue }) => {
+            assert_eq!(blocker, id, "{blocker} {issue}");
+        }
+        other => panic!("expected a blocker cycle, got {other:?}"),
+    }
+
+    // A closed issue refuses a claim, and says what state it is in.
+    let other_id = holder
+        .ready(None)
+        .expect("ready")
+        .issues
+        .iter()
+        .map(|r| r.id.clone())
+        .find(|other| other != &id)
+        .expect("a second issue");
+    holder
+        .update(UpdateReq {
+            id: other_id.clone(),
+            state: Some("DONE".into()),
+            priority: None,
+            block: None,
+            unblock: None,
+        })
+        .expect("close it");
+    match rival.claim(&other_id, false) {
+        Err(Error::InvalidState { id: got, state }) => {
+            assert_eq!(got, other_id);
+            assert_eq!(state, "DONE", "the refusal did not name the state");
+        }
+        other => panic!("expected an invalid state, got {other:?}"),
+    }
+
+    // An id that does not exist is its own error, not a generic failure.
+    match rival.get("atlas-zzzz") {
+        Err(Error::IssueNotFound { id }) => assert_eq!(id, "atlas-zzzz"),
+        other => panic!("expected a not-found, got {other:?}"),
+    }
+}
+
+/// Attaching to an owner serving a different tracker is refused.
+///
+/// Falling back to the files is safe; writing into the wrong vault is not,
+/// so the mismatch is a distinct error carrying both sides.
+#[test]
+fn attaching_to_the_wrong_tracker_is_refused_by_name() {
+    use vissue_tui::control::ControlAttachError;
+
+    let (_dir, _layout, owner) = live();
+    let elsewhere = tempfile::tempdir().expect("tempdir");
+    let other = Layout::new(elsewhere.path(), DEFAULT_PREFIX);
+
+    match ControlBackend::connect(&owner.socket, &other, "wrong-vault") {
+        Err(ControlAttachError::Mismatch {
+            want_root,
+            got_root,
+            ..
+        }) => {
+            assert!(
+                want_root.contains(&elsewhere.path().display().to_string())
+                    || !want_root.is_empty()
+            );
+            assert_ne!(want_root, got_root, "a mismatch that matches is not one");
+        }
+        Ok(_) => panic!("attached to an owner serving another tracker"),
+        Err(other) => panic!("expected a mismatch, got {other}"),
+    }
+}

@@ -146,6 +146,14 @@ fn lifecycle_start_status_second_d_stop() {
     let down = h.run(&["serve", "status"]);
     assert_eq!(down.status.code(), Some(1), "{}", stdout(&down));
     assert!(stdout(&down).contains("live: false"), "{}", stdout(&down));
+
+    // The socket goes with the owner. One left behind refuses the next bind,
+    // and the daemon that finds it has to decide whether it is stale.
+    assert!(
+        !h.socket.exists(),
+        "the socket outlived the owner: {}",
+        h.socket.display()
+    );
 }
 
 #[test]
@@ -401,6 +409,11 @@ fn restart_brings_a_stopped_owner_back() {
     let h = Harness::new();
     assert!(h.start_d().status.success());
     assert!(wait_accepts(&h.socket, Duration::from_secs(5)));
+    let first = stdout(&h.run(&["serve", "status"]))
+        .lines()
+        .find_map(|l| l.strip_prefix("pid: "))
+        .map(|p| p.trim().to_string());
+    assert!(first.is_some(), "no pid while it was up");
     assert!(h.stop().status.success());
     let restart = h.run(&["serve", "restart"]);
     assert!(
@@ -410,5 +423,16 @@ fn restart_brings_a_stopped_owner_back() {
         stderr(&restart)
     );
     assert!(wait_accepts(&h.socket, Duration::from_secs(5)));
-    assert!(h.run(&["serve", "status"]).status.success());
+    let back = h.run(&["serve", "status"]);
+    assert!(back.status.success());
+    // A restart that kept the old process would satisfy everything above,
+    // so the pid has to have moved.
+    let pid = |text: &str| -> Option<String> {
+        text.lines()
+            .find_map(|l| l.strip_prefix("pid: "))
+            .map(|p| p.trim().to_string())
+    };
+    let after = pid(&stdout(&back)).expect("a pid once it is back");
+    assert!(!after.is_empty(), "{}", stdout(&back));
+    assert_ne!(Some(after), first, "restart kept the same process");
 }

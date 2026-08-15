@@ -29,6 +29,19 @@
 | =keys=                                                                    | The board key catalog; =--check= validates an overlay, =--occupancy= lists taken chords |
 | =completions=, =man=                                                      | Shell completion scripts and the manual page                             |
 
+* Projects
+
+A project is a directory under the prefix holding one =issues.org=. Naming
+one that does not exist creates it: =create --project=, =q --project=,
+=fold --project= and =refile --to= all file into a new project rather than
+refusing. That is what makes a tracker grow without a setup step, and it
+means a typo files work somewhere real but unwatched. =projects= lists what
+exists, which is the cheap way to check a name before using it.
+
+Names fold case against what is already there, so =--project Atlas= reaches
+an existing =atlas=. A name matching two existing projects by case alone is
+refused rather than guessed at.
+
 * States and priorities
 
 States are =TODO=, =STARTED=, =BLOCKED=, =DONE=, and =CANCELLED=. An issue is

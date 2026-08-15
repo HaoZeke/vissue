@@ -1062,3 +1062,75 @@ fn mirror_check_reports_freshness_in_its_exit_code() {
         "a change in another project staled an atlas-only mirror"
     );
 }
+
+/// Naming a project that does not exist creates it, and case folds.
+///
+/// This is what lets a tracker grow without a setup step, and it is also
+/// why a typo files work somewhere real but unwatched, so it is worth
+/// stating in a test as well as in the reference.
+#[test]
+fn a_project_comes_into_being_when_something_is_filed_there() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join("Software")).unwrap();
+    let run = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", root.to_str().unwrap()];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    let projects = |run: &dyn Fn(&[&str]) -> std::process::Output| -> Vec<String> {
+        stdout(&run(&["projects"]))
+            .lines()
+            .map(str::to_string)
+            .collect()
+    };
+
+    let id = stdout(&run(&["create", "-p", "atlas", "--quiet", "one"]))
+        .trim()
+        .to_string();
+    assert_eq!(projects(&run), ["atlas"]);
+
+    // A different case reaches the project that is already there rather
+    // than making a second one beside it.
+    let folded = run(&["create", "-p", "Atlas", "--quiet", "two"]);
+    assert!(folded.status.success(), "{}", stdout(&folded));
+    assert!(
+        stdout(&folded).trim().starts_with("atlas-"),
+        "{}",
+        stdout(&folded)
+    );
+    assert_eq!(
+        projects(&run),
+        ["atlas"],
+        "a case variant split the project"
+    );
+
+    // An unknown name is filed rather than refused, by create and by refile.
+    let elsewhere = run(&["create", "-p", "brandnew", "--quiet", "three"]);
+    assert!(elsewhere.status.success());
+    assert!(projects(&run).contains(&"brandnew".to_string()));
+
+    let moved = run(&["refile", &id, "--to", "somewhere-else"]);
+    assert!(moved.status.success(), "{}", stdout(&moved));
+    assert!(projects(&run).contains(&"somewhere-else".to_string()));
+    // The id does not follow the project, so edges pointing at it still hold.
+    let detail: serde_json::Value =
+        serde_json::from_str(&stdout(&run(&["show", &id, "--json"]))).unwrap();
+    assert_eq!(detail["id"], id.as_str());
+    assert_eq!(detail["project"], "somewhere-else");
+
+    // Two projects differing only by case are refused rather than guessed at.
+    for name in ["Beacon", "beacon"] {
+        let path = root.join("Software").join(name);
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("issues.org"), "#+TITLE: x\n").unwrap();
+    }
+    let ambiguous = run(&["create", "-p", "BEACON", "--quiet", "which one"]);
+    assert!(!ambiguous.status.success(), "{}", stdout(&ambiguous));
+    let err = String::from_utf8_lossy(&ambiguous.stderr);
+    assert!(err.contains("ambiguous"), "{err}");
+    assert!(err.contains("Beacon") && err.contains("beacon"), "{err}");
+}

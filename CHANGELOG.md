@@ -6,6 +6,116 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.3.0](https://github.com/HaoZeke/vissue/releases/tag/v0.3.0) - 2026-08-15
+
+### Added
+
+- `vissue append <id>` records a dated, attributed report under an issue's
+  heading, from `--text`, a `--file`, or stdin. A body could previously only be
+  set at `create`, and `note` folds its text to a single line by design, so
+  there was no way to write down the result of work. Markdown is safe. The MCP
+  tool is `vissue_append`.
+- `vissue hud` is a summonable task board. It opens on the project list;
+  entering a project shows that project's ready forest, then List / Claims /
+  Agenda / Search within it, with show / excerpt / tree / related / notes on
+  the selected row. The window execs a separate `vissue-hud` binary, so the
+  CLI does not carry the GUI dependencies.
+
+  First paint reads the files. Unless `--offline`, the board attaches to
+  `vissue serve`, starting it when the socket is free, and falls back to the
+  files when serve is down or bound to another root. `--toggle`, `--show`
+  and `--hide` talk to a summon socket, so a keybinding can raise the board
+  that is already running rather than starting a second one.
+
+  `--rofi` gives the seat dmenu picker instead, over the set named by
+  `--mode`: Return opens the heading in `$EDITOR`, Alt+c claims, Alt+n
+  notes. Keys come from a catalog that `~/.config/vissue/keys.toml` or
+  `VISSUE_KEYS` remaps; `vissue keys` prints it and `--check` validates an
+  overlay.
+- `vissue serve` now caches the issue catalog and answers the v1 control
+  methods (`issue/list`, `issue/ready`, `issue/claim`, and the rest).
+  Attached clients receive `vault/changed` after a rebuild. The files stay
+  the store: stopping serve loses nothing.
+- `vissue show` prints the body, and `show --org` writes the heading out whole
+  (property drawer, logbook, and body) for handing an issue to someone as the
+  thing to work from. `IssueDetail` carries the body, so `--json`, the MCP
+  tools, and the control protocol answer with what the issue asks for rather
+  than a file path and a line range. Prefer `show --org` over `body-excerpt`
+  when the text is the specification: the excerpt is a preview and stops at 40
+  lines. The MCP tool is `vissue_org`.
+- `vissue tui` is an interactive board over ready, list, claims, agenda,
+  and search. First paint reads the files. Unless `--offline`, the board
+  attaches to `vissue serve` (starting it when the socket is free) and
+  falls back to the files when serve is down or bound to another root.
+
+### Changed
+
+- Publication uses crates.io trusted publishing on a `v*` tag, with no registry secret in the repository.
+- The minimum supported Rust version is 1.89, which is what the iced board's
+  dependencies require.
+- `check` only searches the wider tree for `:PARENT:` ids that are not
+  issues. It validates parents against any Org id, which includes design
+  documents and notes, so on a tracker sharing a root with a notes vault it
+  read every `.org` file to answer a question the issues had usually
+  already answered. Where every parent is another issue the scan is now
+  skipped entirely: 58ms to 23ms on a 35MB corpus. A tracker that does
+  point at a design document still pays for the search, which now stops as
+  soon as the ids it wants have been found.
+
+### Fixed
+
+- A body containing a line that starts with `* `, which any markdown bullet
+  list does, no longer cuts the issue in two. The parser splits issues on that
+  line, so such a body used to leave a heading with no `:ID:`, stop the file
+  parsing, and drop every issue in that project out of `list`. Those lines are
+  now indented by one on the way out; `** Scope` and deeper are left alone,
+  being children of the issue rather than the end of it.
+- A client of `vissue serve` sees its own write. The catalog was rebuilt only
+  by the file watcher, so for up to about 450ms after a mutation the writer was
+  answered from the catalog as it stood before: `issue/list` came back one
+  short, and `issue/get` on the id `issue/create` had just returned reported
+  the issue as missing. The mutation path refreshes before it answers and
+  reports the resulting revision.
+- An idle tracker no longer rebuilds its catalog and broadcasts `vault/changed`
+  several times a second. The generation poll opens the projects directory on
+  every tick, inotify reports that open against the watched tree, and a read
+  was counted as a change, so the rebuild's own reads raised the next event.
+- `check` now reads `:ID:` only from a property drawer under a heading, where
+  org defines one. A report appended to an issue body quotes the heading it
+  describes, and a quoted id used to count: a `:PARENT:` pointing at nothing
+  resolved against the mention, and the check that exists to catch broken links
+  went quiet.
+- `digest` and `mirror --check` read the corpus once rather than once per
+  project. Each project's digest came from a whole-corpus export filtered
+  down to that project, which is quadratic in the project count: on a
+  tracker with 115 projects and 4781 issues those commands took 6.2s, and
+  now take 0.16s. The digest values are unchanged, so mirrors stamped by an
+  earlier version still read as fresh.
+
+### Developer
+
+- The catalog query surface and the typed error enum are covered by tests.
+- The seams between the parts have tests of their own. The client and the
+  server now talk to each other over a real socket, which is where
+  a mutation the server accepted but did not make visible to the next read
+  used to hide; the Model Context Protocol (MCP) server is driven the way
+  an agent meets it, a process on the other end of a pipe; `serve -d` runs
+  as a real daemon; and Org decides whether a markdown body stayed body,
+  rather than the parser deciding that about itself.
+
+  Concurrent writers are covered: with the advisory lock removed, twelve
+  overlapping `create` calls lose between two and six of themselves while
+  every writer reports success, and nothing in the suite noticed before.
+
+  Three drift guards fail rather than rot: every command and MCP tool must
+  appear in the reference, every advertised control capability must be
+  routed, and the release must cover every publishable crate in an order
+  taken from the manifests.
+
+  `cargo test` runs with `--no-fail-fast`, so a red run names every broken
+  target instead of stopping at the first.
+
+
 ## [0.2.0](https://github.com/HaoZeke/vissue/releases/tag/v0.2.0) - 2026-08-14
 
 ### Added

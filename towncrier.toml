@@ -1,6 +1,6 @@
 [tool.towncrier]
 name = "vissue"
-version = "0.2.0"
+version = "0.3.0"
 directory = "docs/newsfragments"
 filename = "CHANGELOG.md"
 start_string = "<!-- towncrier release notes start -->\n"

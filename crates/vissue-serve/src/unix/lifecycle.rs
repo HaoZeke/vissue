@@ -654,6 +654,113 @@ mod tests {
         let _ = mute.join();
     }
 
+    /// A stand-in for the serve binary, invoked exactly as the detach does.
+    ///
+    /// The detach execs `<exe> serve --foreground --root R --prefix P
+    /// --socket S`, so the script finds the socket in its own arguments and
+    /// then behaves as the case under test requires.
+    fn fake_serve(dir: &Path, body: &str) -> PathBuf {
+        let path = dir.join("fake-serve");
+        std::fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\n\
+                 sock=\"\"\n\
+                 while [ $# -gt 0 ]; do\n\
+                 \tif [ \"$1\" = \"--socket\" ]; then sock=\"$2\"; fi\n\
+                 \tshift\n\
+                 done\n\
+                 {body}\n"
+            ),
+        )
+        .unwrap();
+        let mut perm = std::fs::metadata(&path).unwrap().permissions();
+        perm.set_mode(0o755);
+        std::fs::set_permissions(&path, perm).unwrap();
+        path
+    }
+
+    #[test]
+    fn detach_reports_the_child_once_it_accepts() {
+        let dir = tempfile::tempdir().unwrap();
+        // A separate file rather than an inline -c program, so the shell and
+        // Rust are not both escaping the same source.
+        let binder = dir.path().join("bind.py");
+        // A raw string with real newlines: a continuation escape leaves the
+        // indentation in, and Python will not have it.
+        std::fs::write(
+            &binder,
+            r#"import socket, sys, time
+s = socket.socket(socket.AF_UNIX)
+s.bind(sys.argv[1])
+s.listen(8)
+time.sleep(60)
+"#,
+        )
+        .unwrap();
+        let exe = fake_serve(
+            dir.path(),
+            &format!("exec python3 {} \"$sock\"", binder.display()),
+        );
+        let mut cfg = cfg(dir.path());
+        cfg.exe = Some(exe);
+
+        let result = start_detached(&cfg).unwrap();
+        assert!(result.ok, "{:?}", result.error);
+        assert!(result.spawned, "{result:?}");
+        assert!(!result.already_running, "{result:?}");
+        let pid = result.pid.expect("a pid");
+        assert!(socket_accepts(&cfg.socket), "the socket does not accept");
+
+        // The detach only returns once the socket answers, so a caller may
+        // connect straight away rather than polling for it.
+        assert!(pid_is_alive(pid), "the child was gone before it was used");
+
+        // Cleanup only. Nothing reaps the child in this process, so it stays
+        // a visible zombie after the signal and there is nothing to wait for.
+        let _ = signal_pid(pid, Signal::SIGTERM);
+    }
+
+    #[test]
+    fn a_live_socket_is_reported_rather_than_started_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = cfg(dir.path());
+        std::fs::create_dir_all(cfg.socket.parent().unwrap()).unwrap();
+        let _listener = UnixListener::bind(&cfg.socket).unwrap();
+
+        for result in [start_detached(&cfg).unwrap(), ensure_serve(&cfg).unwrap()] {
+            assert!(result.ok, "{result:?}");
+            assert!(result.already_running, "{result:?}");
+            assert!(!result.spawned, "a live socket was served twice");
+        }
+    }
+
+    /// A child that starts and never accepts is reported with its own output.
+    ///
+    /// The log tail is the only account of why: the child writes to a file
+    /// rather than to the caller's terminal, so without it the failure is
+    /// "did not accept" and nothing else.
+    #[test]
+    fn a_child_that_never_accepts_is_reported_with_the_log_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = fake_serve(
+            dir.path(),
+            "echo 'refusing: the vault is on fire' >&2\nexit 3",
+        );
+        let mut cfg = cfg(dir.path());
+        cfg.exe = Some(exe);
+
+        let result = start_detached(&cfg).unwrap();
+        assert!(!result.ok, "{result:?}");
+        assert!(result.spawned, "the child was started: {result:?}");
+        let err = result.error.expect("a reason");
+        assert!(err.contains("did not accept"), "{err}");
+        assert!(
+            err.contains("the vault is on fire"),
+            "the child's own account was dropped: {err}"
+        );
+    }
+
     #[test]
     fn pid_zero_is_not_alive() {
         assert!(!pid_is_alive(0));

@@ -387,39 +387,59 @@ pub fn export(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
         if !project_selected(&project, project_filter) {
             continue;
         }
-        let logbook: Vec<serde_json::Value> = h
-            .logbook
-            .iter()
-            .map(|e| {
-                let mut row = serde_json::json!({
-                    "timestamp": e.timestamp,
-                    "from": e.from_state,
-                    "to": e.to_state,
-                    "note": e.note,
-                });
-                if let Some(raw) = &e.raw {
-                    row["raw"] = serde_json::Value::String(raw.clone());
-                }
-                row
-            })
-            .collect();
-        let row = serde_json::json!({
-            "id": h.id,
-            "project": project,
-            "title": h.title,
-            "state": h.state,
-            "priority": h.priority.to_string(),
-            "properties": h.properties,
-            "org_tags": h.org_tags,
-            "tags": h.tags(),
-            "logbook": logbook,
-            "body": h.body,
-            "line_start": h.line_start,
-            "line_end": h.line_end,
-        });
-        let _ = writeln!(out, "{}", row);
+        let _ = writeln!(out, "{}", export_row(&project, h));
     }
     Ok(out)
+}
+
+/// The same lines as [`export`], grouped by project, from one read.
+///
+/// `export` filters a whole-corpus read down to one project, so digesting
+/// every project separately re-read the corpus once per project: quadratic
+/// in the project count, and six seconds on a tracker with a hundred of
+/// them. The rows are built by the same function, so a project's text here
+/// is byte for byte what `export(layout, Some(project))` returns, and the
+/// digests taken from it do not move.
+pub fn export_by_project(layout: &Layout) -> Result<BTreeMap<String, String>> {
+    let mut out: BTreeMap<String, String> = BTreeMap::new();
+    for (project, h) in load_all(layout)? {
+        let row = export_row(&project, h);
+        let _ = writeln!(out.entry(project).or_default(), "{row}");
+    }
+    Ok(out)
+}
+
+fn export_row(project: &str, h: IssueHeading) -> serde_json::Value {
+    let logbook: Vec<serde_json::Value> = h
+        .logbook
+        .iter()
+        .map(|e| {
+            let mut row = serde_json::json!({
+                "timestamp": e.timestamp,
+                "from": e.from_state,
+                "to": e.to_state,
+                "note": e.note,
+            });
+            if let Some(raw) = &e.raw {
+                row["raw"] = serde_json::Value::String(raw.clone());
+            }
+            row
+        })
+        .collect();
+    serde_json::json!({
+        "id": h.id,
+        "project": project,
+        "title": h.title,
+        "state": h.state,
+        "priority": h.priority.to_string(),
+        "properties": h.properties,
+        "org_tags": h.org_tags,
+        "tags": h.tags(),
+        "logbook": logbook,
+        "body": h.body,
+        "line_start": h.line_start,
+        "line_end": h.line_end,
+    })
 }
 
 /// Children and blockers below `root_id`, as indented text or Graphviz DOT.

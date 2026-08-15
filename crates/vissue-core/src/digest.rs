@@ -59,10 +59,21 @@ pub fn corpus_digest(layout: &Layout, projects: &[String]) -> Result<CorpusDiges
     selected.sort();
     selected.dedup();
 
-    let mut per_project = Vec::with_capacity(selected.len());
-    for project in &selected {
-        per_project.push(project_digest(layout, project)?);
-    }
+    // One read of the corpus, grouped, rather than one read per project.
+    // `project_digest` filters a whole-corpus export down to a single
+    // project, so calling it in a loop is quadratic in the project count.
+    let grouped = report::export_by_project(layout)?;
+    let per_project: Vec<ProjectDigest> = selected
+        .iter()
+        .map(|project| {
+            let export = grouped.get(project).map(String::as_str).unwrap_or("");
+            ProjectDigest {
+                project: project.clone(),
+                digest: hex(xxh3_64(export.as_bytes())),
+                issues: export.lines().filter(|l| !l.trim().is_empty()).count(),
+            }
+        })
+        .collect();
 
     // Combine over the sub-digests rather than over the raw bytes, so the
     // combined value is a pure function of the parts a reader can inspect.

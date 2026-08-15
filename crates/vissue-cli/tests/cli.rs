@@ -491,3 +491,179 @@ fn append_reads_a_file_and_stdin() {
     // Neither source given is an error, not an empty append.
     assert!(!mk(&["append", &id]).status.success());
 }
+
+#[test]
+fn completions_are_generated_for_every_shell_offered() {
+    for shell in ["bash", "elvish", "fish", "powershell", "zsh"] {
+        let out = vissue(&["completions", shell]);
+        assert!(
+            out.status.success(),
+            "{shell}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let script = stdout(&out);
+        assert!(!script.trim().is_empty(), "{shell} produced nothing");
+        assert!(script.contains("vissue"), "{shell}: {script}");
+        // The serve flags that exist only for the daemon to call itself are
+        // not something a person should be offered on the command line.
+        assert!(!script.contains("--accept-fd"), "{shell}: {script}");
+    }
+}
+
+/// `vissue keys` in its three shapes, against a chosen overlay.
+///
+/// The overlay path comes from the environment, so each case runs in its own
+/// process with its own value rather than reassigning one the whole suite
+/// shares.
+#[test]
+fn keys_prints_the_catalog_and_checks_an_overlay() {
+    let dir = tempfile::tempdir().unwrap();
+    let keys = |overlay: Option<&str>, args: &[&str]| -> std::process::Output {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_vissue"));
+        cmd.args(["--root", fixture_root().to_str().unwrap(), "keys"]);
+        cmd.args(args);
+        match overlay {
+            Some(path) => cmd.env("VISSUE_KEYS", path),
+            None => cmd.env_remove("VISSUE_KEYS"),
+        };
+        cmd.output().unwrap()
+    };
+
+    // The catalog names every action with the chord that is live for it.
+    let table = keys(None, &[]);
+    assert!(table.status.success());
+    let text = stdout(&table);
+    for action in ["list.down", "issue.claim", "board.help"] {
+        assert!(text.contains(action), "{action} missing: {text}");
+    }
+
+    let taken = keys(None, &["--occupancy"]);
+    assert!(taken.status.success());
+    assert!(stdout(&taken).contains('\t'), "{}", stdout(&taken));
+
+    // A sound overlay checks out, and the rebound chord is what shows.
+    let good = dir.path().join("good.toml");
+    fs::write(&good, "[board]\n\"list.down\" = \"e\"\n").unwrap();
+    let checked = keys(Some(good.to_str().unwrap()), &["--check"]);
+    assert!(
+        checked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    assert!(stdout(&checked).trim() == "ok", "{}", stdout(&checked));
+    let listed = stdout(&keys(Some(good.to_str().unwrap()), &[]));
+    let row = listed
+        .lines()
+        .find(|l| l.contains("list.down"))
+        .unwrap_or_else(|| panic!("no list.down row: {listed}"));
+    assert_eq!(
+        row.split_whitespace().last(),
+        Some("e"),
+        "the rebound chord is not shown: {row}"
+    );
+
+    // A conflicting one fails the check and says why.
+    let bad = dir.path().join("bad.toml");
+    fs::write(&bad, "[board]\n\"list.down\" = \"enter\"\n").unwrap();
+    let refused = keys(Some(bad.to_str().unwrap()), &["--check"]);
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("reserved"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+}
+
+/// `hud --iced` hands the board the tracker it was pointed at.
+///
+/// The binary is replaced by a script that records its arguments, so what is
+/// checked is the command line the CLI builds rather than a window.
+#[test]
+fn the_iced_hud_is_given_the_root_prefix_and_flags() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let record = dir.path().join("argv");
+    let fake = dir.path().join("fake-hud");
+    fs::write(
+        &fake,
+        format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\n", record.display()),
+    )
+    .unwrap();
+    let mut perm = fs::metadata(&fake).unwrap().permissions();
+    perm.set_mode(0o755);
+    fs::set_permissions(&fake, perm).unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .args([
+            "--root",
+            fixture_root().to_str().unwrap(),
+            "hud",
+            "--iced",
+            "--offline",
+            "--toggle",
+        ])
+        .env("VISSUE_HUD_BIN", &fake)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let argv = fs::read_to_string(&record).unwrap();
+    let args: Vec<&str> = argv.lines().collect();
+    assert!(args.contains(&"--root"), "{args:?}");
+    assert!(args.contains(&"--prefix"), "{args:?}");
+    assert!(args.contains(&"--offline"), "{args:?}");
+    assert!(args.contains(&"--toggle"), "{args:?}");
+    assert!(
+        args.iter().any(|a| a.contains("fixture_vault")),
+        "the board was not pointed at this tracker: {args:?}"
+    );
+}
+
+#[test]
+fn a_body_can_be_piped_in() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .args([
+            "--root",
+            dir.path().to_str().unwrap(),
+            "create",
+            "-p",
+            "atlas",
+            "--quiet",
+            "--body-file",
+            "-",
+            "Read from a pipe",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"the body came down the pipe\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+    let shown = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .args(["--root", dir.path().to_str().unwrap(), "show", &id])
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&shown.stdout).contains("the body came down the pipe"),
+        "{}",
+        String::from_utf8_lossy(&shown.stdout)
+    );
+}

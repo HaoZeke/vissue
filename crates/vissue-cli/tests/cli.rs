@@ -953,3 +953,112 @@ fn the_change_stream_reports_and_blocks_the_way_a_poller_needs() {
     let tail = stdout(&run(&["events", "--since", &gen_now(&run).to_string()]));
     assert!(tail.contains("count=0"), "{tail}");
 }
+
+/// `mirror --check` answers by exit code, which is what a script reads.
+///
+/// The core comparison is tested elsewhere. What a caller depends on is the
+/// mapping onto an exit status: a stale copy that exits 0 is a shared backlog
+/// everyone trusts and nobody regenerates.
+#[test]
+fn mirror_check_reports_freshness_in_its_exit_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join("Software")).unwrap();
+    let run = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", root.to_str().unwrap()];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+
+    let id = stdout(&run(&["create", "-p", "atlas", "--quiet", "first"]))
+        .trim()
+        .to_string();
+    run(&["create", "-p", "beacon", "--quiet", "second"]);
+
+    let mirror = root.join("mirror.org");
+    let written = run(&["mirror", "--out", mirror.to_str().unwrap()]);
+    assert!(written.status.success(), "{}", stdout(&written));
+
+    let fresh = run(&["mirror", "--check", mirror.to_str().unwrap()]);
+    assert!(fresh.status.success(), "a new mirror read as stale");
+    assert!(stdout(&fresh).contains("fresh:"), "{}", stdout(&fresh));
+
+    // One note is enough to make the copy out of date.
+    run(&["note", &id, "moved on"]);
+    let stale = run(&["mirror", "--check", mirror.to_str().unwrap()]);
+    assert_eq!(stale.status.code(), Some(1), "{}", stdout(&stale));
+    let report = stdout(&stale);
+    assert!(report.contains("stale:"), "{report}");
+    // It names which project moved, so a regeneration is not a guess.
+    assert!(report.contains("moved: atlas"), "{report}");
+
+    // Regenerating settles it.
+    run(&["mirror", "--out", mirror.to_str().unwrap()]);
+    assert!(
+        run(&["mirror", "--check", mirror.to_str().unwrap()])
+            .status
+            .success(),
+        "a regenerated mirror still read as stale"
+    );
+
+    // A file that was never a mirror is stale rather than fresh: treating an
+    // unstamped file as current is the failure worth avoiding.
+    let prose = root.join("notes.org");
+    fs::write(&prose, "just prose\n").unwrap();
+    let unstamped = run(&["mirror", "--check", prose.to_str().unwrap()]);
+    assert_eq!(unstamped.status.code(), Some(1), "{}", stdout(&unstamped));
+    assert!(
+        stdout(&unstamped).contains("no SYNC stamp"),
+        "{}",
+        stdout(&unstamped)
+    );
+
+    // So is one that is not there at all.
+    let absent = run(&[
+        "mirror",
+        "--check",
+        root.join("absent.org").to_str().unwrap(),
+    ]);
+    assert_eq!(absent.status.code(), Some(1));
+
+    // A mirror of one project is checked against what it covered, not the
+    // whole tracker, or it would read as stale the moment anything else moved.
+    let atlas_only = root.join("atlas.org");
+    run(&[
+        "mirror",
+        "-p",
+        "atlas",
+        "--out",
+        atlas_only.to_str().unwrap(),
+    ]);
+
+    let beacon_id = stdout(&run(&["list", "-P", "beacon"]))
+        .split_whitespace()
+        .next()
+        .expect("a beacon issue")
+        .to_string();
+    let elsewhere = run(&["note", &beacon_id, "elsewhere"]);
+    assert!(
+        elsewhere.status.success(),
+        "the note that makes this test mean anything failed: {}",
+        String::from_utf8_lossy(&elsewhere.stderr)
+    );
+    // The whole-tracker mirror does go stale, which is what makes the
+    // atlas-only one staying fresh a scope check rather than a no-op.
+    assert_eq!(
+        run(&["mirror", "--check", mirror.to_str().unwrap()])
+            .status
+            .code(),
+        Some(1),
+        "the beacon note did not move the tracker at all"
+    );
+    assert!(
+        run(&["mirror", "--check", atlas_only.to_str().unwrap()])
+            .status
+            .success(),
+        "a change in another project staled an atlas-only mirror"
+    );
+}

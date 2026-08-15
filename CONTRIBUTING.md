@@ -75,5 +75,18 @@ Before changing file rewrites, add a fixture that includes properties, body
 text, LOGBOOK entries, and CLOCK entries. Tests must prove that data outside
 the operation's ownership remains unchanged.
 
+The command output is a contract too, and it has a reader outside this
+repository. [vissue.el](https://github.com/HaoZeke/vissue.el) drives the
+binary and parses `ready --json` plus the text of `claim`, `identity` and
+`projects`. Nothing here runs its tests, so a change to any of those four is
+checked by hand:
+
+```console
+VISSUE_BIN=$PWD/target/release/vissue make -C ../vissue.el test
+```
+
+Adding a field to a JSON payload is safe; renaming or removing one, or
+changing the shape of those three text outputs, is not.
+
 The maintainer release sequence, including the private publication arm and
 first-version crates.io bootstrap, is documented in `RELEASING.md`.

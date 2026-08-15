@@ -586,14 +586,18 @@ fn the_iced_hud_is_given_the_root_prefix_and_flags() {
     let dir = tempfile::tempdir().unwrap();
     let record = dir.path().join("argv");
     let fake = dir.path().join("fake-hud");
+    // Staged and renamed: a file written here and exec'd immediately can hit
+    // ETXTBSY when another test thread forks while the descriptor is open.
+    let staging = fake.with_extension("staging");
     fs::write(
-        &fake,
+        &staging,
         format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\n", record.display()),
     )
     .unwrap();
-    let mut perm = fs::metadata(&fake).unwrap().permissions();
+    let mut perm = fs::metadata(&staging).unwrap().permissions();
     perm.set_mode(0o755);
-    fs::set_permissions(&fake, perm).unwrap();
+    fs::set_permissions(&staging, perm).unwrap();
+    fs::rename(&staging, &fake).unwrap();
 
     let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
         .args([

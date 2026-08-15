@@ -620,6 +620,57 @@ pub fn detect_project_from_ctx(start: &Path) -> Option<String> {
 
 /// Every `:ID:` value in any org file under the layout prefix. A `:PARENT:`
 /// may point at a design document, not only at another issue.
+/// Look for `wanted` among the `:ID:` values in the tree, stopping as soon
+/// as every one has been seen.
+///
+/// `check` validates `:PARENT:` against any Org id, which includes design
+/// documents and notes rather than only issues. On a tracker that shares a
+/// root with a notes vault that is most of the bytes on disk: 172MB across
+/// 6335 files, against 4.8MB of `issues.org`. Almost every parent is another
+/// issue, so the whole scan usually answers a question already answered.
+///
+/// Returns the ids among `wanted` that were found.
+pub fn find_org_ids(
+    layout: &Layout,
+    wanted: &std::collections::HashSet<String>,
+) -> Result<std::collections::HashSet<String>> {
+    let mut found = std::collections::HashSet::new();
+    if wanted.is_empty() {
+        return Ok(found);
+    }
+    let dir = layout.projects_dir();
+    if !dir.exists() {
+        return Ok(found);
+    }
+    for entry in walkdir::WalkDir::new(&dir)
+        .into_iter()
+        .filter_entry(|e| !is_skipped_dir(e))
+    {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.file_type().is_file()
+            || entry.path().extension().and_then(|s| s.to_str()) != Some("org")
+        {
+            continue;
+        }
+        let content = fs::read_to_string(entry.path())
+            .with_context(|| format!("read {}", entry.path().display()))?;
+        for line in content.lines() {
+            if let Some(id) = org_id_property_value(line) {
+                if wanted.contains(id) {
+                    found.insert(id.to_string());
+                    if found.len() == wanted.len() {
+                        return Ok(found);
+                    }
+                }
+            }
+        }
+    }
+    Ok(found)
+}
+
 pub fn collect_org_ids(layout: &Layout) -> Result<std::collections::HashSet<String>> {
     let mut ids = std::collections::HashSet::new();
     let dir = layout.projects_dir();

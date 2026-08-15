@@ -11,7 +11,7 @@ use crate::config::Layout;
 use crate::graph::DependencyGraph;
 use crate::model::{IssueHeading, READY_STATES};
 pub use crate::related::related;
-use crate::store::{collect_org_ids, find_by_id, list_projects, load_all, project_selected};
+use crate::store::{find_by_id, find_org_ids, list_projects, load_all, project_selected};
 use crate::views::{IssueRec, IssueRow, ListQuery};
 
 struct GraphIndex<'a> {
@@ -806,7 +806,21 @@ pub struct CheckReport {
 /// issues carry a creation date, and ids are unique across projects.
 pub fn check(layout: &Layout) -> Result<CheckReport> {
     let all = load_all(layout)?;
-    let org_ids = collect_org_ids(layout)?;
+
+    // A parent is usually another issue, and those ids are already in hand.
+    // Only the ones that are not send us looking through the rest of the
+    // tree, which on a tracker sharing a root with a notes vault is most of
+    // the bytes on disk.
+    let issue_ids: HashSet<&str> = all.iter().map(|(_, h)| h.id.as_str()).collect();
+    let unresolved: HashSet<String> = all
+        .iter()
+        .filter_map(|(_, h)| h.parent())
+        .filter(|p| !issue_ids.contains(p))
+        .map(str::to_string)
+        .collect();
+    let elsewhere = find_org_ids(layout, &unresolved)?;
+    let resolves = |id: &str| issue_ids.contains(id) || elsewhere.contains(id);
+
     let mut out = String::new();
 
     let mut errors = 0usize;
@@ -828,7 +842,7 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
 
     for (project, h) in &all {
         if let Some(parent) = h.parent() {
-            if !org_ids.contains(parent) {
+            if !resolves(parent) {
                 writeln!(
                     out,
                     "[err]  {} (in {}) :PARENT: {} -> not found",

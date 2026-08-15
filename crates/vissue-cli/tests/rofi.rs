@@ -27,12 +27,24 @@ fn copy_dir(src: &Path, dest: &Path) {
     }
 }
 
+/// Write an executable and hand back a path that was never open for writing.
+///
+/// A file written in one thread and exec'd moments later can fail with
+/// ETXTBSY: another thread forking in between inherits the still-open
+/// descriptor, and the kernel refuses to exec a file someone holds open for
+/// writing. Renaming into place means the path being exec'd never was.
+fn install_executable(path: &Path, body: &str) {
+    let staging = path.with_extension("staging");
+    fs::write(&staging, body).unwrap();
+    let mut perm = fs::metadata(&staging).unwrap().permissions();
+    perm.set_mode(0o755);
+    fs::set_permissions(&staging, perm).unwrap();
+    fs::rename(&staging, path).unwrap();
+}
+
 fn write_fake_rofi(dir: &Path, script: &str) -> PathBuf {
     let path = dir.join("fake-rofi");
-    fs::write(&path, script).unwrap();
-    let mut perm = fs::metadata(&path).unwrap().permissions();
-    perm.set_mode(0o755);
-    fs::set_permissions(&path, perm).unwrap();
+    install_executable(&path, script);
     path
 }
 

@@ -1153,3 +1153,92 @@ fn a_project_comes_into_being_when_something_is_filed_there() {
     assert!(err.contains("ambiguous"), "{err}");
     assert!(err.contains("Beacon") && err.contains("beacon"), "{err}");
 }
+
+/// The blocker graph stays acyclic, and a corrupt one degrades safely.
+///
+/// `ready` is what a dispatcher takes work from, and it is defined by
+/// walking blocker edges. A ring in that graph could spin it or make it
+/// answer with work nobody can start, so the tracker refuses to write one
+/// and survives finding one that was written by hand.
+#[test]
+fn a_blocker_ring_is_refused_and_a_planted_one_does_not_spin() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join("Software")).unwrap();
+    let run = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", root.to_str().unwrap()];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    let mk = |title: &str| {
+        stdout(&run(&["create", "-p", "atlas", "--quiet", title]))
+            .trim()
+            .to_string()
+    };
+
+    let (a, b, c) = (mk("A"), mk("B"), mk("C"));
+
+    // A legal chain: C waits on B waits on A, so only A is ready.
+    assert!(run(&["update", &b, "--block", &a]).status.success());
+    assert!(run(&["update", &c, "--block", &b]).status.success());
+    assert!(stdout(&run(&["cycles"])).contains("no cycles"));
+    let ready = stdout(&run(&["ready"]));
+    assert_eq!(ready.lines().count(), 1, "{ready}");
+    assert!(
+        ready.contains(&a),
+        "the root of the chain is the ready one: {ready}"
+    );
+
+    // Closing the ring is refused, and says what it would have made.
+    let ring = run(&["update", &a, "--block", &c]);
+    assert_eq!(ring.status.code(), Some(1), "{}", stdout(&ring));
+    let err = String::from_utf8_lossy(&ring.stderr);
+    assert!(err.contains("blocker cycle"), "{err}");
+
+    // So is an issue blocking itself, and it reads differently.
+    let own = run(&["update", &a, "--block", &a]);
+    assert_eq!(own.status.code(), Some(1), "{}", stdout(&own));
+    let err = String::from_utf8_lossy(&own.stderr);
+    assert!(err.contains("cannot block itself"), "{err}");
+
+    // Neither refusal left anything behind.
+    assert!(stdout(&run(&["cycles"])).contains("no cycles"));
+    assert!(run(&["check"]).status.success());
+
+    // A ring written straight into the file, which nothing can prevent.
+    let path = root.join("Software/atlas/issues.org");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        text.replace(
+            &format!(":ID:         {a}\n"),
+            &format!(":ID:         {a}\n:BLOCKED_BY: {c}\n"),
+        ),
+    )
+    .unwrap();
+
+    // It is named rather than merely counted, so it can be repaired.
+    let found = stdout(&run(&["cycles"]));
+    for id in [&a, &b, &c] {
+        assert!(found.contains(id.as_str()), "{found}");
+    }
+    // check refuses the corpus.
+    let checked = run(&["check"]);
+    assert_eq!(checked.status.code(), Some(1), "{}", stdout(&checked));
+
+    // And the dispatcher gets nothing rather than a spin or phantom work.
+    let ready = run(&["ready"]);
+    assert!(
+        ready.status.success(),
+        "ready failed outright: {}",
+        String::from_utf8_lossy(&ready.stderr)
+    );
+    assert!(
+        stdout(&ready).trim().is_empty(),
+        "a ring offered work anyway: {}",
+        stdout(&ready)
+    );
+}

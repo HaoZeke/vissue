@@ -128,4 +128,36 @@ before=$(cat "$issues")
 "$bin" --root "$root" list >/dev/null
 test "$before" = "$(cat "$issues")" || fail "a read changed the file"
 
+echo "9. a markdown body stays body, and Org agrees"
+# `* ` in the first column opens a headline. A body carrying a bullet list
+# would otherwise end the issue there and leave the rest as a heading with no
+# :ID:, so vissue indents that line on the way out. Org is the authority on
+# whether it worked, which is why this asks Org rather than vissue.
+printf 'Findings:\n\n* first bullet\n* second bullet\n\n** nested stays nested\n' \
+  > "$work/body.md"
+"$bin" --root "$root" create -p demo --quiet --body-file "$work/body.md" \
+  "Carries a bullet list" >/dev/null
+
+headings=$(emacs --batch -Q --eval "(progn
+    (require 'org)
+    (find-file \"$issues\")
+    (org-mode)
+    (princ (format \"%d\" (length (org-map-entries (lambda () t) \"LEVEL=1\")))))" 2>/dev/null)
+test "$headings" = "3" ||
+  fail "Org sees $headings top-level headings, not the 3 issues there are"
+
+test "$("$bin" --root "$root" count)" = "3" ||
+  fail "a markdown body cost the tracker an issue"
+"$bin" --root "$root" check >/dev/null ||
+  fail "check failed after a markdown body"
+lint_clean "$issues" "issues.org with a markdown body"
+
+# The text survives, and the deeper heading is left as written.
+"$bin" --root "$root" export | grep -q "first bullet" ||
+  fail "the bullet list did not survive the write"
+grep -q "^ \* first bullet" "$issues" ||
+  fail "the bullet was not indented out of headline position"
+grep -q "^\*\* nested stays nested" "$issues" ||
+  fail "a deeper heading was indented needlessly"
+
 echo "vissue org interop: ok"

@@ -56,6 +56,15 @@ vissue keeps whatever it does not understand. CLOCK entries and other opaque
 drawer lines round-trip verbatim and appear in the JSONL export as =raw=, so
 data another tool records survives a vissue rewrite.
 
+One line is the exception, and it exists because Org says so: a body line
+beginning =* = opens a headline, which would end the issue at that point and
+leave the rest as a heading carrying no =:ID:=. vissue writes such a line
+indented by one space, so it stays body. Nothing else moves, and a deeper
+=** Scope= is left alone, being a child of the issue rather than the end of
+it. Typing that line in Emacs makes a real heading, so what runs into this is
+a body written by a tool: =create --body-file= and =append= both take
+markdown, where =* = is a bullet.
+
 * Checking the two agree
 
 =tests/org_interop.sh= drives real Emacs over a real tracker: =org-lint=

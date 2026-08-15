@@ -282,13 +282,19 @@ fn serve_help_hides_foreground() {
 
 #[test]
 fn completions_omit_foreground() {
-    for shell in ["bash", "zsh", "fish"] {
+    // Every shell the CLI offers, not a sample: a generator is per-shell, so
+    // one that emits a hidden flag would hide behind the others.
+    for shell in ["bash", "elvish", "fish", "powershell", "zsh"] {
         let out = Command::new(bin())
             .args(["completions", shell])
             .output()
             .unwrap();
         assert!(out.status.success(), "{shell}: {}", stderr(&out));
         let text = stdout(&out);
+        assert!(
+            text.contains("vissue"),
+            "{shell} produced nothing that names the binary"
+        );
         assert!(
             !text.contains("--foreground"),
             "{shell} completions advertise --foreground"

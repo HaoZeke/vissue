@@ -511,24 +511,6 @@ fn append_reads_a_file_and_stdin() {
     assert!(!mk(&["append", &id]).status.success());
 }
 
-#[test]
-fn completions_are_generated_for_every_shell_offered() {
-    for shell in ["bash", "elvish", "fish", "powershell", "zsh"] {
-        let out = vissue(&["completions", shell]);
-        assert!(
-            out.status.success(),
-            "{shell}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let script = stdout(&out);
-        assert!(!script.trim().is_empty(), "{shell} produced nothing");
-        assert!(script.contains("vissue"), "{shell}: {script}");
-        // The serve flags that exist only for the daemon to call itself are
-        // not something a person should be offered on the command line.
-        assert!(!script.contains("--accept-fd"), "{shell}: {script}");
-    }
-}
-
 /// `vissue keys` in its three shapes, against a chosen overlay.
 ///
 /// The overlay path comes from the environment, so each case runs in its own

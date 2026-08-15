@@ -141,6 +141,80 @@ mod tests {
     use crate::ops::{create, CreateOpts};
     use std::fs;
 
+    /// A tracker with `projects` projects, two issues each.
+    fn many_projects(projects: usize) -> (tempfile::TempDir, Layout) {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        for p in 0..projects {
+            let project = format!("p{p:03}");
+            for i in 0..2 {
+                create(
+                    &layout,
+                    &project,
+                    &format!("issue {i}"),
+                    CreateOpts {
+                        quiet: true,
+                        body: Some("Body text, so a row is not trivially short."),
+                        ..CreateOpts::default()
+                    },
+                )
+                .unwrap();
+            }
+        }
+        (dir, layout)
+    }
+
+    /// Each project's digest is taken over exactly what `export` returns for
+    /// it. The grouped read exists for speed, and a digest that moved would
+    /// mark every mirror ever stamped as stale.
+    #[test]
+    fn a_project_digest_matches_its_own_export() {
+        let (_dir, layout) = many_projects(4);
+        let grouped = crate::report::export_by_project(&layout).unwrap();
+        for project in crate::store::list_projects(&layout).unwrap() {
+            let alone = crate::report::export(&layout, Some(&project)).unwrap();
+            assert_eq!(
+                grouped.get(&project).map(String::as_str).unwrap_or(""),
+                alone,
+                "{project}: grouped export differs from its own"
+            );
+            let single = project_digest(&layout, &project).unwrap();
+            let combined = corpus_digest(&layout, &[]).unwrap();
+            assert_eq!(
+                combined.digest_of(&project),
+                Some(single.digest.as_str()),
+                "{project}: corpus digest disagrees with the project's own"
+            );
+        }
+    }
+
+    /// Digesting the corpus reads it once, not once per project.
+    ///
+    /// Compared against `export`, which reads it once by definition, so the
+    /// bound calibrates itself to the machine rather than to a clock. Taking
+    /// one export per project costs one read each; the project count has to
+    /// be high enough that the difference clears the fixed slack, or a
+    /// quadratic version passes on a small corpus.
+    #[test]
+    fn the_corpus_digest_does_not_read_once_per_project() {
+        let (_dir, layout) = many_projects(120);
+        let started = std::time::Instant::now();
+        let _ = crate::report::export(&layout, None).unwrap();
+        let one_read = started.elapsed();
+
+        let started = std::time::Instant::now();
+        let digest = corpus_digest(&layout, &[]).unwrap();
+        let whole = started.elapsed();
+
+        assert_eq!(digest.projects.len(), 120);
+        assert!(
+            whole < one_read * 5 + std::time::Duration::from_millis(25),
+            "digest took {whole:?} against a single export of {one_read:?}, \
+             which is the shape of one read per project"
+        );
+    }
+
     fn seeded() -> (tempfile::TempDir, Layout) {
         let dir = tempfile::tempdir().unwrap();
         let layout = Layout::new(dir.path(), DEFAULT_PREFIX);

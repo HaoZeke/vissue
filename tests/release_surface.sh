@@ -35,11 +35,25 @@ grep -q 'crates-io-auth-action@v1' .github/workflows/publish-crates.yml
 grep -q 'id-token: write' .github/workflows/publish-crates.yml
 grep -q 'name: crates-io' .github/workflows/publish-crates.yml
 ! grep -q 'secrets.CARGO_REGISTRY_TOKEN' .github/workflows/publish-crates.yml
-grep -q 'cargo publish --locked -p vissue-core' .github/workflows/publish-crates.yml
-grep -q 'cargo publish --locked -p vissue-cli' .github/workflows/publish-crates.yml
-grep -q 'cargo publish --locked -p vissue-mcp' .github/workflows/publish-crates.yml
-grep -q 'patch.crates-io.vissue-core.path' scripts/release-prepare.sh
-grep -q 'patch.crates-io.vissue-core.path' .github/workflows/publish-crates.yml
+# The upload order comes from the manifests, so a crate added to the
+# workspace is released without anyone remembering to list it. Naming the
+# crates here instead would put the stale list in the gate meant to catch it.
+test -x scripts/publish-order.py
+grep -q 'publish-order.py' .github/workflows/publish-crates.yml
+grep -q 'publish-order.py' scripts/release-prepare.sh
+grep -q 'cargo publish --locked -p "$crate"' .github/workflows/publish-crates.yml
+grep -q 'patch.crates-io.$dep.path' scripts/release-prepare.sh
+grep -q 'patch.crates-io.$dep.path' .github/workflows/publish-crates.yml
+
+# Every publishable member has to appear in that order, or the release skips
+# it in silence.
+members=$(scripts/publish-order.py | sort)
+declared=$(sed -n 's|^    "crates/\(.*\)",|\1|p' Cargo.toml | sort)
+test "$members" = "$declared" || {
+  echo "publish order does not cover every workspace member" >&2
+  diff <(echo "$members") <(echo "$declared") >&2 || true
+  exit 1
+}
 grep -q 'dist build --artifacts=local --target="\$host_target"' scripts/release-prepare.sh
 ! grep -q 'dist build --artifacts=all' scripts/release-prepare.sh
 
@@ -47,16 +61,13 @@ grep -q 'dist build --artifacts=local --target="\$host_target"' scripts/release-
 # exist before a trusted publisher can name them, and the tag-driven flow
 # comes after both.
 bootstrap_line=$(grep -n '^## First public version$' RELEASING.md | head -n 1 | cut -d: -f1)
-core_line=$(grep -n '^\$ cargo publish --locked -p vissue-core' RELEASING.md | head -n 1 | cut -d: -f1)
-mcp_line=$(grep -n '^\$ cargo publish --locked -p vissue-mcp' RELEASING.md | head -n 1 | cut -d: -f1)
+publish_line=$(grep -n 'publish-order.py' RELEASING.md | tail -n 1 | cut -d: -f1)
 tagflow_line=$(grep -n '^## Tag-driven releases$' RELEASING.md | head -n 1 | cut -d: -f1)
 test -n "$bootstrap_line"
-test -n "$core_line"
-test -n "$mcp_line"
+test -n "$publish_line"
 test -n "$tagflow_line"
-test "$bootstrap_line" -lt "$core_line"
-test "$core_line" -lt "$mcp_line"
-test "$mcp_line" -lt "$tagflow_line"
+test "$bootstrap_line" -lt "$publish_line"
+test "$publish_line" -lt "$tagflow_line"
 # The scope that the bootstrap actually needs, which is what bit us.
 grep -q 'publish-new' RELEASING.md
 

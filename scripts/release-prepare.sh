@@ -20,10 +20,21 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 bash tests/release_surface.sh
 dist generate --check
 
-cargo publish --locked --dry-run -p vissue-core
-core_patch="patch.crates-io.vissue-core.path=\"$repo_root/crates/vissue-core\""
-for package in vissue-cli vissue-mcp; do
-  cargo --config "$core_patch" publish --locked --dry-run -p "$package"
+# Every publishable crate, in the order the release will upload them, each
+# packaged against its siblings' local paths: the versions they name are not
+# on the registry until the release puts them there. Naming a few crates
+# here is how a local check passes while the release stops at the first
+# crate whose dependency was never uploaded.
+mapfile -t crates < <("$repo_root/scripts/publish-order.py")
+test "${#crates[@]}" -gt 0
+echo "publishing order: ${crates[*]}"
+for target in "${crates[@]}"; do
+  args=()
+  for dep in "${crates[@]}"; do
+    [ "$dep" = "$target" ] && continue
+    args+=(--config "patch.crates-io.$dep.path=\"$repo_root/crates/$dep\"")
+  done
+  cargo "${args[@]}" publish --locked --dry-run -p "$target"
 done
 
 host_target=$(rustc -vV | sed -n 's/^host: //p')

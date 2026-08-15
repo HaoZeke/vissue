@@ -1,8 +1,16 @@
 # Releasing vissue
 
-`vissue-core`, `vissue-cli`, and `vissue-mcp` share one version and are
-published in dependency order. Git tags use `vX.Y.Z` and must match the
-workspace version in `Cargo.toml`.
+Every crate in the workspace shares one version and is published in
+dependency order. Git tags use `vX.Y.Z` and must match the workspace version
+in `Cargo.toml`.
+
+The order is not written down anywhere by hand: `scripts/publish-order.py`
+reads it from `cargo metadata`, so adding a crate is enough. Run it to see
+what a release will do.
+
+```console
+$ ./scripts/publish-order.py
+```
 
 ## Cutting a version
 
@@ -41,9 +49,9 @@ for the length of the run. crates.io accepts it because the registry side
 pins this repository, this workflow file, and the `crates-io` environment; a
 mismatch fails there rather than falling back to a long-lived credential.
 
-A `v*` tag runs it. The workflow packages all three crates first, then
-publishes them in dependency order, waiting for `vissue-core` to appear in
-the index before the two consumers that name it.
+A `v*` tag runs it. The workflow packages every crate first, each against
+its siblings' local paths, then publishes them in dependency order, waiting
+for each to appear in the index before the next one that names it.
 
 ## First public version
 
@@ -59,15 +67,17 @@ crates.io website; the API refuses to create them.
 Publish from the tagged commit, so the registry matches the GitHub release:
 
 ```console
-$ git switch --detach v0.2.0
-$ cargo publish --locked -p vissue-core
-$ cargo publish --locked -p vissue-cli
-$ cargo publish --locked -p vissue-mcp
+$ git switch --detach vX.Y.Z
+$ for crate in $(./scripts/publish-order.py); do
+    cargo publish --locked -p "$crate"
+    until cargo info "$crate@X.Y.Z" >/dev/null 2>&1; do sleep 10; done
+  done
 ```
 
-Wait until `vissue-core` is visible in the index before the two consumers.
+Each crate has to be visible in the index before the next one that names it,
+which is what the wait is for.
 
-Then add a trusted publisher to each of the three crates, at
+Then add a trusted publisher to each crate, at
 `https://crates.io/crates/<name>/settings`:
 
 - repository owner: `HaoZeke`
@@ -96,7 +106,7 @@ $ git push origin vX.Y.Z
 ```
 
 `release.yml` builds the platform archives and creates the GitHub release.
-`publish-crates.yml` publishes the three crates through OIDC.
+`publish-crates.yml` publishes every crate through OIDC.
 
 To rehearse without uploading, run the workflow by hand: `dry_run` defaults
 to true, so it mints the token and packages everything while uploading

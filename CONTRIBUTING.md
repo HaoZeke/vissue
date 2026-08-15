@@ -16,7 +16,7 @@ bash tests/org_interop.sh ./target/release/vissue   # needs emacs
 ```
 
 Before changing file rewrites, add a fixture that includes properties, body
-text, LOGBOOK entries, and CLOCK entries. Tests must prove that data outside the
+text, LOGBOOK entries, and CLOCK entries. Tests must show that data outside the
 operation's ownership remains unchanged.
 
 ## Documentation
@@ -72,7 +72,7 @@ the agenda must show the dates, tag search must match, `org-id` must resolve,
 and Emacs's own edits must survive a vissue rewrite.
 
 Before changing file rewrites, add a fixture that includes properties, body
-text, LOGBOOK entries, and CLOCK entries. Tests must prove that data outside
+text, LOGBOOK entries, and CLOCK entries. Tests must show that data outside
 the operation's ownership remains unchanged.
 
 The command output is a contract too, and it has a reader outside this

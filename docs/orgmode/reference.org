@@ -66,7 +66,7 @@ design document can head a work hierarchy. Parent chains must terminate;
 Three fields live where Org keeps them rather than in the drawer, because Org
 reads them from there and nowhere else.
 
-| Field                       | Written as                                                          | What it buys                              |
+| Field                       | Written as                                                          | What it gives                             |
 |-----------------------------+---------------------------------------------------------------------+-------------------------------------------|
 | Deadline, scheduled, closed | The planning line under the heading                                 | =org-agenda= shows the issue              |
 | Tags Org can hold           | The heading's own =:tag:tag:= run                                   | Org tag search and =C-c \= match          |

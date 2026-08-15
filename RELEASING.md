@@ -75,7 +75,7 @@ $ for crate in $(./scripts/publish-order.py); do
 ```
 
 Each crate has to be visible in the index before the next one that names it,
-which is what the wait is for.
+and the wait covers that.
 
 Then add a trusted publisher to each crate, at
 `https://crates.io/crates/<name>/settings`:

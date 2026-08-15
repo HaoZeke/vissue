@@ -19,8 +19,8 @@ back.
 
 A deadline in a property drawer is invisible to the agenda, because Org reads
 the planning line and nothing else. =TAGS=, =DEADLINE=, and =SCHEDULED= are
-also names Org reserves, so a drawer claiming them is not merely unread but
-wrong, and =org-lint= says so. Nothing vissue writes draws an =org-lint=
+also names Org reserves, so a drawer claiming them is wrong; Org ignores it
+and =org-lint= says so. Nothing vissue writes draws an =org-lint=
 finding.
 
 * Editing a tracker in Emacs

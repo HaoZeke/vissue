@@ -39,7 +39,7 @@ $ vissue show --org parser-1a2b > ISSUE.org
 Use this rather than =body-excerpt= whenever the text is the thing being
 worked from. =body-excerpt= is a preview and stops at 40 lines, so a
 longer issue loses its tail without saying so. The logbook travels with
-the export, which is what carries the notes written when the work was
+the export, carrying the notes written when the work was
 handed over.
 
 An issue whose text looks like credential material is refused rather
@@ -92,7 +92,7 @@ $ vissue related parser-k29f --depth 2 --limit 20 --format org
 
 =--format org= gives pasteable =id:= links back to the headings.
 
-* Keep the corpus honest
+* Keep the corpus consistent
 
 =check= validates every parent and blocker edge, that parent chains terminate,
 that dates parse, and that ids are unique. It exits non-zero on an error, so

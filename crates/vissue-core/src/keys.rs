@@ -421,6 +421,162 @@ pub fn chord_from_char(c: char) -> String {
 mod tests {
     use super::*;
 
+    fn overlay(body: &str) -> Result<KeyMap, String> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("keys.toml");
+        std::fs::write(&path, body).expect("write");
+        load_overlay(&path)
+    }
+
+    #[test]
+    fn an_overlay_rebinds_only_what_it_names() {
+        let map = overlay("[board]\n\"list.down\" = \"e\"\n").expect("overlay");
+        assert_eq!(map.get("e"), Some(ActionId::ListDown));
+        // The old chord is freed rather than left pointing at the action.
+        assert_eq!(map.get("j"), None);
+        // Everything it did not mention keeps its default.
+        assert_eq!(map.get("k"), Some(ActionId::ListUp));
+        assert_eq!(map.get("c"), Some(ActionId::Claim));
+    }
+
+    #[test]
+    fn two_actions_may_swap_chords_in_one_overlay() {
+        // Neither assignment is a conflict, because both old chords are
+        // released before either new one is placed.
+        let map =
+            overlay("[board]\n\"list.down\" = \"k\"\n\"list.up\" = \"j\"\n").expect("overlay");
+        assert_eq!(map.get("k"), Some(ActionId::ListDown));
+        assert_eq!(map.get("j"), Some(ActionId::ListUp));
+    }
+
+    #[test]
+    fn a_leader_is_one_character() {
+        let map = overlay("leader = \",\"\n").expect("overlay");
+        assert_eq!(map.leader, Some(','));
+        assert!(overlay("leader = \"\"\n").is_err());
+        assert!(overlay("leader = \"gg\"\n").is_err());
+    }
+
+    #[test]
+    fn the_leader_timeout_takes_a_positive_number_only() {
+        let map = overlay("leader_timeout_ms = 250\n").expect("overlay");
+        assert_eq!(map.leader_timeout_ms, 250);
+        // A nonsense value leaves the default standing rather than failing.
+        let map = overlay("leader_timeout_ms = 0\n").expect("overlay");
+        assert_eq!(
+            map.leader_timeout_ms,
+            KeyMap::from_defaults().leader_timeout_ms
+        );
+    }
+
+    #[test]
+    fn an_overlay_that_cannot_be_understood_says_which_part() {
+        let unknown = overlay("[board]\n\"list.sideways\" = \"z\"\n").unwrap_err();
+        assert!(unknown.contains("list.sideways"), "{unknown}");
+
+        let not_a_string = overlay("[board]\n\"list.down\" = 3\n").unwrap_err();
+        assert!(not_a_string.contains("list.down"), "{not_a_string}");
+
+        let broken = overlay("[board\n").unwrap_err();
+        assert!(broken.contains("keys.toml"), "{broken}");
+    }
+
+    #[test]
+    fn the_keys_a_reader_needs_cannot_be_taken_away() {
+        // Enter, tab, escape and ? are how someone gets out of a pane, so
+        // neither the action nor the chord may be reassigned.
+        let fixed = overlay("[board]\n\"list.select\" = \"z\"\n").unwrap_err();
+        assert!(fixed.contains("not remappable"), "{fixed}");
+
+        for reserved in ["enter", "tab", "esc", "?"] {
+            let err = overlay(&format!("[board]\n\"list.down\" = \"{reserved}\"\n")).unwrap_err();
+            assert!(err.contains("reserved"), "{reserved}: {err}");
+        }
+    }
+
+    #[test]
+    fn two_actions_may_not_share_one_chord() {
+        let err = overlay("[board]\n\"list.down\" = \"c\"\n").unwrap_err();
+        assert!(err.contains("already bound"), "{err}");
+        assert!(err.contains("issue.claim"), "{err}");
+    }
+
+    #[test]
+    fn a_broken_overlay_leaves_the_defaults_and_says_why() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("keys.toml");
+        std::fs::write(&path, "[board]\n\"list.down\" = \"enter\"\n").expect("write");
+
+        // `load` never fails: a seat with a bad overlay still gets a board.
+        let map = match load_overlay(&path) {
+            Ok(_) => panic!("a reserved chord was accepted"),
+            Err(err) => {
+                let mut map = KeyMap::from_defaults();
+                map.overlay_error = Some(err);
+                map
+            }
+        };
+        assert_eq!(map.get("j"), Some(ActionId::ListDown));
+        assert!(map.overlay_error.is_some());
+    }
+
+    #[test]
+    fn a_missing_overlay_is_not_an_error_worth_reporting() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(load_overlay(&dir.path().join("absent.toml")).is_err());
+        // ... and `load` falls back rather than surfacing it.
+        assert_eq!(KeyMap::from_defaults().get("j"), Some(ActionId::ListDown));
+    }
+
+    #[test]
+    fn the_help_and_the_table_describe_every_action() {
+        let map = KeyMap::from_defaults();
+        let help = map.help_lines();
+        let table = map.table_lines();
+        assert_eq!(help.len(), CATALOG.len());
+        assert_eq!(table.len(), CATALOG.len());
+        for row in CATALOG {
+            assert!(
+                help.iter().any(|l| l.contains(row.id.as_str())),
+                "{} missing from help",
+                row.id.as_str()
+            );
+            assert!(
+                table.iter().any(|l| l.contains(row.id.as_str())),
+                "{} missing from the table",
+                row.id.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn the_help_shows_the_rebound_chord_rather_than_the_default() {
+        let map = overlay("[board]\n\"list.down\" = \"e\"\n").expect("overlay");
+        let line = map
+            .help_lines()
+            .into_iter()
+            .find(|l| l.contains("list.down"))
+            .expect("a line for list.down");
+        assert!(line.starts_with('e'), "{line}");
+    }
+
+    #[test]
+    fn occupancy_reports_one_entry_per_bound_chord() {
+        let map = KeyMap::from_defaults();
+        let occupancy = map.occupancy();
+        assert_eq!(occupancy.len(), map.by_chord.len());
+        for (chord, id) in &occupancy {
+            assert!(!chord.is_empty());
+            assert!(!id.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_typed_character_is_its_own_chord() {
+        assert_eq!(chord_from_char('j'), "j");
+        assert_eq!(chord_from_char('?'), "?");
+    }
+
     #[test]
     fn every_action_has_a_unique_id() {
         let mut seen = BTreeMap::new();

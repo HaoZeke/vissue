@@ -657,13 +657,11 @@ pub fn find_org_ids(
         }
         let content = fs::read_to_string(entry.path())
             .with_context(|| format!("read {}", entry.path().display()))?;
-        for line in content.lines() {
-            if let Some(id) = org_id_property_value(line) {
-                if wanted.contains(id) {
-                    found.insert(id.to_string());
-                    if found.len() == wanted.len() {
-                        return Ok(found);
-                    }
+        for id in org_ids(&content) {
+            if wanted.contains(id) {
+                found.insert(id.to_string());
+                if found.len() == wanted.len() {
+                    return Ok(found);
                 }
             }
         }
@@ -692,10 +690,8 @@ pub fn collect_org_ids(layout: &Layout) -> Result<std::collections::HashSet<Stri
         }
         let content = fs::read_to_string(entry.path())
             .with_context(|| format!("read {}", entry.path().display()))?;
-        for line in content.lines() {
-            if let Some(id) = org_id_property_value(line) {
-                ids.insert(id.to_string());
-            }
+        for id in org_ids(&content) {
+            ids.insert(id.to_string());
         }
     }
     Ok(ids)
@@ -719,6 +715,94 @@ fn org_id_property_value(line: &str) -> Option<&str> {
     } else {
         Some(value)
     }
+}
+
+/// The ids a file defines, which are the ones org would read.
+///
+/// A property drawer counts where org lets one start: under a headline, under
+/// that headline's planning line, or beside the other drawers clustered
+/// there. A `:PROPERTIES:` block further down the entry is an ordinary drawer
+/// and the `:ID:` inside it is prose.
+///
+/// The distinction is the difference between a working `check` and a silent
+/// one. Agents write their reports into issue bodies, those reports quote org,
+/// and taking every `:ID:` line makes quoted text define an id: a `:PARENT:`
+/// pointing at nothing resolves against a report that merely mentions it.
+fn org_ids(content: &str) -> impl Iterator<Item = &str> {
+    // The top of a file is a drawer site: org reads a file-level drawer there.
+    let mut at_drawer_site = true;
+    let mut in_drawer = false;
+    let mut drawer_is_properties = false;
+    // Org takes a planning line on the line under the headline and nowhere
+    // else, so prose opening on `DEADLINE:` further down is prose.
+    let mut under_headline = false;
+
+    content.lines().filter_map(move |line| {
+        let trimmed = line.trim();
+
+        if in_drawer {
+            if trimmed.eq_ignore_ascii_case(":END:") {
+                in_drawer = false;
+                drawer_is_properties = false;
+                // The drawers under a headline sit together, so the next one
+                // is still in a place org reads.
+                at_drawer_site = true;
+                return None;
+            }
+            if drawer_is_properties {
+                return org_id_property_value(line);
+            }
+            return None;
+        }
+
+        if is_headline(line) {
+            at_drawer_site = true;
+            under_headline = true;
+            return None;
+        }
+        let planning_may_start_here = under_headline;
+        under_headline = false;
+
+        // Neither a blank line nor a keyword is content, so neither one moves
+        // the entry past the place its drawers live.
+        if trimmed.is_empty() || trimmed.starts_with("#+") {
+            return None;
+        }
+        if at_drawer_site {
+            if opens_a_drawer(trimmed) {
+                in_drawer = true;
+                drawer_is_properties = trimmed.eq_ignore_ascii_case(":PROPERTIES:");
+                return None;
+            }
+            if planning_may_start_here && is_planning_line(trimmed) {
+                return None;
+            }
+        }
+        // Body text: everything below it is the body.
+        at_drawer_site = false;
+        None
+    })
+}
+
+/// A line org reads as a headline: leading stars, then a space.
+fn is_headline(line: &str) -> bool {
+    let stars = line.len() - line.trim_start_matches('*').len();
+    stars > 0 && line[stars..].starts_with(' ')
+}
+
+/// `:NAME:` alone on a line, which is how every drawer opens.
+fn opens_a_drawer(trimmed: &str) -> bool {
+    trimmed.len() > 2
+        && trimmed.starts_with(':')
+        && trimmed.ends_with(':')
+        && !trimmed.eq_ignore_ascii_case(":END:")
+        && !trimmed[1..trimmed.len() - 1].contains(char::is_whitespace)
+}
+
+fn is_planning_line(trimmed: &str) -> bool {
+    crate::model::PLANNING_KEYS
+        .iter()
+        .any(|key| trimmed.starts_with(key) && trimmed[key.len()..].starts_with(':'))
 }
 
 #[cfg(test)]
@@ -1027,5 +1111,147 @@ mod tests {
         );
         let empty = tempfile::tempdir().unwrap();
         assert!(detect_project_from_ctx(empty.path()).is_none());
+    }
+
+    fn ids(content: &str) -> Vec<&str> {
+        org_ids(content).collect()
+    }
+
+    #[test]
+    fn a_drawer_under_a_headline_defines_an_id() {
+        assert_eq!(
+            ids("* TODO [#B] a title\n:PROPERTIES:\n:ID:         atlas-1a2b\n:END:\n"),
+            ["atlas-1a2b"]
+        );
+    }
+
+    #[test]
+    fn a_drawer_under_the_planning_line_defines_an_id() {
+        let text = concat!(
+            "* TODO a title\n",
+            "DEADLINE: <2026-05-15 Fri>\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-1a2b\n",
+            ":END:\n",
+        );
+        assert_eq!(ids(text), ["atlas-1a2b"]);
+    }
+
+    #[test]
+    fn a_logbook_beside_the_properties_does_not_hide_it() {
+        let text = concat!(
+            "* TODO a title\n",
+            ":LOGBOOK:\n",
+            "- claimed by worker-1\n",
+            ":END:\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-1a2b\n",
+            ":END:\n",
+        );
+        assert_eq!(ids(text), ["atlas-1a2b"]);
+    }
+
+    #[test]
+    fn an_id_quoted_in_a_body_defines_nothing() {
+        // What an agent writes back when its report quotes the tracker.
+        let text = concat!(
+            "* TODO a title\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-1a2b\n",
+            ":END:\n",
+            "\n",
+            "The heading I was handed reads:\n",
+            ":PROPERTIES:\n",
+            ":ID: ghost-9999\n",
+            ":END:\n",
+        );
+        assert_eq!(
+            ids(text),
+            ["atlas-1a2b"],
+            "a report that quotes an id defined it"
+        );
+    }
+
+    #[test]
+    fn a_bare_id_line_in_a_body_defines_nothing() {
+        let text = concat!(
+            "* TODO a title\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-1a2b\n",
+            ":END:\n",
+            "\n",
+            "Compare with :ID: ghost-9999 in the other file.\n",
+            ":ID: ghost-8888\n",
+        );
+        assert_eq!(ids(text), ["atlas-1a2b"]);
+    }
+
+    #[test]
+    fn a_file_level_drawer_defines_an_id() {
+        // Org reads one at the top, above every headline.
+        let text = concat!(
+            "#+TITLE: atlas issues\n",
+            "\n",
+            ":PROPERTIES:\n",
+            ":ID: the-file-itself\n",
+            ":END:\n",
+            "\n",
+            "* TODO a title\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-1a2b\n",
+            ":END:\n",
+        );
+        assert_eq!(ids(text), ["the-file-itself", "atlas-1a2b"]);
+    }
+
+    #[test]
+    fn every_headline_depth_opens_a_drawer_site() {
+        let text = concat!(
+            "* TODO a title\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-1a2b\n",
+            ":END:\n",
+            "** A sub-heading someone wrote by hand\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-3c4d\n",
+            ":END:\n",
+        );
+        assert_eq!(ids(text), ["atlas-1a2b", "atlas-3c4d"]);
+    }
+
+    #[test]
+    fn a_planning_keyword_needs_its_colon() {
+        assert!(is_planning_line("DEADLINE: <2026-05-15 Fri>"));
+        assert!(is_planning_line("CLOSED: [2026-05-15 Fri]"));
+        // Prose that opens on the same word is prose.
+        assert!(!is_planning_line("DEADLINES slipped again"));
+        assert!(!is_planning_line("SCHEDULED work for the week"));
+    }
+
+    #[test]
+    fn prose_that_opens_like_a_planning_line_still_ends_the_drawer_site() {
+        // Org reads a planning line directly under the headline and nowhere
+        // else, so this one is body text and the quoted drawer below it is
+        // body text too.
+        let text = concat!(
+            "* TODO a title\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-1a2b\n",
+            ":END:\n",
+            "\n",
+            "DEADLINE: is discussed in the design note.\n",
+            ":PROPERTIES:\n",
+            ":ID: ghost-9999\n",
+            ":END:\n",
+        );
+        assert_eq!(ids(text), ["atlas-1a2b"]);
+    }
+
+    #[test]
+    fn a_headline_needs_a_space_after_its_stars() {
+        assert!(is_headline("* TODO a title"));
+        assert!(is_headline("*** deeper"));
+        assert!(!is_headline("**bold** at the start of a line"));
+        assert!(!is_headline("not a headline"));
     }
 }

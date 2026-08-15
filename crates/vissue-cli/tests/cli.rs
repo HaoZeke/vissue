@@ -75,6 +75,58 @@ fn check_exits_zero_on_the_fixture() {
     assert!(stdout(&out).contains("0 error(s), 0 warning(s)"));
 }
 
+/// A report written into a body quotes org, and quoted org is not a definition.
+///
+/// The loop this guards is the ordinary one: an agent is handed an issue,
+/// works, and writes its report back with `append`. Reports quote the heading
+/// they were given, ids and all. If a quoted `:ID:` counted, a `:PARENT:` that
+/// points nowhere would resolve against the mention and `check` would go quiet
+/// on the one class of damage it exists to catch.
+#[test]
+fn an_id_quoted_in_a_report_does_not_resolve_a_broken_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let own = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+
+    own(&["create", "-p", "atlas", "The child", "-q"]);
+    let issues = dir.path().join("Software/atlas/issues.org");
+    let planted = fs::read_to_string(&issues)
+        .unwrap()
+        .replace(":CREATED:", ":PARENT:     ghost-9999\n:CREATED:");
+    fs::write(&issues, planted).unwrap();
+
+    let broken = own(&["check"]);
+    assert!(
+        !broken.status.success() && stdout(&broken).contains("ghost-9999"),
+        "a parent that names nothing is an error: {}",
+        stdout(&broken)
+    );
+
+    let host = stdout(&own(&["create", "-p", "atlas", "The report", "-q"]))
+        .trim()
+        .to_string();
+    own(&[
+        "append",
+        &host,
+        "--text",
+        "The heading I was handed reads:\n:PROPERTIES:\n:ID: ghost-9999\n:END:\n",
+    ]);
+
+    let after = own(&["check"]);
+    assert!(
+        !after.status.success() && stdout(&after).contains("ghost-9999"),
+        "quoting the id in a report silenced the check: {}",
+        stdout(&after)
+    );
+}
+
 #[test]
 fn show_json_returns_an_object() {
     let out = vissue(&["show", "atlas-2c3d", "--json"]);

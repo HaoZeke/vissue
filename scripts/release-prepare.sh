@@ -15,7 +15,7 @@ test "$(dist --version | awk '{print $2}')" = "0.30.3" || {
 }
 
 cargo fmt --all --check
-cargo test --locked --workspace
+cargo test --locked --workspace --no-fail-fast
 cargo clippy --locked --workspace --all-targets -- -D warnings
 bash tests/release_surface.sh
 dist generate --check

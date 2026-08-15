@@ -61,7 +61,10 @@ jobs:
       - name: HUD system libraries
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev
       - name: Workspace tests
-        run: cargo test --locked --workspace
+        # --no-fail-fast: a red run should name every broken target, not
+        # stop at the first. Without it the crates after the failure are
+        # never run, and the report reads as though they passed.
+        run: cargo test --locked --workspace --no-fail-fast
 
   coverage:
     name: coverage report

@@ -11,7 +11,7 @@
 //! readers watch these paths, and renaming them would silence every poller.
 //!
 //! Emission is best-effort and never fails a write. Set `VISSUE_EVENTS=0` to
-//! turn it off, which is what a caller wants when the tracker must stay
+//! turn it off, for a caller that needs the tracker to stay
 //! untouched.
 
 use anyhow::{Context, Result};
@@ -264,7 +264,7 @@ pub fn since_filtered_in(
     Ok(events)
 }
 
-// --- Layout-facing wrappers, which is what the CLI and MCP server call. ---
+// --- Layout-facing wrappers, called by the CLI and MCP server. ---
 
 /// The directory holding the event files: the same one holding the projects.
 pub fn events_dir(layout: &Layout) -> PathBuf {

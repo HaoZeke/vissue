@@ -485,8 +485,8 @@ pub fn append_body_as(layout: &Layout, id: &str, text: &str, identity: &str) -> 
 /// Each top-level `* TODO <title>` heading that does not already carry a
 /// `:VISSUE_ID:` line becomes an issue in `project` (body = the heading's
 /// text up to the next heading). The heading is then flipped to DONE and
-/// stamped with the assigned id in place, which is what makes a second run
-/// a no-op: stamped headings are skipped, so folding is idempotent.
+/// stamped with the assigned id in place, so a second run is a no-op:
+/// stamped headings are skipped, and folding is idempotent.
 pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<String> {
     let project = resolve_existing_project_case(layout, project)?;
     let text = std::fs::read_to_string(inbox)

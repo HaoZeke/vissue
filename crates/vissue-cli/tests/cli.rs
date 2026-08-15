@@ -829,7 +829,7 @@ fn the_change_stream_reports_and_blocks_the_way_a_poller_needs() {
     assert!(tail.contains("count=0"), "{tail}");
 }
 
-/// `mirror --check` answers by exit code, which is what a script reads.
+/// `mirror --check` answers by exit code, the part a script reads.
 ///
 /// The core comparison is tested elsewhere. What a caller depends on is the
 /// mapping onto an exit status: a stale copy that exits 0 is a shared backlog
@@ -921,7 +921,7 @@ fn mirror_check_reports_freshness_in_its_exit_code() {
         "the note that makes this test mean anything failed: {}",
         String::from_utf8_lossy(&elsewhere.stderr)
     );
-    // The whole-tracker mirror does go stale, which is what makes the
+    // The whole-tracker mirror does go stale, making the
     // atlas-only one staying fresh a scope check rather than a no-op.
     assert_eq!(
         run(&["mirror", "--check", mirror.to_str().unwrap()])
@@ -1168,7 +1168,7 @@ fn concurrent_writers_all_land() {
         );
     }
 
-    // The file a race leaves behind is usually still valid, which is what
+    // The file a race leaves behind is usually still valid, and that is what
     // makes the loss quiet. Check anyway.
     assert!(
         run(&["check"]).status.success(),

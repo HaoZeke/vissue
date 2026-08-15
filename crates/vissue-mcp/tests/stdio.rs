@@ -225,7 +225,7 @@ fn a_write_tool_changes_the_tracker_over_the_pipe() {
     let id = made.split_whitespace().next().expect("an id").to_string();
     assert!(id.starts_with("atlas-"), "{made}");
 
-    // A report with markdown in it, which is what an agent writes back.
+    // A report with markdown in it, as an agent writes back.
     server
         .call_text(
             "vissue_append",

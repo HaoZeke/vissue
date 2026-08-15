@@ -28,7 +28,7 @@ fn tracker() -> (tempfile::TempDir, Layout) {
 ///
 /// With no project chosen, the ready and list panes are the project browser
 /// and hold no rows at all. The search pane is where rows from across the
-/// tracker appear together, which is what makes sections worth grouping.
+/// tracker appear together, so sections are worth grouping.
 fn across_projects() -> (tempfile::TempDir, Palette) {
     let (dir, layout) = tracker();
     let mut palette = Palette::open_core(layout, "state-test".into()).expect("open");

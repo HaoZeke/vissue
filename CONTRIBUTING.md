@@ -11,13 +11,14 @@ Use Rust 1.89 or newer and run:
 cargo fmt --all --check
 cargo test --locked --workspace
 cargo clippy --locked --workspace --all-targets -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --document-private-items
 bash tests/release_surface.sh
 bash tests/org_interop.sh ./target/release/vissue   # needs emacs
 ```
 
-The published `rust-version` is 1.89, and CI tests that toolchain. Clippy
-and fmt CI use the compiler pinned in `rust-toolchain.toml` (currently
-1.97.1). Bump that pin when taking a new clippy; do not leave the quality
+The published `rust-version` is 1.89, and CI tests that toolchain. Clippy,
+fmt, and rustdoc CI use the compiler pinned in `rust-toolchain.toml`
+(currently 1.97.1). Bump that pin when taking a new clippy; do not leave the quality
 job on floating latest stable. `rust-version` moves when a dependency or
 language feature requires it, as a minor bump; this is not a
 latest-stable-only project.

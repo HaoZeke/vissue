@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/HaoZeke/vissue/actions/workflows/ci_test.yml/badge.svg)](https://github.com/HaoZeke/vissue/actions/workflows/ci_test.yml)
 [![crates.io](https://img.shields.io/crates/v/vissue-cli.svg)](https://crates.io/crates/vissue-cli)
-[![docs.rs](https://img.shields.io/docs.rs/vissue-core/badge.svg)](https://docs.rs/vissue-core)
+[![docs.rs](https://docs.rs/vissue-core/badge.svg)](https://docs.rs/vissue-core)
 [![MSRV](https://img.shields.io/badge/MSRV-1.89-blue.svg)](https://www.rust-lang.org/)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-vissue.rgoswami.me-teal.svg)](https://vissue.rgoswami.me)

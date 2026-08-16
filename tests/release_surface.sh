@@ -84,6 +84,9 @@ for path in docs/build.sh docs/orgmode/index.org docs/orgmode/getting-started.or
 done
 grep -q 'vissue.rgoswami.me' README.md
 grep -q 'vissue.rgoswami.me' docs/source/CNAME
+# shields.io/docs.rs/<crate>/badge.svg is a 404. docs.rs serves the badge.
+! grep -q 'img.shields.io/docs.rs/' README.md
+grep -q 'https://docs.rs/vissue-core/badge.svg' README.md
 
 for manifest in crates/vissue-core/Cargo.toml crates/vissue-cli/Cargo.toml crates/vissue-mcp/Cargo.toml; do
   grep -q '^description = ' "$manifest"

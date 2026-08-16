@@ -44,6 +44,30 @@ grep -q 'publish-order.py' scripts/release-prepare.sh
 grep -q 'cargo publish --locked -p "$crate"' .github/workflows/publish-crates.yml
 grep -q 'patch.crates-io.$dep.path' scripts/release-prepare.sh
 grep -q 'patch.crates-io.$dep.path' .github/workflows/publish-crates.yml
+# One tag workflow owns both arms: cargo-dist calls the crates.io
+# workflow as a reusable job. The filename stays publish-crates.yml
+# because that is what trusted publishing pins.
+grep -q 'workflow_call' .github/workflows/publish-crates.yml
+grep -q 'inputs:' .github/workflows/publish-crates.yml
+grep -q 'plan:' .github/workflows/publish-crates.yml
+# A tag must not start a second, independent publish.
+if grep -q "tags:" .github/workflows/publish-crates.yml; then
+  echo "publish-crates.yml still has a tag trigger; the Release workflow owns tags" >&2
+  exit 1
+fi
+grep -q './publish-crates' dist-workspace.toml
+grep -q 'publish-jobs' dist-workspace.toml
+grep -q 'github-custom-job-permissions' dist-workspace.toml
+grep -q 'contents = "read"' dist-workspace.toml
+# musl archives for the CLI and MCP; the HUD stays off musl (iced).
+grep -q 'x86_64-unknown-linux-musl' dist-workspace.toml
+grep -q 'aarch64-unknown-linux-musl' dist-workspace.toml
+grep -q 'x86_64-unknown-linux-musl' crates/vissue-hud/Cargo.toml && {
+  echo "vissue-hud must not list a musl target" >&2
+  exit 1
+}
+grep -q '\[package.metadata.dist\]' crates/vissue-hud/Cargo.toml
+grep -q 'github-attestations = true' dist-workspace.toml
 
 # Every publishable member has to appear in that order, or the release skips
 # it in silence.

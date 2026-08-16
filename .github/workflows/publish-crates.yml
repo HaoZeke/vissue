@@ -1,9 +1,19 @@
 name: crates.io
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # cargo-dist calls this from Release after the GitHub release exists.
+  # The filename stays publish-crates.yml: crates.io trusted publishing pins it.
+  workflow_call:
+    inputs:
+      plan:
+        description: 'cargo-dist plan JSON from the Release plan job'
+        required: true
+        type: string
+      dry_run:
+        description: 'Mint the token and package, but upload nothing'
+        required: false
+        type: boolean
+        default: false
   pull_request:
     paths:
       - 'crates/**'
@@ -35,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -69,7 +79,7 @@ jobs:
     name: Publish to crates.io
     needs: [package]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     environment:
       name: crates-io
       url: https://crates.io/crates/vissue-cli
@@ -79,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -116,17 +126,30 @@ jobs:
           test -n "$version"
           mapfile -t crates < <(scripts/publish-order.py)
           echo "publishing order: ${crates[*]}"
+          UA='vissue-publish (rgoswami@ieee.org)'
+          crate_visible() {
+            curl -fsS -A "$UA" "https://crates.io/api/v1/crates/$1/$version" >/dev/null 2>&1
+          }
           for crate in "${crates[@]}"; do
             echo "::group::publish $crate"
+            if crate_visible "$crate"; then
+              echo "$crate@$version already on crates.io, skip"
+              echo "::endgroup::"
+              continue
+            fi
             cargo publish --locked -p "$crate" $DRY_RUN
             echo "::endgroup::"
             if [ -n "$DRY_RUN" ]; then
               continue
             fi
-            for _ in $(seq 1 30); do
-              if cargo info "$crate@$version" >/dev/null 2>&1; then
+            for _ in $(seq 1 36); do
+              if crate_visible "$crate"; then
                 break
               fi
               sleep 10
             done
+            if ! crate_visible "$crate"; then
+              echo "timeout waiting for $crate@$version" >&2
+              exit 1
+            fi
           done

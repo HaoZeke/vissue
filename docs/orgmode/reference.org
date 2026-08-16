@@ -210,3 +210,20 @@ The lock covers one project file. Adding a blocker reads the whole corpus for
 the acyclicity check inside that lock, so it sees every write that has landed;
 two blockers added at the same moment in different project files can still
 close a cycle between them. =check= and =cycles= report one if it happens.
+
+* Crates
+
+The workspace publishes seven crates at one version.
+
+| Crate            | What                                        |
+|------------------+---------------------------------------------|
+| =vissue-cli=     | The =vissue= binary                         |
+| =vissue-mcp=     | Model Context Protocol server               |
+| =vissue-hud=     | Summonable iced board (=vissue-hud= binary) |
+| =vissue-core=    | Model, store, queries, and org projection   |
+| =vissue-control= | JSON-RPC control wire                       |
+| =vissue-serve=   | Unix-socket owner                           |
+| =vissue-tui=     | Terminal board library                      |
+
+Install the binaries with =cargo install vissue-cli=, =cargo install
+vissue-mcp=, and =cargo install vissue-hud=.

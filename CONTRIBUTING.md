@@ -5,7 +5,7 @@ truth and keep the CLI, MCP server, and library behavior aligned.
 
 ## Development checks
 
-Use Rust 1.88 or newer and run:
+Use Rust 1.89 or newer and run:
 
 ```console
 cargo fmt --all --check
@@ -88,5 +88,6 @@ VISSUE_BIN=$PWD/target/release/vissue make -C ../vissue.el test
 Adding a field to a JSON payload is safe; renaming or removing one, or
 changing the shape of those three text outputs, is not.
 
-The maintainer release sequence, including the private publication arm and
-first-version crates.io bootstrap, is documented in `RELEASING.md`.
+The maintainer release sequence is documented in `RELEASING.md`. The
+workspace crates are on crates.io; a `v*` tag publishes later versions
+through trusted publishing.

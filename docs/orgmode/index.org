@@ -56,11 +56,15 @@ the lock that stops two workers taking the same node.
 
 #+begin_src console
 $ cargo install vissue-cli
+$ cargo install vissue-hud   # summonable overlay, optional
 $ cargo install vissue-mcp   # the MCP server, same version
 #+end_src
 
-Tagged releases carry prebuilt archives and a shell installer. Shell
-completions and a manual page come out of the binary itself:
+The workspace publishes seven crates at one version: =vissue-cli=,
+=vissue-mcp=, =vissue-hud=, and the libraries =vissue-core=,
+=vissue-control=, =vissue-serve=, and =vissue-tui=. Tagged releases
+also carry prebuilt archives and a shell installer. Shell completions
+and a manual page come out of the binary itself:
 
 #+begin_src console
 $ vissue completions zsh > ~/.zfunc/_vissue

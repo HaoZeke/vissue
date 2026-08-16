@@ -55,41 +55,44 @@ for each to appear in the index before the next one that names it.
 
 ## First public version
 
-Trusted publishing cannot create a crate that does not exist: crates.io
-resolves the crate before it will accept a publisher configuration, so the
-first version of each crate has to be uploaded with an API token.
-
-That token needs the **`publish-new`** scope. A per-crate token, or one
-carrying only `publish-update`, is refused with "this token does not have the
-required permissions to perform this action". Tokens are minted on the
-crates.io website; the API refuses to create them.
-
-Publish from the tagged commit, so the registry matches the GitHub release:
-
-```console
-$ git switch --detach vX.Y.Z
-$ for crate in $(./scripts/publish-order.py); do
-    cargo publish --locked -p "$crate"
-    until cargo info "$crate@X.Y.Z" >/dev/null 2>&1; do sleep 10; done
-  done
-```
-
-Each crate has to be visible in the index before the next one that names it,
-and the wait covers that.
-
-Then add a trusted publisher to each crate, at
-`https://crates.io/crates/<name>/settings`:
-
-- repository owner: `HaoZeke`
-- repository name: `vissue`
-- workflow filename: `publish-crates.yml`
-- environment: `crates-io`
-
-The GitHub environment already exists; recreate it with
+The seven workspace crates exist on crates.io from 0.3.0, and each has a
+trusted publisher: repository `HaoZeke/vissue`, workflow
+`publish-crates.yml`, environment `crates-io`. Later `v*` tags publish
+through OIDC. The GitHub environment already exists; recreate it with
 
 ```console
 $ gh api --method PUT repos/HaoZeke/vissue/environments/crates-io
 ```
+
+Trusted publishing cannot create a crate that does not exist. If the
+workspace grows a crate that has never been uploaded, that first version
+still needs an API token with the **`publish-new`** scope. A per-crate
+token, or one carrying only `publish-update`, is refused. Tokens are
+minted on the crates.io website; the API refuses to create them.
+
+Publish from the tagged commit, so the registry matches the GitHub release.
+crates.io rate-limits new crate creation; a 429 names the retry time.
+Wait for each crate to appear on the registry API before publishing the
+next one that names it. `cargo info` from the workspace reads the local
+path and is not that signal.
+
+```console
+$ git switch --detach vX.Y.Z
+$ version=$(sed -n '0,/^version = /s/^version = "\([^"]*\)"/\1/p' Cargo.toml)
+$ for crate in $(./scripts/publish-order.py); do
+    cargo publish --locked -p "$crate"
+    until curl -fsS -A 'vissue-publish' \
+      "https://crates.io/api/v1/crates/${crate}/${version}" >/dev/null
+    do sleep 10; done
+  done
+```
+
+Then add the same trusted publisher to the new crate, at
+`https://crates.io/crates/<name>/settings`, or via
+
+`POST /api/v1/trusted_publishing/github_configs` with
+`crate`, `repository_owner=HaoZeke`, `repository_name=vissue`,
+`workflow_filename=publish-crates.yml`, `environment=crates-io`.
 
 After that the token is never needed again, and it should be revoked.
 

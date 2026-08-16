@@ -191,6 +191,14 @@ $ cargo install vissue-hud   # summonable overlay, optional
 $ cargo install vissue-mcp   # the MCP server, same version
 ```
 
+The workspace publishes seven crates at one version:
+[`vissue-cli`](https://crates.io/crates/vissue-cli),
+[`vissue-mcp`](https://crates.io/crates/vissue-mcp),
+[`vissue-hud`](https://crates.io/crates/vissue-hud), and the libraries
+[`vissue-core`](https://crates.io/crates/vissue-core),
+[`vissue-control`](https://crates.io/crates/vissue-control),
+[`vissue-serve`](https://crates.io/crates/vissue-serve),
+[`vissue-tui`](https://crates.io/crates/vissue-tui).
 Tagged releases carry prebuilt archives and a shell installer; see the
 [releases page](https://github.com/HaoZeke/vissue/releases). To take unreleased
 `main`, name the repository:

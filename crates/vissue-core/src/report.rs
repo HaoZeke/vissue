@@ -1,7 +1,9 @@
 //! Read-only verbs. Every function returns its text instead of printing, so a
 //! CLI, an MCP server, and a library caller share one implementation.
 
-use anyhow::{Result, bail};
+use anyhow::bail;
+
+use crate::error::Result;
 use chrono::{Local, NaiveDate};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;

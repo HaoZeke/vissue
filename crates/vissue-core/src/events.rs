@@ -14,7 +14,9 @@
 //! turn it off, for a caller that needs the tracker to stay
 //! untouched.
 
-use anyhow::{Context, Result};
+use anyhow::Context;
+
+use crate::error::Result;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

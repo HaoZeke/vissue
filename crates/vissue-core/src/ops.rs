@@ -1,6 +1,8 @@
 //! Mutating verbs: create, update, and move issues between projects.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, anyhow, bail};
+
+use crate::error::Result;
 use chrono::NaiveDate;
 use std::collections::BTreeMap;
 

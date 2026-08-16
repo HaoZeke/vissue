@@ -2,6 +2,9 @@
 
 use std::fmt;
 
+/// Library result using [`Error`].
+pub type Result<T> = std::result::Result<T, Error>;
+
 /// Recoverable catalog and mutation failures with a stable shape.
 #[derive(Debug)]
 pub enum Error {

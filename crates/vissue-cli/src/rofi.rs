@@ -133,10 +133,10 @@ pub fn run(opts: RofiOpts) -> Result<i32> {
 
 fn listing(layout: &Layout, mode: Mode) -> Result<String> {
     match mode {
-        Mode::Ready => report::ready(layout, None),
-        Mode::List => report::list(layout, None, None, false),
-        Mode::Claims => report::claims(layout, None, None, false),
-        Mode::Stale => report::stale(layout, 30, None),
+        Mode::Ready => Ok(report::ready(layout, None)?),
+        Mode::List => Ok(report::list(layout, None, None, false)?),
+        Mode::Claims => Ok(report::claims(layout, None, None, false)?),
+        Mode::Stale => Ok(report::stale(layout, 30, None)?),
         Mode::New => Ok(String::new()),
     }
 }

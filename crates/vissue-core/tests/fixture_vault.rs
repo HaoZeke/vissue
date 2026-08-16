@@ -1,5 +1,7 @@
 //! End-to-end checks against the synthetic fixture tracker in `tests/fixture_vault`.
 
+#![allow(deprecated_safe_2024)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

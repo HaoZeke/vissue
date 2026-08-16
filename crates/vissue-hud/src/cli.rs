@@ -164,6 +164,7 @@ pub fn missing_bin_message() -> &'static str {
 }
 
 #[cfg(test)]
+#[allow(deprecated_safe_2024)]
 mod tests {
     use super::*;
 

@@ -101,6 +101,7 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
 }
 
 #[cfg(test)]
+#[allow(deprecated_safe_2024)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};

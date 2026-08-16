@@ -400,6 +400,7 @@ fn read_action(stream: std::os::unix::net::UnixStream) -> Option<SummonRequest> 
 }
 
 #[cfg(test)]
+#[allow(deprecated_safe_2024)]
 mod tests {
     use super::*;
 

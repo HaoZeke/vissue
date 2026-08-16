@@ -248,6 +248,7 @@ fn current_host() -> String {
 }
 
 #[cfg(test)]
+#[allow(deprecated_safe_2024)]
 mod tests {
     use super::*;
 

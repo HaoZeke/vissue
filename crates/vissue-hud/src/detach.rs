@@ -94,6 +94,7 @@ fn wait_until_accepts(path: &std::path::Path, timeout: Duration) -> bool {
 }
 
 #[cfg(test)]
+#[allow(deprecated_safe_2024)]
 mod tests {
     use super::*;
     use std::path::PathBuf;

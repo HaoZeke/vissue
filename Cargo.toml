@@ -13,7 +13,8 @@ members = [
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"
-rust_2024_compatibility = "warn"
+missing_docs = "warn"
+rust_2024_compatibility = { level = "warn", priority = -1 }
 
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"
@@ -27,6 +28,8 @@ undocumented_unsafe_blocks = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
 
 [workspace.package]
 version = "0.3.0"

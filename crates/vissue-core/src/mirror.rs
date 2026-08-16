@@ -4,9 +4,7 @@
 //! the backlog. It carries a banner naming it as generated output, because the
 //! next run overwrites it and hand edits are lost.
 
-use anyhow::{Context, bail};
-
-use crate::error::Result;
+use anyhow::{Context, Result, bail};
 use chrono::Local;
 use std::fmt::Write as _;
 use std::path::Path;

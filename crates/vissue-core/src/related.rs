@@ -1,8 +1,6 @@
 //! Explainable, derived connections between Org issue headings.
 
-use anyhow::bail;
-
-use crate::error::Result;
+use anyhow::{Result, bail};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 

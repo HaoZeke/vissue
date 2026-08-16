@@ -5,9 +5,7 @@
 //! `VISSUE_ROOT`, or the current directory. `prefix` comes from the caller,
 //! `VISSUE_PREFIX`, `<root>/vissue.toml`, or the `Software` default.
 
-use anyhow::Context;
-
-use crate::error::Result;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};

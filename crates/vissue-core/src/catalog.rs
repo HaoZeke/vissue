@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 
 use crate::config::Layout;
-use crate::error::{Error, Result};
+use crate::error::Error;
 use crate::graph::DependencyGraph;
 use crate::model::{IssueHeading, READY_STATES};
 use crate::related::related_hits_from;
@@ -26,7 +26,7 @@ pub(crate) const BODY_EXCERPT_MAX_CHARS: usize = 4000;
 ///
 /// Returns an error if a project directory cannot be listed or an
 /// `issues.org` cannot be read or parsed.
-pub fn load_recs(layout: &Layout) -> Result<Vec<IssueRec>> {
+pub fn load_recs(layout: &Layout) -> anyhow::Result<Vec<IssueRec>> {
     let mut recs = Vec::new();
     for project in list_projects(layout)? {
         let path = layout.project_issues_path(&project);

@@ -1,8 +1,6 @@
 //! In-memory dependency graph for validation and bounded multi-hop queries.
 
-use anyhow::{anyhow, bail};
-
-use crate::error::Result;
+use anyhow::{Result, anyhow, bail};
 use daggy::{Dag, NodeIndex};
 use petgraph::Direction;
 use petgraph::algo::{has_path_connecting, toposort};

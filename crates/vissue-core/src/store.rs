@@ -1,8 +1,6 @@
 //! The on-disk store: one `issues.org` per project, parsed and rewritten whole.
 
-use anyhow::{Context, anyhow};
-
-use crate::error::Result;
+use anyhow::{Context, Result, anyhow};
 use fs2::FileExt;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;

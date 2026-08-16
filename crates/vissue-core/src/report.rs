@@ -121,8 +121,7 @@ pub fn ready(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     Ok(format_issue_rows(&recs, &rows))
 }
 
-/// One issue's metadata and file range. The body stays in the file: an editor
-/// opens the range when the prose is wanted.
+/// One issue's metadata, file range, and body text.
 ///
 /// # Errors
 ///

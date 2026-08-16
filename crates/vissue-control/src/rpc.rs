@@ -468,8 +468,8 @@ pub struct InitializeResult {
 ///
 /// # Errors
 ///
-/// Returns an error when `value` is not an object, `protocolVersion` is missing
-/// or not 1, or `agent` is missing or empty.
+/// Returns an error when `value` is not an object, `protocolVersion` is
+/// missing, not a number, or not 1, or `agent` is missing or empty.
 pub fn parse_initialize_params(value: &Value) -> Result<InitializeParams, JsonRpcError> {
     let obj = value
         .as_object()

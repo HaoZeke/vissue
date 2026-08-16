@@ -675,18 +675,12 @@ pub fn detect_project_from_ctx(start: &Path) -> Option<String> {
     None
 }
 
-/// Every `:ID:` value in any org file under the layout prefix. A `:PARENT:`
-/// may point at a design document rather than at another issue.
-/// Look for `wanted` among the `:ID:` values in the tree, stopping as soon
-/// as every one has been seen.
+/// Look for `wanted` among every `:ID:` under the layout prefix, including
+/// design documents and notes, and stop once every requested id has been
+/// seen. Returns the subset that exists.
 ///
-/// `check` validates `:PARENT:` against any Org id, which includes design
-/// documents and notes rather than only issues. On a tracker that shares a
-/// root with a notes vault that is most of the bytes on disk: 172MB across
-/// 6335 files, against 4.8MB of `issues.org`. Almost every parent is another
-/// issue, so the whole scan usually answers a question already answered.
-///
-/// Returns the ids among `wanted` that were found.
+/// `check` uses this because a `:PARENT:` may point at a note rather than
+/// at another issue.
 ///
 /// # Errors
 ///

@@ -19,9 +19,9 @@ use crate::store::{
 ///
 /// # Errors
 ///
-/// Returns an error if `--project` is empty, no name can be resolved, the
-/// current directory cannot be read, or the name matches more than one
-/// project directory.
+/// Returns an error if the explicit project name is empty, no name can be
+/// resolved, the current directory cannot be read, or the name matches more
+/// than one project directory.
 pub fn resolve_project(layout: &Layout, explicit: Option<&str>) -> Result<String> {
     if let Some(p) = explicit {
         if p.is_empty() {

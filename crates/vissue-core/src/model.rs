@@ -241,8 +241,8 @@ impl IssueHeading {
             .unwrap_or_default()
     }
 
-    /// Every tag on the issue: the `:TAGS:` property and the heading's own Org
-    /// tags, in that order and without duplicates.
+    /// Every tag on the issue: the `:VISSUE_TAGS:` property and the heading's
+    /// own Org tags, in that order and without duplicates.
     pub fn tags(&self) -> Vec<String> {
         let mut tags: Vec<String> = self
             .properties

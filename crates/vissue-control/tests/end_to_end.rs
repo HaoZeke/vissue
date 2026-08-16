@@ -230,11 +230,9 @@ fn an_unknown_method_comes_back_as_method_not_found() {
     drop(client);
     // Drain the remaining accepts so the server thread finishes.
     for _ in 0..3 {
-        match Client::connect(&path) {
-            Ok(mut c) => {
-                let _ = c.request(Method::IssueList.as_str(), json!({}));
-            }
-            Err(_) => {}
+        let connected = Client::connect(&path);
+        if let Ok(mut c) = connected {
+            let _ = c.request(Method::IssueList.as_str(), json!({}));
         }
     }
     handle.join().expect("server thread");

@@ -219,11 +219,10 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
         if !project_selected(&rec.project, q.project.as_deref()) {
             continue;
         }
-        if let Some(state) = q.state.as_deref() {
-            if rec.heading.state != state {
+        if let Some(state) = q.state.as_deref()
+            && rec.heading.state != state {
                 continue;
             }
-        }
         if q.ready {
             if !READY_STATES.contains(&rec.heading.state.as_str()) {
                 continue;
@@ -237,11 +236,10 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
                 continue;
             }
         }
-        if let Some(needle) = q.query.as_deref() {
-            if !list_query_matches(&rec.heading, needle) {
+        if let Some(needle) = q.query.as_deref()
+            && !list_query_matches(&rec.heading, needle) {
                 continue;
             }
-        }
         rows.push((
             rec.heading.priority,
             rec.heading.state.clone(),
@@ -605,11 +603,10 @@ pub fn claims_from(
         let Some(who) = rec.heading.claimed_by() else {
             continue;
         };
-        if let Some(filter) = holder {
-            if who != filter {
+        if let Some(filter) = holder
+            && who != filter {
                 continue;
             }
-        }
         let age = rec
             .heading
             .claimed_at()

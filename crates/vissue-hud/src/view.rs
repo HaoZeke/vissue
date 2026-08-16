@@ -326,11 +326,10 @@ fn task_row(item: &HudItem, selected: bool, tea: Tokens) -> Element<'_, Message>
     let id = item.id.clone();
     let id_toggle = item.id.clone();
     let mut bits: Vec<String> = vec![item.state.to_lowercase()];
-    if let Some(parent) = item.parent.as_deref() {
-        if item.depth == 0 {
+    if let Some(parent) = item.parent.as_deref()
+        && item.depth == 0 {
             bits.push(format!("under {parent}"));
         }
-    }
     if !item.blocked_by.is_empty() {
         bits.push(format!("blocked by {}", item.blocked_by.join(", ")));
     }

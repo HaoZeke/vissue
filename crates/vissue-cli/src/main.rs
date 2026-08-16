@@ -989,8 +989,8 @@ fn resolve_hud_bin() -> Option<PathBuf> {
             return Some(PathBuf::from(t));
         }
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent() {
             let sibling = dir.join("vissue-hud");
             if sibling.is_file() {
                 return Some(sibling);
@@ -1003,7 +1003,6 @@ fn resolve_hud_bin() -> Option<PathBuf> {
                 }
             }
         }
-    }
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join("vissue-hud");

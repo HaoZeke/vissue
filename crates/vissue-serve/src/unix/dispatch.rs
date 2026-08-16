@@ -212,8 +212,8 @@ fn dispatch_list(
 ) -> Result<Value, JsonRpcError> {
     let params: IssueListParams = decode(params)?;
     with_service(state, |svc, revision, generation| {
-        if let Some(since) = params.since_revision {
-            if since == revision {
+        if let Some(since) = params.since_revision
+            && since == revision {
                 return serde_json::to_value(IssueListResult {
                     issues: Vec::new(),
                     total: 0,
@@ -224,7 +224,6 @@ fn dispatch_list(
                 })
                 .map_err(map_json);
             }
-        }
         let ready = ready_forced || params.ready.unwrap_or(false);
         let total = svc
             .issues_rows(ListQuery {

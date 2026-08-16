@@ -382,11 +382,10 @@ fn accept_loop(listener: std::os::unix::net::UnixListener) {
             thread::sleep(Duration::from_millis(50));
             continue;
         };
-        if let Some(req) = read_action(stream) {
-            if tx.send(req).is_err() {
+        if let Some(req) = read_action(stream)
+            && tx.send(req).is_err() {
                 break;
             }
-        }
     }
 }
 

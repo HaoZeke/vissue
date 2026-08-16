@@ -805,13 +805,11 @@ impl Palette {
             self.handle_search_key(key);
             return;
         }
-        if self.leader_armed {
-            if let Some(at) = self.leader_at {
-                if at.elapsed().as_millis() as u64 > self.keymap.leader_timeout_ms {
+        if self.leader_armed
+            && let Some(at) = self.leader_at
+                && at.elapsed().as_millis() as u64 > self.keymap.leader_timeout_ms {
                     self.leader_armed = false;
                 }
-            }
-        }
         if self.leader_armed {
             self.leader_armed = false;
             match key {
@@ -825,13 +823,12 @@ impl Palette {
                 _ => {}
             }
         }
-        if let PaletteKey::Char(c) = key {
-            if self.keymap.leader == Some(c) {
+        if let PaletteKey::Char(c) = key
+            && self.keymap.leader == Some(c) {
                 self.leader_armed = true;
                 self.leader_at = Some(std::time::Instant::now());
                 return;
             }
-        }
         match key {
             PaletteKey::Esc => {
                 if self.detail_tab != DetailTab::Show || self.excerpt.is_some() {
@@ -880,11 +877,10 @@ impl Palette {
             }
             ActionId::PaneReady => self.set_filter(BoardFilter::Ready),
             ActionId::PaneList => {
-                if self.browsing() {
-                    if let Some(name) = self.selected_project_name().map(str::to_string) {
+                if self.browsing()
+                    && let Some(name) = self.selected_project_name().map(str::to_string) {
                         self.enter_project(&name);
                     }
-                }
                 self.set_filter(BoardFilter::List);
             }
             ActionId::PaneClaims => self.set_filter(BoardFilter::Claims),
@@ -903,11 +899,10 @@ impl Palette {
                 self.focus_search();
             }
             ActionId::Add => {
-                if self.browsing() {
-                    if let Some(name) = self.selected_project_name().map(str::to_string) {
+                if self.browsing()
+                    && let Some(name) = self.selected_project_name().map(str::to_string) {
                         self.enter_project(&name);
                     }
-                }
                 self.focus_add();
             }
             ActionId::Claim => self.claim_selected(),
@@ -1062,11 +1057,10 @@ impl Palette {
     }
 
     fn cycle_project(&mut self) {
-        if self.projects.is_empty() {
-            if let Ok(list) = self.backend.projects() {
+        if self.projects.is_empty()
+            && let Ok(list) = self.backend.projects() {
                 self.projects = list;
             }
-        }
         self.project = match self.project.as_deref() {
             None => self.projects.first().cloned(),
             Some(cur) => {
@@ -1276,11 +1270,10 @@ impl Palette {
 
     /// Focus the add-task field, entering the selected project from home.
     pub fn focus_add(&mut self) {
-        if self.browsing() {
-            if let Some(name) = self.selected_project_name().map(str::to_string) {
+        if self.browsing()
+            && let Some(name) = self.selected_project_name().map(str::to_string) {
                 self.enter_project(&name);
             }
-        }
         self.focus = Focus::Add;
     }
 
@@ -1331,11 +1324,10 @@ impl Palette {
             vissue_tui::BackendKind::Control => self.backend.revision(),
             vissue_tui::BackendKind::Core => self.backend.generation(),
         };
-        if let Ok(next) = self.backend.wait(last, 1) {
-            if next > last {
+        if let Ok(next) = self.backend.wait(last, 1)
+            && next > last {
                 let _ = self.reload();
             }
-        }
     }
 
     /// Fetch the current filter from the backend and refresh detail.
@@ -1391,14 +1383,13 @@ impl Palette {
         }
         let mut counts: std::collections::BTreeMap<String, usize> =
             std::collections::BTreeMap::new();
-        if let Ok(page) = self.backend.ready(None) {
-            if !page.unchanged {
+        if let Ok(page) = self.backend.ready(None)
+            && !page.unchanged {
                 for row in &page.issues {
                     *counts.entry(row.project.clone()).or_default() += 1;
                 }
                 self.ready_count = page.issues.len();
             }
-        }
         let mut cards: Vec<ProjectCard> = self
             .projects
             .iter()
@@ -1427,12 +1418,11 @@ impl Palette {
         // Last full ready page stays when serve answers `{unchanged: true,
         // issues: []}`.
         self.items.retain(|item| item.source == ItemSource::Ready);
-        if let Ok(page) = self.backend.ready(project) {
-            if !page.unchanged {
+        if let Ok(page) = self.backend.ready(project)
+            && !page.unchanged {
                 self.items = page.issues.into_iter().map(HudItem::from_row).collect();
                 self.ready_count = self.items.len();
             }
-        }
     }
 
     fn reload_list(&mut self, project: Option<&str>) {
@@ -1441,12 +1431,11 @@ impl Palette {
             limit: Some(200),
             ..ListQuery::default()
         };
-        if let Ok(page) = self.backend.list(q) {
-            if !page.unchanged {
+        if let Ok(page) = self.backend.list(q)
+            && !page.unchanged {
                 self.items = page.issues.into_iter().map(HudItem::from_list).collect();
                 self.list_count = self.items.len();
             }
-        }
     }
 
     fn reload_claims(&mut self, project: Option<&str>) {

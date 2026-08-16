@@ -163,8 +163,8 @@ pub fn hygiene(layout: &Layout, stale_days: Option<i64>) -> Result<String> {
                 writeln!(out, "[warn] STARTED with no claimant: {} ({project})", h.id)?;
             }
             Some(who) => {
-                if let Some(days) = h.claim_age_days(today) {
-                    if days > threshold {
+                if let Some(days) = h.claim_age_days(today)
+                    && days > threshold {
                         stale_claims += 1;
                         writeln!(
                             out,
@@ -172,7 +172,6 @@ pub fn hygiene(layout: &Layout, stale_days: Option<i64>) -> Result<String> {
                             h.id
                         )?;
                     }
-                }
             }
         }
     }

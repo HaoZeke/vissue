@@ -396,11 +396,10 @@ pub fn count(
             if !project_selected(project, project_filter) {
                 return false;
             }
-            if let Some(s) = state_filter {
-                if h.state != s {
+            if let Some(s) = state_filter
+                && h.state != s {
                     return false;
                 }
-            }
             if ready_only {
                 if !READY_STATES.contains(&h.state.as_str()) {
                     return false;
@@ -919,8 +918,8 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
     }
 
     for (project, h) in &all {
-        if let Some(parent) = h.parent() {
-            if !resolves(parent) {
+        if let Some(parent) = h.parent()
+            && !resolves(parent) {
                 writeln!(
                     out,
                     "[err]  {} (in {}) :PARENT: {} -> not found",
@@ -928,7 +927,6 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                 )?;
                 errors += 1;
             }
-        }
         for blk in blocker_ids(h) {
             if !by_id.contains_key(blk) {
                 writeln!(
@@ -939,8 +937,8 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                 errors += 1;
             }
         }
-        if let Some(d) = h.deadline() {
-            if parse_org_date(d).is_none() {
+        if let Some(d) = h.deadline()
+            && parse_org_date(d).is_none() {
                 writeln!(
                     out,
                     "[err]  {} (in {}) :DEADLINE: {} -> unparseable",
@@ -948,9 +946,8 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                 )?;
                 errors += 1;
             }
-        }
-        if let Some(s) = h.scheduled() {
-            if parse_org_date(s).is_none() {
+        if let Some(s) = h.scheduled()
+            && parse_org_date(s).is_none() {
                 writeln!(
                     out,
                     "[err]  {} (in {}) :SCHEDULED: {} -> unparseable",
@@ -958,7 +955,6 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                 )?;
                 errors += 1;
             }
-        }
         if matches!(h.state.as_str(), "TODO" | "STARTED") && !h.properties.contains_key("CREATED") {
             writeln!(
                 out,
@@ -1002,12 +998,11 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
         settled.extend(path);
     }
 
-    if errors == 0 {
-        if let Err(err) = DependencyGraph::from_issues(&all) {
+    if errors == 0
+        && let Err(err) = DependencyGraph::from_issues(&all) {
             writeln!(out, "[err]  blocker graph: {err}")?;
             errors += 1;
         }
-    }
 
     writeln!(out)?;
     writeln!(

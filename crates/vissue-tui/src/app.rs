@@ -269,11 +269,10 @@ impl App {
             crate::backend::BackendKind::Control => self.backend.revision(),
             crate::backend::BackendKind::Core => self.backend.generation(),
         };
-        if let Ok(next) = self.backend.wait(last, 1) {
-            if next > last {
+        if let Ok(next) = self.backend.wait(last, 1)
+            && next > last {
                 let _ = self.reload();
             }
-        }
     }
 
     /// Dispatch one key. Repeat and press count; release is ignored.
@@ -734,11 +733,9 @@ pub fn run(opts: RunOpts) -> anyhow::Result<()> {
             if ratatui::crossterm::event::poll(std::time::Duration::from_millis(200))? {
                 if let ratatui::crossterm::event::Event::Key(key) =
                     ratatui::crossterm::event::read()?
-                {
-                    if app.handle_key(key) == Action::Quit {
+                    && app.handle_key(key) == Action::Quit {
                         break;
                     }
-                }
             } else {
                 app.poll_updates();
             }

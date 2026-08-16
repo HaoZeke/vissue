@@ -30,43 +30,64 @@ pub enum Action {
     /// [`Action::Stop`] then [`Action::Detach`].
     Restart,
     /// Print a snapshot. Exit 0 when live, 1 otherwise.
-    Status { json: bool },
+    Status {
+        /// Pretty-print JSON instead of the line-oriented text form.
+        json: bool,
+    },
 }
 
 /// Layout plus the socket this process should own or probe.
 #[derive(Debug, Clone)]
 pub struct ServeConfig {
+    /// Tracker root and project prefix the owner serves.
     pub layout: Layout,
+    /// Unix socket this process owns or probes.
     pub socket: PathBuf,
-    /// Binary used by [`Action::Detach`]. `None` means `current_exe()`.
+    /// Binary used by [`Action::Detach`]. `None` resolves `vissue` from
+    /// `current_exe()`, a sibling, or `$PATH`.
     pub exe: Option<PathBuf>,
 }
 
 /// `vissue serve status` snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Status {
+    /// True when the socket currently accepts a connection.
     pub live: bool,
+    /// Owner pid from the sidecar pid file, if present.
     pub pid: Option<u32>,
+    /// Control socket path.
     pub socket: PathBuf,
+    /// Tracker root the owner reports, or the caller's layout when down.
     pub root: PathBuf,
+    /// Project prefix the owner reports, or the caller's layout when down.
     pub prefix: String,
+    /// Event generation from the owner handshake, or the on-disk counter when down.
     pub generation: u64,
+    /// Catalog revision from the owner, or [`SERVE_REVISION`] when down.
     pub revision: u64,
+    /// Connected client count.
     pub clients: u64,
 }
 
 /// Outcome of [`ensure_serve`] / a detach start.
 #[derive(Debug, Clone)]
 pub struct EnsureResult {
+    /// True when a live owner is available after the call.
     pub ok: bool,
+    /// True when the socket already accepted and no child was started.
     pub already_running: bool,
+    /// True when this call spawned a child.
     pub spawned: bool,
+    /// Owner or child pid, when known.
     pub pid: Option<u32>,
+    /// Socket that was probed or bound.
     pub socket: PathBuf,
+    /// Failure text when [`Self::ok`] is false.
     pub error: Option<String>,
 }
 
 impl EnsureResult {
+    /// True when [`Self::ok`] is set and [`socket_accepts`] still succeeds.
     #[must_use]
     pub fn live(&self) -> bool {
         self.ok && socket_accepts(&self.socket)

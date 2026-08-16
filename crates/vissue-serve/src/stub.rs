@@ -6,15 +6,28 @@ use anyhow::Result;
 
 use crate::{Action, EnsureResult, ServeConfig};
 
+/// Always false: there is no Unix owner on this target.
 pub fn socket_accepts(_path: &Path) -> bool {
     false
 }
 
+/// Reject every serve verb: the owner is Unix-only.
+///
+/// Prints `vissue serve is Unix-only` and returns exit code 1.
+///
+/// # Errors
+///
+/// Never fails.
 pub fn invoke(_action: Action, _cfg: &ServeConfig) -> Result<i32> {
     eprintln!("vissue serve is Unix-only");
     Ok(1)
 }
 
+/// Return a failed ensure: the owner is Unix-only.
+///
+/// # Errors
+///
+/// Never fails.
 pub fn ensure_serve(cfg: &ServeConfig) -> Result<EnsureResult> {
     Ok(EnsureResult {
         ok: false,

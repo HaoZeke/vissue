@@ -64,6 +64,10 @@ fn serve_exe_from(current: &Path, path_var: Option<&std::ffi::OsStr>) -> Result<
 const TERM_WAIT: Duration = Duration::from_secs(5);
 const KILL_WAIT: Duration = Duration::from_secs(2);
 
+/// True when a connect to `path` succeeds within a short retry window.
+///
+/// Connection refused or a missing path is false. Transient `WouldBlock`,
+/// `Interrupted`, and `TimedOut` retry for about 150 ms.
 pub fn socket_accepts(path: &Path) -> bool {
     if !path.exists() {
         return false;
@@ -393,6 +397,15 @@ pub fn start_detached(cfg: &ServeConfig) -> Result<EnsureResult> {
     })
 }
 
+/// Return a live owner: reuse one that already accepts, otherwise detach.
+///
+/// Spawn failure and an accept timeout come back as [`EnsureResult`] with
+/// [`EnsureResult::ok`] false, not as an error.
+///
+/// # Errors
+///
+/// Fails when the socket directory or serve log cannot be created, the log
+/// handle cannot be cloned, or no `vissue` executable can be resolved.
 pub fn ensure_serve(cfg: &ServeConfig) -> Result<EnsureResult> {
     if socket_accepts(&cfg.socket) {
         return Ok(EnsureResult {

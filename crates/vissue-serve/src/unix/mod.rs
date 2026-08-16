@@ -14,6 +14,21 @@ use crate::{Action, ServeConfig};
 pub use lifecycle::{ensure_serve, socket_accepts};
 pub use owner::OwnerHandle;
 
+/// Run one serve verb and return a process-style exit code.
+///
+/// `0` means the verb succeeded. `1` means detach did not start an owner,
+/// or status found no live socket.
+///
+/// # Errors
+///
+/// Foreground fails when the runtime cannot start, the socket directory
+/// cannot be created, the exclusive lock is already held, the socket is
+/// already in use, or the catalog cannot load.
+///
+/// Detach fails when the socket directory or serve log cannot be created,
+/// the log handle cannot be cloned, or no `vissue` executable can be resolved.
+///
+/// Status fails when the JSON snapshot cannot be encoded.
 pub fn invoke(action: Action, cfg: &ServeConfig) -> Result<i32> {
     match action {
         Action::Foreground => {

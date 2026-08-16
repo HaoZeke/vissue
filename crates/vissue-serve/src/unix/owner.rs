@@ -52,9 +52,13 @@ pub(super) struct Session {
 }
 
 /// In-process owner for tests and later attach helpers.
+///
+/// [`Self::spawn`] binds the socket on a background thread. Drop sends
+/// shutdown and joins that thread.
 pub struct OwnerHandle {
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
+    /// Socket this owner bound.
     pub socket: PathBuf,
 }
 
@@ -67,6 +71,11 @@ impl std::fmt::Debug for OwnerHandle {
 }
 
 impl OwnerHandle {
+    /// Bind an in-process owner on a background thread and wait until it accepts.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the owner does not accept on the socket within 5 seconds.
     pub fn spawn(cfg: ServeConfig) -> Result<Self> {
         use super::lifecycle::wait_until_accepts;
 

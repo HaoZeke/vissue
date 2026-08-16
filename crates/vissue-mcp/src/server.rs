@@ -20,20 +20,22 @@ pub struct VissueServer {
     layout: Layout,
 }
 
-fn text(result: anyhow::Result<String>) -> Result<CallToolResult, McpError> {
+fn text<E: std::fmt::Display>(result: Result<String, E>) -> Result<CallToolResult, McpError> {
     match result {
         Ok(s) => Ok(CallToolResult::success(vec![Content::text(s)])),
-        Err(e) => Err(McpError::internal_error(format!("{e:#}"), None)),
+        Err(e) => Err(McpError::internal_error(format!("{e}"), None)),
     }
 }
 
-fn json(result: anyhow::Result<serde_json::Value>) -> Result<CallToolResult, McpError> {
+fn json<E: std::fmt::Display>(
+    result: Result<serde_json::Value, E>,
+) -> Result<CallToolResult, McpError> {
     match result {
         Ok(v) => {
             let rendered = serde_json::to_string_pretty(&v).unwrap_or_else(|_| "null".to_string());
             Ok(CallToolResult::success(vec![Content::text(rendered)]))
         }
-        Err(e) => Err(McpError::internal_error(format!("{e:#}"), None)),
+        Err(e) => Err(McpError::internal_error(format!("{e}"), None)),
     }
 }
 

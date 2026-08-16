@@ -5,22 +5,35 @@ use std::fmt;
 /// Recoverable catalog and mutation failures with a stable shape.
 #[derive(Debug)]
 pub enum Error {
+    /// No heading in the corpus carries this id.
     IssueNotFound {
+        /// The id that was looked up.
         id: String,
     },
+    /// Another identity already holds the issue.
     ClaimConflict {
+        /// The issue that is already claimed.
         id: String,
+        /// Who holds it.
         holder: String,
+        /// When the claim was stamped, if the heading recorded it.
         claimed_at: Option<String>,
     },
+    /// The edge would close a loop in the blocker graph.
     BlockerCycle {
+        /// The prospective prerequisite.
         blocker: String,
+        /// The issue that would wait on it.
         issue: String,
     },
+    /// The issue is in a state that cannot be claimed.
     InvalidState {
+        /// The issue that was refused.
         id: String,
+        /// The heading state at the time of the refusal.
         state: String,
     },
+    /// Any other failure, usually I/O or a parse problem.
     Other(anyhow::Error),
 }
 

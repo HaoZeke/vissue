@@ -21,6 +21,11 @@ pub(crate) const BODY_EXCERPT_MAX_CHARS: usize = 4000;
 
 /// Snapshot every heading across every project, with the path `detail` and
 /// `excerpt` need.
+///
+/// # Errors
+///
+/// Returns an error if a project directory cannot be listed or an
+/// `issues.org` cannot be read or parsed.
 pub fn load_recs(layout: &Layout) -> anyhow::Result<Vec<IssueRec>> {
     let mut recs = Vec::new();
     for project in list_projects(layout)? {
@@ -44,6 +49,7 @@ pub struct CatalogService<'a> {
 }
 
 impl<'a> CatalogService<'a> {
+    /// Query over an already-loaded catalog snapshot.
     pub fn from_recs(issues: &'a [IssueRec]) -> Self {
         Self { issues }
     }
@@ -55,10 +61,20 @@ impl<'a> CatalogService<'a> {
             .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })
     }
 
+    /// List rows matching `q`, same filters and sort as [`issues_rows_from`].
+    ///
+    /// # Errors
+    ///
+    /// Does not fail for a parsed catalog.
     pub fn issues_rows(&self, q: ListQuery) -> Result<Vec<IssueRow>, Error> {
         issues_rows_from(self.issues, q)
     }
 
+    /// Actionable issues: TODO or STARTED with no open blocker.
+    ///
+    /// # Errors
+    ///
+    /// Does not fail for a parsed catalog.
     pub fn ready(&self, project: Option<&str>) -> Result<Vec<IssueRow>, Error> {
         issues_rows_from(
             self.issues,
@@ -70,18 +86,39 @@ impl<'a> CatalogService<'a> {
         )
     }
 
+    /// One issue as a detail card, including body and logbook.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog.
     pub fn detail(&self, id: &str) -> Result<IssueDetail, Error> {
         Ok(issue_detail(self.rec(id)?))
     }
 
+    /// On-disk heading range, capped and screened for secrets.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog, or the heading's file
+    /// cannot be read.
     pub fn excerpt(&self, id: &str) -> Result<Excerpt, Error> {
         excerpt_from(self.rec(id)?)
     }
 
+    /// Case-insensitive substring scan over id, title, properties, and body.
+    ///
+    /// # Errors
+    ///
+    /// Does not fail for a parsed catalog.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, Error> {
         search_hits_from(self.issues, query, limit)
     }
 
+    /// Live claims, oldest first, optionally narrowed by holder or project.
+    ///
+    /// # Errors
+    ///
+    /// Does not fail for a parsed catalog.
     pub fn claims(
         &self,
         holder: Option<&str>,
@@ -90,14 +127,29 @@ impl<'a> CatalogService<'a> {
         claims_from(self.issues, holder, project)
     }
 
+    /// Dated open work in the next `days` days, plus anything already overdue.
+    ///
+    /// # Errors
+    ///
+    /// Does not fail for a parsed catalog.
     pub fn agenda(&self, days: i64, project: Option<&str>) -> Result<Vec<AgendaRow>, Error> {
         agenda_rows_from(self.issues, days, project)
     }
 
+    /// Parent/child subtree rooted at `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog.
     pub fn tree(&self, id: &str) -> Result<TreeNode, Error> {
         tree_from(self.issues, id)
     }
 
+    /// Ranked related issues for `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog.
     pub fn related(
         &self,
         id: &str,
@@ -107,24 +159,50 @@ impl<'a> CatalogService<'a> {
         related_hits_from(self.issues, id, depth, limit)
     }
 
+    /// Issues whose `:PARENT:` points at `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog and no children exist.
     pub fn children(&self, id: &str) -> Result<Vec<WalkHit>, Error> {
         children_from(self.issues, id)
     }
 
+    /// Transitive blocker ancestors, limited to `depth` hops.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog, or the blocker graph
+    /// cannot be built.
     pub fn ancestors(&self, id: &str, depth: usize) -> Result<Vec<WalkHit>, Error> {
         walk_from(self.issues, id, depth, WalkKind::Ancestors)
     }
 
+    /// Transitive issues waiting on `id`, limited to `depth` hops.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog, or the blocker graph
+    /// cannot be built.
     pub fn impact(&self, id: &str, depth: usize) -> Result<Vec<WalkHit>, Error> {
         walk_from(self.issues, id, depth, WalkKind::Impact)
     }
 
+    /// Issues that refer to `id` through an edge, a parent, or a body mention.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog and no backlinks exist.
     pub fn backlinks(&self, id: &str) -> Result<Vec<WalkHit>, Error> {
         backlinks_from(self.issues, id)
     }
 }
 
 /// List/ready rows, same filters and sort as [`crate::agent::issues_json`].
+///
+/// # Errors
+///
+/// Does not fail for a parsed catalog.
 pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRow>, Error> {
     let active_blockers: HashSet<&str> = if q.ready {
         issues
@@ -258,6 +336,10 @@ fn issue_detail(rec: &IssueRec) -> IssueDetail {
 }
 
 /// On-disk heading range, capped and screened for secrets.
+///
+/// # Errors
+///
+/// Returns an error if the heading's file cannot be read.
 pub fn excerpt_from(rec: &IssueRec) -> Result<Excerpt, Error> {
     let content = fs::read_to_string(&rec.path)?;
     let lines: Vec<&str> = content.lines().collect();
@@ -301,6 +383,11 @@ pub fn excerpt_from(rec: &IssueRec) -> Result<Excerpt, Error> {
 ///
 /// The secret screen stays: a heading that carries credential-shaped text is
 /// refused here exactly as it is in a preview.
+///
+/// # Errors
+///
+/// Returns an error if the heading's file cannot be read, or the heading
+/// looks like secret material.
 pub fn org_text_from(rec: &IssueRec) -> Result<String, Error> {
     let content = fs::read_to_string(&rec.path)?;
     let lines: Vec<&str> = content.lines().collect();
@@ -418,6 +505,11 @@ pub(crate) fn secret_marker(excerpt: &str) -> Option<&'static str> {
     None
 }
 
+/// Case-insensitive substring scan over id, title, properties, and body.
+///
+/// # Errors
+///
+/// Does not fail for a parsed catalog.
 pub fn search_hits_from(
     issues: &[IssueRec],
     query: &str,
@@ -494,6 +586,11 @@ fn search_snippet(h: &IssueHeading, needle: &str) -> String {
     }
 }
 
+/// Live claims, oldest first, optionally narrowed by holder or project.
+///
+/// # Errors
+///
+/// Does not fail for a parsed catalog.
 pub fn claims_from(
     issues: &[IssueRec],
     holder: Option<&str>,
@@ -537,6 +634,11 @@ pub fn claims_from(
     Ok(rows.into_iter().map(|r| r.1).collect())
 }
 
+/// Dated open work in the next `days` days, plus anything already overdue.
+///
+/// # Errors
+///
+/// Does not fail for a parsed catalog.
 pub fn agenda_rows_from(
     issues: &[IssueRec],
     days: i64,
@@ -584,6 +686,11 @@ pub fn agenda_rows_from(
     Ok(rows.into_iter().map(|r| r.2).collect())
 }
 
+/// Parent/child subtree rooted at `id`.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the catalog.
 pub fn tree_from(issues: &[IssueRec], id: &str) -> Result<TreeNode, Error> {
     if !issues.iter().any(|r| r.heading.id == id) {
         return Err(Error::IssueNotFound { id: id.to_string() });
@@ -644,6 +751,11 @@ fn build_tree<'a>(
     }
 }
 
+/// Issues whose `:PARENT:` points at `parent_id`.
+///
+/// # Errors
+///
+/// Returns an error if `parent_id` is not in the catalog and no children exist.
 pub fn children_from(issues: &[IssueRec], parent_id: &str) -> Result<Vec<WalkHit>, Error> {
     let mut rows: Vec<(char, String, String, WalkHit)> = Vec::new();
     for rec in issues {
@@ -701,6 +813,11 @@ fn walk_from(
         .collect())
 }
 
+/// Issues that refer to `target_id` through an edge, a parent, or a body mention.
+///
+/// # Errors
+///
+/// Returns an error if `target_id` is not in the catalog and no backlinks exist.
 pub fn backlinks_from(issues: &[IssueRec], target_id: &str) -> Result<Vec<WalkHit>, Error> {
     let mut out = Vec::new();
     for rec in issues {
@@ -739,6 +856,11 @@ pub fn backlinks_from(issues: &[IssueRec], target_id: &str) -> Result<Vec<WalkHi
 }
 
 /// Children and blockers below `id` as indented text or Graphviz DOT.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the catalog, or `format` is not
+/// `ascii`, `text`, or `dot`.
 pub fn tree_text_from(issues: &[IssueRec], id: &str, format: &str) -> Result<String, Error> {
     if !issues.iter().any(|r| r.heading.id == id) {
         return Err(Error::IssueNotFound { id: id.to_string() });

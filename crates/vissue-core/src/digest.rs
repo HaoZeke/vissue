@@ -19,8 +19,11 @@ use crate::store::list_projects;
 /// One project's contribution to the digest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectDigest {
+    /// Project directory name.
     pub project: String,
+    /// 16-digit hex of the xxh3 hash over that project's export.
     pub digest: String,
+    /// Number of JSONL rows in that export.
     pub issues: usize,
 }
 
@@ -30,8 +33,11 @@ pub struct CorpusDigest {
     /// Hash over the per-project digests, so it moves exactly when one of them
     /// does.
     pub combined: String,
+    /// Per-project digests, sorted by project name.
     pub projects: Vec<ProjectDigest>,
+    /// Sum of per-project issue counts.
     pub issues: usize,
+    /// Event-log generation at the time of the digest.
     pub generation: u64,
 }
 
@@ -40,6 +46,10 @@ fn hex(value: u64) -> String {
 }
 
 /// Digest one project's export bytes.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read or exported.
 pub fn project_digest(layout: &Layout, project: &str) -> Result<ProjectDigest> {
     let export = report::export(layout, Some(project))?;
     Ok(ProjectDigest {
@@ -50,6 +60,10 @@ pub fn project_digest(layout: &Layout, project: &str) -> Result<ProjectDigest> {
 }
 
 /// Digest the named projects, or every project when the list is empty.
+///
+/// # Errors
+///
+/// Returns an error if the project list or the corpus cannot be read.
 pub fn corpus_digest(layout: &Layout, projects: &[String]) -> Result<CorpusDigest> {
     let mut selected: Vec<String> = if projects.is_empty() {
         list_projects(layout)?
@@ -109,6 +123,7 @@ impl CorpusDigest {
         out
     }
 
+    /// The digest as a JSON object: combined hash, counts, and per-project rows.
     pub fn to_json(&self) -> Value {
         json!({
             "combined": self.combined,
@@ -122,6 +137,7 @@ impl CorpusDigest {
         })
     }
 
+    /// The per-project digest for `project`, when that name is in this corpus.
     pub fn digest_of(&self, project: &str) -> Option<&str> {
         self.projects
             .iter()
@@ -129,6 +145,7 @@ impl CorpusDigest {
             .map(|p| p.digest.as_str())
     }
 
+    /// Project names in this digest, in the same order as [`Self::projects`].
     pub fn project_names(&self) -> Vec<String> {
         self.projects.iter().map(|p| p.project.clone()).collect()
     }

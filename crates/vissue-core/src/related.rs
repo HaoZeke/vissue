@@ -115,6 +115,11 @@ fn org_link(id: &str) -> String {
 
 /// Rank local, derived connections for an issue. Explicit Org relations and
 /// lexical overlap are separate evidence so callers can inspect the reason.
+///
+/// # Errors
+///
+/// Returns an error if `format` is not `text` or `org`, the corpus cannot be
+/// read, or `id` is not in the corpus.
 pub fn related(
     layout: &Layout,
     id: &str,
@@ -161,6 +166,10 @@ pub fn related(
 }
 
 /// Structured related hits, without going through the text formatter.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in `recs`.
 pub fn related_hits_from(
     recs: &[IssueRec],
     id: &str,

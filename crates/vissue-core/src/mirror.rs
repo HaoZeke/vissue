@@ -23,11 +23,18 @@ const BANNER: &str =
 /// Output shape for [`render`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
+    /// Org file with a banner, planning lines, and drawers.
     Org,
+    /// Markdown file with metadata as bullets.
     Markdown,
 }
 
 impl Format {
+    /// Parse `org`, `markdown`, or `md`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `s` is not one of those names.
     pub fn parse(s: &str) -> Result<Self> {
         match s {
             "org" => Ok(Format::Org),
@@ -44,16 +51,21 @@ impl Format {
 /// unchanged tracker differ only in the timestamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncStamp {
+    /// Combined corpus digest the mirror was generated against.
     pub digest: String,
+    /// Event-log generation at stamp time.
     pub generation: u64,
+    /// Issue count at stamp time.
     pub issues: usize,
     /// Project name paired with its sub-digest, so a staleness check can name
     /// which project moved rather than only that something did.
     pub projects: Vec<(String, String)>,
+    /// Local timestamp the stamp was written, `YYYY-MM-DDTHH:MM`.
     pub at: String,
 }
 
 impl SyncStamp {
+    /// Build a stamp from a digest and a caller-supplied timestamp.
     pub fn from_digest(digest: &CorpusDigest, at: String) -> Self {
         Self {
             digest: digest.combined.clone(),
@@ -133,6 +145,10 @@ impl SyncStamp {
 }
 
 /// The stamp for the current state of the named projects.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read or digested.
 pub fn stamp_for(layout: &Layout, projects: &[String]) -> Result<SyncStamp> {
     let digest = corpus_digest(layout, projects)?;
     Ok(SyncStamp::from_digest(
@@ -144,7 +160,9 @@ pub fn stamp_for(layout: &Layout, projects: &[String]) -> Result<SyncStamp> {
 /// The verdict of comparing a mirror's stamp against the tracker.
 #[derive(Debug, Clone)]
 pub struct Freshness {
+    /// Whether the stamp's digest still matches the tracker.
     pub fresh: bool,
+    /// Human-readable verdict, including which projects moved when stale.
     pub report: String,
 }
 
@@ -152,6 +170,11 @@ pub struct Freshness {
 ///
 /// With no explicit `projects`, the stamp's own project list is used: the file
 /// records what it covered, so a caller need not repeat it.
+///
+/// # Errors
+///
+/// Returns an error if `path` cannot be read, or the corpus cannot be
+/// digested.
 pub fn check(layout: &Layout, path: &Path, projects: &[String]) -> Result<Freshness> {
     let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let Some(stamped) = SyncStamp::find(&text) else {
@@ -219,6 +242,10 @@ pub fn check(layout: &Layout, path: &Path, projects: &[String]) -> Result<Freshn
 
 /// Project the named projects into one document. An empty `projects` list
 /// covers every project in the layout.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be listed, read, or digested.
 pub fn render(
     layout: &Layout,
     projects: &[String],

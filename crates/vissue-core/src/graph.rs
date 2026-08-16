@@ -18,11 +18,21 @@ pub struct DependencyGraph {
 
 impl DependencyGraph {
     /// Build a graph and reject malformed duplicate IDs or cyclic dependencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if two headings share an id, an issue blocks itself, or
+    /// the blocker edges form a cycle.
     pub fn from_issues(issues: &[(String, IssueHeading)]) -> Result<Self> {
         Self::from_headings(issues.iter().map(|(_, heading)| heading))
     }
 
     /// Same graph as [`Self::from_issues`], without copying headings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if two headings share an id, an issue blocks itself, or
+    /// the blocker edges form a cycle.
     pub fn from_headings<'a, I>(issues: I) -> Result<Self>
     where
         I: IntoIterator<Item = &'a IssueHeading>,
@@ -62,6 +72,13 @@ impl DependencyGraph {
     }
 
     /// Validate a prospective blocker insertion without mutating the graph.
+    ///
+    /// Unknown ids are accepted: a missing endpoint is not a cycle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `blocker` is `issue`, or if adding the edge would
+    /// close a loop.
     pub fn accepts_edge(&self, blocker: &str, issue: &str) -> std::result::Result<(), Error> {
         let Some(&from) = self.ids.get(blocker) else {
             return Ok(());
@@ -79,6 +96,10 @@ impl DependencyGraph {
     }
 
     /// Return a deterministic prerequisite-first order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the graph contains a cycle.
     pub fn topological_ids(&self) -> Result<Vec<String>> {
         let ids = toposort(self.dag.graph(), None)
             .map_err(|cycle| anyhow!("dependency cycle at {}", self.dag.graph()[cycle.node_id()]))?
@@ -89,6 +110,10 @@ impl DependencyGraph {
     }
 
     /// Return nodes that transitively block issue, bounded by hop depth.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `issue` is not in the graph.
     pub fn ancestors(
         &self,
         issue: &str,
@@ -98,6 +123,10 @@ impl DependencyGraph {
     }
 
     /// Return nodes transitively waiting on issue, bounded by hop depth.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `issue` is not in the graph.
     pub fn descendants(
         &self,
         issue: &str,

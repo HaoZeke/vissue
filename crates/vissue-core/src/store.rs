@@ -64,6 +64,11 @@ fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// For generated output a reader shares, which is a mirror: a plain write
 /// truncates first, so a reader mid-pull, or a crash, sees a half file where
 /// a whole one was.
+///
+/// # Errors
+///
+/// Returns an error if the parent directory cannot be created, the temporary
+/// cannot be written, or the rename cannot publish it.
 pub fn replace_file_atomically(path: &Path, body: &str) -> Result<()> {
     let parent = path
         .parent()
@@ -109,6 +114,11 @@ fn process_mutex_for(path: &Path) -> Arc<Mutex<()>> {
 ///
 /// Without this, parallel creates race on the temporary file rename and lose
 /// updates: the last writer wins and peers see a vanished temporary.
+///
+/// # Errors
+///
+/// Returns an error if the lock file cannot be created or acquired, or if `f`
+/// itself fails.
 pub fn with_issues_lock<R, F>(path: &Path, f: F) -> Result<R>
 where
     F: FnOnce() -> Result<R>,
@@ -121,6 +131,11 @@ where
 
 /// Lock several files in sorted order, which makes a cross-project move
 /// deadlock-free.
+///
+/// # Errors
+///
+/// Returns an error if a lock file cannot be created or acquired, or if `f`
+/// itself fails.
 pub fn with_issues_locks<R, F>(paths: &[&Path], f: F) -> Result<R>
 where
     F: FnOnce() -> Result<R>,
@@ -141,13 +156,18 @@ where
 /// One project's `issues.org`: a preamble followed by top-level headings.
 #[derive(Debug, Clone)]
 pub struct IssueDoc {
+    /// Project directory name this file belongs to.
     pub project: String,
+    /// Path of the `issues.org` this document was parsed from or will write to.
     pub path: PathBuf,
+    /// File header above the first heading, including `#+TODO:`.
     pub preamble: String,
+    /// Top-level issue headings, in file order.
     pub headings: Vec<IssueHeading>,
 }
 
 impl IssueDoc {
+    /// An empty document with the house preamble and no headings.
     pub fn empty(project: &str, path: PathBuf) -> Self {
         IssueDoc {
             project: project.to_string(),
@@ -158,6 +178,10 @@ impl IssueDoc {
     }
 
     /// Parse `path`, or produce an empty document when the file is absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file exists but cannot be read or parsed.
     pub fn parse_file(project: &str, path: &Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Self::empty(project, path.to_path_buf()));
@@ -167,6 +191,11 @@ impl IssueDoc {
         Self::parse(project, path.to_path_buf(), &content)
     }
 
+    /// Parse `content` as an `issues.org` for `project`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a heading has an unknown TODO keyword or no `:ID:`.
     pub fn parse(project: &str, path: PathBuf, content: &str) -> Result<Self> {
         let lines: Vec<&str> = content.lines().collect();
         let first_heading = lines
@@ -200,6 +229,11 @@ impl IssueDoc {
 
     /// Render and replace the file through a uniquely named temporary. Callers
     /// hold [`with_issues_lock`] around the parse and this write.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parent directory cannot be created, the
+    /// temporary cannot be written, or the rename cannot publish it.
     pub fn write(&self) -> Result<()> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
@@ -269,10 +303,12 @@ impl IssueDoc {
         let _ = crate::events::ensure_gitignore_hint(dir);
     }
 
+    /// Every heading id in this document, in file order.
     pub fn known_ids(&self) -> Vec<String> {
         self.headings.iter().map(|h| h.id.clone()).collect()
     }
 
+    /// Replace a heading with the same id, or append if none matches.
     pub fn upsert(&mut self, heading: IssueHeading) {
         if let Some(slot) = self.headings.iter_mut().find(|h| h.id == heading.id) {
             *slot = heading;
@@ -281,6 +317,7 @@ impl IssueDoc {
         }
     }
 
+    /// Remove the heading with `id`, if it is in this document.
     pub fn remove(&mut self, id: &str) -> Option<IssueHeading> {
         let idx = self.headings.iter().position(|h| h.id == id)?;
         Some(self.headings.remove(idx))
@@ -470,6 +507,10 @@ pub fn default_preamble(project: &str) -> String {
 }
 
 /// Every project directory under the layout prefix that holds an `issues.org`.
+///
+/// # Errors
+///
+/// Returns an error if the projects directory exists but cannot be read.
 pub fn list_projects(layout: &Layout) -> Result<Vec<String>> {
     let dir = layout.projects_dir();
     if !dir.exists() {
@@ -491,6 +532,10 @@ pub fn list_projects(layout: &Layout) -> Result<Vec<String>> {
 
 /// Map a project name onto the directory that already exists, ignoring case.
 /// An unmatched name is returned unchanged so `create` can make it.
+///
+/// # Errors
+///
+/// Returns an error if more than one project directory matches ignoring case.
 pub fn resolve_existing_project_case(layout: &Layout, project: &str) -> Result<String> {
     if project.is_empty() {
         return Ok(project.to_string());
@@ -527,6 +572,10 @@ pub fn project_selected(project: &str, filter: Option<&str>) -> bool {
 }
 
 /// Locate one issue by id across every project.
+///
+/// # Errors
+///
+/// Returns an error if a project file cannot be read or parsed.
 pub fn find_by_id(layout: &Layout, id: &str) -> Result<Option<(IssueHeading, PathBuf, String)>> {
     for project in list_projects(layout)? {
         let path = layout.project_issues_path(&project);
@@ -541,6 +590,10 @@ pub fn find_by_id(layout: &Layout, id: &str) -> Result<Option<(IssueHeading, Pat
 }
 
 /// Snapshot every heading across every project, tagged with its project.
+///
+/// # Errors
+///
+/// Returns an error if a project file cannot be read or parsed.
 pub fn load_all(layout: &Layout) -> Result<Vec<(String, IssueHeading)>> {
     let mut all = Vec::new();
     for project in list_projects(layout)? {
@@ -559,6 +612,10 @@ pub fn load_all(layout: &Layout) -> Result<Vec<(String, IssueHeading)>> {
 /// reachable, not hypothetical: `id_length = 2` is 1296 suffixes, so a
 /// project can outgrow it, and the answer is a longer id rather than a
 /// crash inside a write.
+///
+/// # Errors
+///
+/// Returns an error if every suffix of `length` is already taken.
 pub fn generate_id(project: &str, existing: &[String], length: usize) -> Result<String> {
     let len = length.max(2);
     let taken: std::collections::HashSet<&str> = existing.iter().map(String::as_str).collect();
@@ -630,6 +687,10 @@ pub fn detect_project_from_ctx(start: &Path) -> Option<String> {
 /// issue, so the whole scan usually answers a question already answered.
 ///
 /// Returns the ids among `wanted` that were found.
+///
+/// # Errors
+///
+/// Returns an error if an org file under the prefix cannot be read.
 pub fn find_org_ids(
     layout: &Layout,
     wanted: &std::collections::HashSet<String>,
@@ -669,6 +730,11 @@ pub fn find_org_ids(
     Ok(found)
 }
 
+/// Every `:ID:` value in any org file under the layout prefix.
+///
+/// # Errors
+///
+/// Returns an error if an org file under the prefix cannot be read.
 pub fn collect_org_ids(layout: &Layout) -> Result<std::collections::HashSet<String>> {
     let mut ids = std::collections::HashSet::new();
     let dir = layout.projects_dir();

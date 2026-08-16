@@ -21,6 +21,9 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// Build a layout from an explicit root and prefix.
+    ///
+    /// An empty prefix falls back to [`DEFAULT_PREFIX`].
     pub fn new(root: impl Into<PathBuf>, prefix: impl Into<String>) -> Self {
         let prefix = prefix.into();
         Self {
@@ -35,6 +38,11 @@ impl Layout {
 
     /// Resolve from explicit arguments, falling back to the environment, the
     /// on-disk `vissue.toml`, and finally the compiled defaults.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the current directory cannot be resolved, or if
+    /// `<root>/vissue.toml` exists but cannot be read or parsed.
     pub fn resolve(root: Option<&Path>, prefix: Option<&str>) -> Result<Self> {
         let root = match root {
             Some(p) => p.to_path_buf(),
@@ -57,10 +65,12 @@ impl Layout {
         Ok(Self::new(root, prefix))
     }
 
+    /// Tracker root: the directory that holds `vissue.toml` and `prefix`.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
+    /// Directory name under [`Self::root`] that holds one subdirectory per project.
     pub fn prefix(&self) -> &str {
         &self.prefix
     }
@@ -147,6 +157,7 @@ impl IssuesOverride {
 /// Effective configuration for one layout.
 #[derive(Debug, Clone, Default)]
 pub struct VissueConfig {
+    /// Knobs that shape newly created issues and hygiene thresholds.
     pub issues: IssuesSection,
 }
 
@@ -160,6 +171,11 @@ impl VissueConfig {
     /// `<root>/<prefix>/issues.config.toml` overrides `<root>/vissue.toml`,
     /// which overrides the compiled defaults. Neither file is required, and
     /// each layer overrides key by key rather than wholesale.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a configuration file exists but cannot be read or
+    /// parsed.
     pub fn load(layout: &Layout) -> Result<Self> {
         let mut issues = IssuesSection::default();
         RootConfig::load(layout.root())?

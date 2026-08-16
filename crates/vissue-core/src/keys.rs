@@ -9,32 +9,56 @@ use std::path::{Path, PathBuf};
 /// Dotted action id. HUD-shaped, remappable except reserved chords.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ActionId {
+    /// Move the list cursor down.
     ListDown,
+    /// Move the list cursor up.
     ListUp,
+    /// Open the selected issue.
     ListSelect,
+    /// Toggle done on the selected issue.
     ListDone,
+    /// Switch to the ready pane.
     PaneReady,
+    /// Switch to the full list pane.
     PaneList,
+    /// Switch to the claims pane.
     PaneClaims,
+    /// Switch to the agenda pane.
     PaneAgenda,
+    /// Switch to the search pane.
     PaneSearch,
+    /// Cycle to the next pane.
     PaneNext,
+    /// Cycle the detail card.
     DetailCycle,
+    /// Cycle the project filter.
     ProjectCycle,
+    /// Focus the board search box.
     Search,
+    /// Create an issue.
     Add,
+    /// Claim the selected issue.
     Claim,
+    /// Append a note to the selected issue.
     Note,
+    /// Cycle the selected issue's state.
     StateCycle,
+    /// Confirm marking the selected issue done.
     ConfirmDone,
+    /// Confirm cancelling the selected issue.
     ConfirmCancel,
+    /// Open the selected issue in an editor.
     Open,
+    /// Copy the selected issue id.
     CopyId,
+    /// Reload the board from disk.
     Reload,
+    /// Show the key help overlay.
     Help,
 }
 
 impl ActionId {
+    /// Stable dotted id used in `keys.toml` and help text.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ListDown => "list.down",
@@ -63,18 +87,23 @@ impl ActionId {
         }
     }
 
+    /// Parse a dotted id such as `list.down`. Unknown names yield `None`.
     pub fn parse(raw: &str) -> Option<Self> {
         ALL.iter().find(|a| a.as_str() == raw).copied()
     }
 }
 
+/// Where an action is bound: always, or only on the board.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
+    /// Available in every HUD context.
     Global,
+    /// Available while the issue board has focus.
     Board,
 }
 
 impl Scope {
+    /// Stable scope name used in the key table.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Global => "global",
@@ -112,9 +141,13 @@ const ALL: &[ActionId] = &[
 /// One catalog row. Defaults stay in this table.
 #[derive(Debug, Clone, Copy)]
 pub struct ActionRow {
+    /// Action this row describes.
     pub id: ActionId,
+    /// Context the default chord is bound in.
     pub scope: Scope,
+    /// Compiled-in chord token.
     pub default: &'static str,
+    /// Whether an overlay may rebind this action.
     pub remappable: bool,
 }
 
@@ -266,8 +299,11 @@ const RESERVED: &[&str] = &["esc", "enter", "tab", "?"];
 #[derive(Debug, Clone)]
 pub struct KeyMap {
     by_chord: BTreeMap<String, ActionId>,
+    /// Optional leader character from the overlay.
     pub leader: Option<char>,
+    /// How long a leader chord stays armed, in milliseconds.
     pub leader_timeout_ms: u64,
+    /// Why the overlay was refused, when defaults were kept instead.
     pub overlay_error: Option<String>,
 }
 
@@ -278,6 +314,7 @@ impl Default for KeyMap {
 }
 
 impl KeyMap {
+    /// Compiled-in chords, no overlay.
     pub fn from_defaults() -> Self {
         let mut by_chord = BTreeMap::new();
         for row in CATALOG {
@@ -291,6 +328,10 @@ impl KeyMap {
         }
     }
 
+    /// Load `$VISSUE_KEYS` or `~/.config/vissue/keys.toml` over the defaults.
+    ///
+    /// A missing file keeps the defaults. A broken overlay also keeps the
+    /// defaults and records the reason in [`Self::overlay_error`].
     pub fn load() -> Self {
         let path = overlay_path();
         match path {
@@ -306,10 +347,12 @@ impl KeyMap {
         }
     }
 
+    /// Action bound to `chord` in board scope, if any.
     pub fn get(&self, chord: &str) -> Option<ActionId> {
         self.by_chord.get(chord).copied()
     }
 
+    /// Help overlay rows: resolved chord, then the dotted action id.
     pub fn help_lines(&self) -> Vec<String> {
         CATALOG
             .iter()
@@ -325,6 +368,7 @@ impl KeyMap {
             .collect()
     }
 
+    /// Every bound chord and the dotted action id it maps to.
     pub fn occupancy(&self) -> Vec<(String, String)> {
         self.by_chord
             .iter()

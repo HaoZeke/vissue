@@ -14,6 +14,11 @@ use crate::store::{list_projects, load_all};
 use crate::views::ListQuery;
 
 /// Issue rows as JSON, filtered the same way [`report::list`] filters them.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, or the rows cannot be
+/// serialized.
 pub fn issues_json(
     layout: &Layout,
     project_filter: Option<&str>,
@@ -31,6 +36,11 @@ pub fn issues_json(
 }
 
 /// One issue as JSON, including its file and line range.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, `id` is not in it, or the
+/// detail cannot be serialized.
 pub fn show_json(layout: &Layout, id: &str) -> Result<Value> {
     let recs = load_recs(layout)?;
     let detail = CatalogService::from_recs(&recs).detail(id)?;
@@ -38,6 +48,12 @@ pub fn show_json(layout: &Layout, id: &str) -> Result<Value> {
 }
 
 /// Take an issue: move it to STARTED and stamp the claim.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, the issue is DONE or
+/// CANCELLED, another identity holds it and `force` is false, or the file
+/// cannot be rewritten.
 pub fn claim(layout: &Layout, id: &str, force: bool) -> Result<String> {
     let report = ops::claim(layout, id, force)?;
     let detail = report::show(layout, id)?;
@@ -45,6 +61,11 @@ pub fn claim(layout: &Layout, id: &str, force: bool) -> Result<String> {
 }
 
 /// The first lines of an issue's file range, capped and screened for secrets.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, or the heading's file
+/// cannot be read.
 pub fn body_excerpt(layout: &Layout, id: &str) -> Result<String> {
     let recs = load_recs(layout)?;
     let rec = recs
@@ -59,6 +80,11 @@ pub fn body_excerpt(layout: &Layout, id: &str) -> Result<String> {
 /// [`body_excerpt`] is a preview and truncates; this does not. It is what a
 /// caller wants when the issue is being handed to someone as the thing to
 /// work from, rather than glanced at.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, the heading's file cannot
+/// be read, or the heading looks like secret material.
 pub fn org_text(layout: &Layout, id: &str) -> Result<String> {
     let recs = load_recs(layout)?;
     let rec = recs
@@ -73,6 +99,10 @@ pub fn org_text(layout: &Layout, id: &str) -> Result<String> {
 }
 
 /// Issues waiting on this one.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn waiting_on(layout: &Layout, id: &str) -> Result<String> {
     report::backlinks(layout, id)
 }
@@ -81,6 +111,10 @@ pub fn waiting_on(layout: &Layout, id: &str) -> Result<String> {
 /// have gone stale, plus the corpus validation summary.
 ///
 /// `stale_days` overrides the configured threshold when given.
+///
+/// # Errors
+///
+/// Returns an error if the corpus or configuration cannot be read.
 pub fn hygiene(layout: &Layout, stale_days: Option<i64>) -> Result<String> {
     let mut out = String::new();
     writeln!(out, "=== vissue hygiene ===")?;

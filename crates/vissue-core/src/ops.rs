@@ -16,6 +16,12 @@ use crate::store::{
 /// Resolve the project to act on. An explicit name wins; otherwise walk up from
 /// the current directory for `.project-ctx.toml` and read `[project].name`.
 /// Neither available is an error, so nothing is ever guessed silently.
+///
+/// # Errors
+///
+/// Returns an error if `--project` is empty, no name can be resolved, the
+/// current directory cannot be read, or the name matches more than one
+/// project directory.
 pub fn resolve_project(layout: &Layout, explicit: Option<&str>) -> Result<String> {
     if let Some(p) = explicit {
         if p.is_empty() {
@@ -36,11 +42,17 @@ pub fn resolve_project(layout: &Layout, explicit: Option<&str>) -> Result<String
 /// Optional fields on a new issue.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CreateOpts<'a> {
+    /// Priority cookie; the configured default is used when `None`.
     pub priority: Option<char>,
+    /// `:TYPE:` property.
     pub issue_type: Option<&'a str>,
+    /// Deadline as an org timestamp.
     pub deadline: Option<&'a str>,
+    /// Scheduled date as an org timestamp.
     pub scheduled: Option<&'a str>,
+    /// Comma- or colon-separated tags.
     pub tags: Option<&'a str>,
+    /// `:PARENT:` id; must already exist somewhere under the prefix.
     pub parent: Option<&'a str>,
     /// Print only the new id.
     pub quiet: bool,
@@ -49,6 +61,12 @@ pub struct CreateOpts<'a> {
 }
 
 /// Append a new TODO issue to the project's file and return the status text.
+///
+/// # Errors
+///
+/// Returns an error if the priority is not `A`/`B`/`C`, a date does not parse,
+/// `parent` is not a known org id, the id space is exhausted, or the file
+/// cannot be locked or rewritten.
 pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>) -> Result<String> {
     let project = resolve_existing_project_case(layout, project)?;
     let cfg = VissueConfig::load(layout)?;
@@ -151,6 +169,11 @@ pub(crate) fn validate_org_date(s: &str) -> Result<()> {
 
 /// Change state, priority, or blocker edges. Adding a blocker to an open issue
 /// moves it to BLOCKED; clearing the last blocker moves it back to TODO.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, the state or priority is
+/// invalid, adding the blocker would cycle, or the file cannot be rewritten.
 pub fn update(
     layout: &Layout,
     id: &str,
@@ -172,6 +195,11 @@ pub fn update(
 }
 
 /// [`update`] with an explicit identity instead of [`crate::config::identity`].
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, the state or priority is
+/// invalid, adding the blocker would cycle, or the file cannot be rewritten.
 pub fn update_as(
     layout: &Layout,
     id: &str,
@@ -329,12 +357,24 @@ fn settle_claim(h: &mut IssueHeading, from: &str, to: &str, identity: &str) -> V
 ///
 /// A claim held by another identity is refused unless `force`, which records
 /// the takeover in the logbook rather than losing it.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, the issue is DONE or
+/// CANCELLED, another identity holds it and `force` is false, or the file
+/// cannot be rewritten.
 pub fn claim(layout: &Layout, id: &str, force: bool) -> Result<String> {
     let identity = crate::config::identity(layout);
     claim_as(layout, id, force, &identity)
 }
 
 /// [`claim`] with an explicit identity instead of [`crate::config::identity`].
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, the issue is DONE or
+/// CANCELLED, another identity holds it and `force` is false, or the file
+/// cannot be rewritten.
 pub fn claim_as(layout: &Layout, id: &str, force: bool, identity: &str) -> Result<String> {
     let (_h0, path, project) =
         find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
@@ -391,13 +431,20 @@ pub fn claim_as(layout: &Layout, id: &str, force: bool, identity: &str) -> Resul
 /// What an update changed, plus advice about issues left dangling by it.
 #[derive(Debug, Clone)]
 pub struct UpdateOutcome {
+    /// One-line change summary, or `{id}: no change`.
     pub report: String,
+    /// Issues that still list this one as a blocker after it closed.
     pub hints: Vec<String>,
 }
 
 /// Add a dated note to the top of an issue's logbook. State, claim, and
 /// properties stay untouched, so an agent can record progress without owning
 /// the issue.
+///
+/// # Errors
+///
+/// Returns an error if `text` is empty, `id` is not in the corpus, or the
+/// file cannot be rewritten.
 pub fn note(layout: &Layout, id: &str, text: &str) -> Result<String> {
     // One line in the drawer: fold internal whitespace, and swap double
     // quotes for singles so the rendered `- Note: "..."` line re-parses.
@@ -444,11 +491,21 @@ pub fn note(layout: &Layout, id: &str, text: &str) -> Result<String> {
 ///
 /// The text is kept as given. Lines that would end the issue are indented on
 /// the way out, so markdown is safe to append.
+///
+/// # Errors
+///
+/// Returns an error if `text` is empty, `id` is not in the corpus, or the
+/// file cannot be rewritten.
 pub fn append_body(layout: &Layout, id: &str, text: &str) -> Result<String> {
     append_body_as(layout, id, text, &crate::config::identity(layout))
 }
 
 /// [`append_body`] with the recorded identity passed in.
+///
+/// # Errors
+///
+/// Returns an error if `text` is empty, `id` is not in the corpus, or the
+/// file cannot be rewritten.
 pub fn append_body_as(layout: &Layout, id: &str, text: &str, identity: &str) -> Result<String> {
     let text = text.trim_end();
     if text.trim().is_empty() {
@@ -487,6 +544,12 @@ pub fn append_body_as(layout: &Layout, id: &str, text: &str, identity: &str) -> 
 /// text up to the next heading). The heading is then flipped to DONE and
 /// stamped with the assigned id in place, so a second run is a no-op:
 /// stamped headings are skipped, and folding is idempotent.
+///
+/// # Errors
+///
+/// Returns an error if the inbox cannot be read or written, `project` cannot
+/// be resolved, or creating a folded issue fails. Headings already stamped
+/// before a failure stay stamped.
 pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<String> {
     let project = resolve_existing_project_case(layout, project)?;
     let text = std::fs::read_to_string(inbox)
@@ -587,6 +650,11 @@ pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<S
 
 /// Move one issue's heading to another project's file. The id is not
 /// regenerated, so cross-project blocker edges keep resolving.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, `to_project` cannot be
+/// resolved, or either file cannot be locked or rewritten.
 pub fn refile(layout: &Layout, id: &str, to_project: &str) -> Result<String> {
     let to_project = resolve_existing_project_case(layout, to_project)?;
     let target_path = layout.project_issues_path(&to_project);

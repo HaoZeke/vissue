@@ -90,9 +90,13 @@ pub const CLAIMED_AT: &str = "CLAIMED_AT";
 /// One line of an issue's `:LOGBOOK:` drawer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LogEntry {
+    /// Inactive org timestamp on the line, or empty for a raw CLOCK row.
     pub timestamp: String,
+    /// Previous TODO keyword on a state flip.
     pub from_state: Option<String>,
+    /// New TODO keyword on a state flip.
     pub to_state: Option<String>,
+    /// Folded note text, when the line is a note rather than a state flip.
     pub note: Option<String>,
     /// Opaque logbook line (an org `CLOCK:` entry, say) preserved verbatim
     /// across rewrites.
@@ -101,6 +105,7 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
+    /// One logbook line, matching the Org drawer form this crate writes.
     pub fn render(&self) -> String {
         if let Some(raw) = &self.raw {
             return raw.clone();
@@ -191,22 +196,33 @@ pub(crate) fn parse_log_line(s: &str) -> LogEntry {
 /// logbook, and free-form body prose.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IssueHeading {
+    /// `:ID:` value, `<project>-<suffix>`.
     pub id: String,
+    /// Heading title, without a trailing tag run.
     pub title: String,
+    /// TODO keyword on the heading.
     pub state: String,
+    /// Priority cookie character (`A`, `B`, or `C`).
     pub priority: char,
+    /// Property drawer, including planning keys held in the map.
     pub properties: BTreeMap<String, String>,
     /// Tags written on the heading itself, which is where Org's own tag
     /// search and agenda look. Kept apart from the `:TAGS:` property so each
     /// round-trips as it was written; [`IssueHeading::tags`] reads both.
     #[serde(default)]
     pub org_tags: Vec<String>,
+    /// Drawer keys in on-disk order, so a rewrite leaves a hand-arranged
+    /// drawer alone.
     #[serde(skip_serializing)]
     pub property_order: Vec<String>,
+    /// Prose under the heading, without the property drawer or logbook.
     #[serde(skip_serializing)]
     pub body: String,
+    /// `:LOGBOOK:` lines, newest first.
     pub logbook: Vec<LogEntry>,
+    /// 1-based first line of this heading in the file.
     pub line_start: usize,
+    /// 1-based last line of this heading in the file.
     pub line_end: usize,
 }
 
@@ -246,14 +262,17 @@ impl IssueHeading {
         tags
     }
 
+    /// Deadline timestamp, when the heading carries one.
     pub fn deadline(&self) -> Option<&str> {
         self.properties.get("DEADLINE").map(|s| s.as_str())
     }
 
+    /// Scheduled timestamp, when the heading carries one.
     pub fn scheduled(&self) -> Option<&str> {
         self.properties.get("SCHEDULED").map(|s| s.as_str())
     }
 
+    /// `:PARENT:` id, when set.
     pub fn parent(&self) -> Option<&str> {
         self.properties.get("PARENT").map(|s| s.as_str())
     }
@@ -300,6 +319,7 @@ impl IssueHeading {
         Some((who, when))
     }
 
+    /// Heading, planning line, drawers, and body as they are written to disk.
     pub fn render(&self) -> String {
         let mut out = render_heading_line(&self.state, self.priority, &self.title, &self.org_tags);
         if let Some(planning) = self.render_planning_line() {

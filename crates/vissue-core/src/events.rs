@@ -82,9 +82,13 @@ pub struct Event {
     pub ts: u64,
     /// `issues_write`, `ping`, and so on.
     pub kind: String,
+    /// Project touched by the event, when the kind is project-scoped.
     pub project: Option<String>,
+    /// Issue id touched by the event, when the kind is issue-scoped.
     pub id: Option<String>,
+    /// Path of the file that changed, when one did.
     pub path: Option<String>,
+    /// Free-form extra text (a ping message, say).
     pub detail: Option<String>,
 }
 
@@ -96,10 +100,12 @@ pub fn enabled() -> bool {
     )
 }
 
+/// Path of the JSONL change log under `dir`.
 pub fn log_path(dir: &Path) -> PathBuf {
     dir.join(LOG_NAME)
 }
 
+/// Path of the generation counter file under `dir`.
 pub fn gen_path(dir: &Path) -> PathBuf {
     dir.join(GEN_NAME)
 }
@@ -148,6 +154,11 @@ pub fn generation_in(dir: &Path) -> u64 {
 }
 
 /// Append one event and return the new sequence.
+///
+/// # Errors
+///
+/// Returns an error if the event directory cannot be created, locked, or
+/// written.
 pub fn emit_in(
     dir: &Path,
     kind: &str,
@@ -206,6 +217,11 @@ pub fn emit_in(
 
 /// Record that a project's issues.org was rewritten. Called by the store after
 /// a successful write; failure here never fails the write.
+///
+/// # Errors
+///
+/// Returns an error if the event directory cannot be created, locked, or
+/// written.
 pub fn emit_issues_write(dir: &Path, project: &str, path: &Path) -> Result<u64> {
     emit_in(
         dir,
@@ -218,6 +234,10 @@ pub fn emit_issues_write(dir: &Path, project: &str, path: &Path) -> Result<u64> 
 }
 
 /// Events with a sequence above `since_seq`, most recent last.
+///
+/// # Errors
+///
+/// Returns an error if the log file exists but cannot be read.
 pub fn since_in(dir: &Path, since_seq: u64, limit: usize) -> Result<Vec<Event>> {
     let log = log_path(dir);
     if !log.is_file() {
@@ -246,6 +266,10 @@ pub fn since_in(dir: &Path, since_seq: u64, limit: usize) -> Result<Vec<Event>> 
 }
 
 /// As [`since_in`], narrowed to a project, a kind, or both.
+///
+/// # Errors
+///
+/// Returns an error if the log file exists but cannot be read.
 pub fn since_filtered_in(
     dir: &Path,
     since_seq: u64,
@@ -271,15 +295,25 @@ pub fn events_dir(layout: &Layout) -> PathBuf {
     layout.projects_dir()
 }
 
+/// The current generation for this layout's event directory.
 pub fn generation(layout: &Layout) -> u64 {
     generation_in(&events_dir(layout))
 }
 
+/// Events with a sequence above `since_seq` for this layout.
+///
+/// # Errors
+///
+/// Returns an error if the log file exists but cannot be read.
 pub fn since(layout: &Layout, since_seq: u64, limit: usize) -> Result<Vec<Event>> {
     since_in(&events_dir(layout), since_seq, limit)
 }
 
 /// Text plus a trailing JSON block, the shape existing readers parse.
+///
+/// # Errors
+///
+/// Returns an error if the log file exists but cannot be read.
 pub fn since_report(layout: &Layout, since_seq: u64, limit: usize) -> Result<String> {
     let dir = events_dir(layout);
     let events = since_in(&dir, since_seq, limit)?;
@@ -314,6 +348,11 @@ fn render_events(dir: &Path, since_seq: u64, events: Vec<Event>) -> String {
 }
 
 /// Append a manual event, waking pollers without touching an issues.org.
+///
+/// # Errors
+///
+/// Returns an error if the event directory cannot be created, locked, or
+/// written.
 pub fn ping_report(layout: &Layout, detail: Option<&str>) -> Result<String> {
     let dir = events_dir(layout);
     let seq = emit_in(
@@ -335,6 +374,11 @@ pub fn ping_report(layout: &Layout, detail: Option<&str>) -> Result<String> {
 /// Block until the generation passes `last`, or the timeout expires. Returns
 /// the generation either way; the caller compares it against `last` to tell
 /// which happened.
+///
+/// # Errors
+///
+/// The signature is `Result` to match the other event verbs. This path does
+/// not fail.
 pub fn wait_generation(layout: &Layout, last: u64, poll_ms: u64, timeout_ms: u64) -> Result<u64> {
     let dir = events_dir(layout);
     let start = std::time::Instant::now();
@@ -355,6 +399,10 @@ pub fn wait_generation(layout: &Layout, last: u64, poll_ms: u64, timeout_ms: u64
 /// Counted from the end of the log rather than back from the generation: a
 /// debounced burst advances the generation without appending, so a sequence
 /// window that wide can hold fewer lines than the caller asked for, or none.
+///
+/// # Errors
+///
+/// Returns an error if the log file exists but cannot be read.
 pub fn tail_in(dir: &Path, n: usize) -> Result<Vec<Event>> {
     let log = log_path(dir);
     if !log.is_file() {
@@ -373,6 +421,10 @@ pub fn tail_in(dir: &Path, n: usize) -> Result<Vec<Event>> {
 }
 
 /// The last `n` events, for a reader that only wants what is recent.
+///
+/// # Errors
+///
+/// Returns an error if the log file exists but cannot be read.
 pub fn tail_report(layout: &Layout, n: usize) -> Result<String> {
     let dir = events_dir(layout);
     let events = tail_in(&dir, n)?;
@@ -382,6 +434,10 @@ pub fn tail_report(layout: &Layout, n: usize) -> Result<String> {
 
 /// Add the event files to a `.gitignore` that already exists beside them. Best
 /// effort: a tracker without one is left alone.
+///
+/// # Errors
+///
+/// Returns an error if an existing `.gitignore` cannot be read or appended.
 pub fn ensure_gitignore_hint(dir: &Path) -> Result<()> {
     let gitignore = dir.join(".gitignore");
     if !gitignore.is_file() {

@@ -60,6 +60,10 @@ fn blocker_ids(h: &IssueHeading) -> impl Iterator<Item = &str> {
 }
 
 /// One row per issue: id, state, priority cookie, title.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn list(
     layout: &Layout,
     project_filter: Option<&str>,
@@ -107,6 +111,10 @@ pub(crate) fn claim_suffix(h: &IssueHeading) -> String {
 }
 
 /// Actionable issues: TODO or STARTED with no open blocker.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn ready(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     let recs = load_recs(layout)?;
     let rows = CatalogService::from_recs(&recs).ready(project_filter)?;
@@ -115,6 +123,10 @@ pub fn ready(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
 
 /// One issue's metadata and file range. The body stays in the file: an editor
 /// opens the range when the prose is wanted.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, or `id` is not in it.
 pub fn show(layout: &Layout, id: &str) -> Result<String> {
     let (h, path, project) =
         find_by_id(layout, id)?.ok_or_else(|| anyhow::anyhow!("issue {id} not found"))?;
@@ -169,6 +181,10 @@ pub fn show(layout: &Layout, id: &str) -> Result<String> {
 
 /// Case-insensitive substring scan over id, title, properties, and body. Linear
 /// in the corpus, which is the right cost until the issue count climbs.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn search(layout: &Layout, query: &str, limit: usize) -> Result<String> {
     let recs = load_recs(layout)?;
     let hits = CatalogService::from_recs(&recs).search(query, limit)?;
@@ -184,6 +200,10 @@ pub fn search(layout: &Layout, query: &str, limit: usize) -> Result<String> {
 }
 
 /// Issues whose `:PARENT:` points at `parent_id`.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn children(layout: &Layout, parent_id: &str) -> Result<String> {
     let mut rows: Vec<(String, IssueHeading)> = load_all(layout)?
         .into_iter()
@@ -208,6 +228,10 @@ pub fn children(layout: &Layout, parent_id: &str) -> Result<String> {
 
 /// Open issues whose `:CREATED:` is at least `days` old. An issue without a
 /// parseable date is never stale, because its age is unknown.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn stale(layout: &Layout, days: i64, project_filter: Option<&str>) -> Result<String> {
     let today = Local::now().date_naive();
     let cutoff = today - chrono::Duration::days(days);
@@ -245,6 +269,11 @@ pub fn stale(layout: &Layout, days: i64, project_filter: Option<&str>) -> Result
 /// Every live claim, oldest first: the who-holds-what view. A claim is live
 /// while its issue is STARTED or BLOCKED (release happens on TODO, DONE, or
 /// CANCELLED), so this is the working set, not history.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, or JSON serialization fails
+/// when `json` is set.
 pub fn claims(
     layout: &Layout,
     holder_filter: Option<&str>,
@@ -286,6 +315,10 @@ pub fn claims(
 /// Dated open work in the next `days` days, plus anything already overdue.
 /// One line per (issue, date kind): deadlines first within a day, soonest day
 /// first, overdue on top with a negative day count.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn agenda(layout: &Layout, days: i64, project_filter: Option<&str>) -> Result<String> {
     let today = Local::now().date_naive();
     let horizon = today + chrono::Duration::days(days);
@@ -339,6 +372,10 @@ pub(crate) fn parse_org_date(s: &str) -> Option<NaiveDate> {
 }
 
 /// The matching issue count and nothing else, for shell pipelines.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn count(
     layout: &Layout,
     project_filter: Option<&str>,
@@ -381,6 +418,10 @@ pub fn count(
 
 /// One JSON object per line: every property, the logbook, the body, and the
 /// file line range. Round-trippable, and the seam other tools consume.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn export(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     let mut out = String::new();
     for (project, h) in load_all(layout)? {
@@ -400,6 +441,10 @@ pub fn export(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
 /// them. The rows are built by the same function, so a project's text here
 /// is byte for byte what `export(layout, Some(project))` returns, and the
 /// digests taken from it do not move.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn export_by_project(layout: &Layout) -> Result<BTreeMap<String, String>> {
     let mut out: BTreeMap<String, String> = BTreeMap::new();
     for (project, h) in load_all(layout)? {
@@ -443,14 +488,19 @@ fn export_row(project: &str, h: IssueHeading) -> serde_json::Value {
 }
 
 /// Children and blockers below `root_id`, as indented text or Graphviz DOT.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, `root_id` is not in it, or
+/// `format` is not `ascii`, `text`, or `dot`.
 pub fn tree(layout: &Layout, root_id: &str, format: &str) -> Result<String> {
     let all = load_all(layout)?;
     let graph = GraphIndex::new(&all);
-    if !graph.by_id.contains_key(root_id) {
+    let Some(root_heading) = graph.by_id.get(root_id) else {
         bail!("issue {root_id} not found");
-    }
+    };
     let mut out = String::new();
-    let root = graph.by_id.get(root_id).unwrap().id.as_str();
+    let root = root_heading.id.as_str();
     match format {
         "ascii" | "text" => tree_ascii(&graph, root, 0, &mut HashSet::new(), &mut out),
         "dot" => tree_dot(&graph, root, &mut out),
@@ -555,6 +605,10 @@ fn tree_dot<'a>(graph: &GraphIndex<'a>, root_id: &str, out: &mut String) {
 }
 
 /// Cycles in the blocker graph, one per line, or a line saying there are none.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn cycles(layout: &Layout) -> Result<String> {
     let all = load_all(layout)?;
     let graph = GraphIndex::new(&all);
@@ -629,6 +683,11 @@ pub fn cycles(layout: &Layout) -> Result<String> {
 }
 
 /// Transitive blocker ancestors, limited to a bounded number of hops.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, the blocker graph cannot be
+/// built, or `id` is not in it.
 pub fn ancestors(layout: &Layout, id: &str, depth: usize) -> Result<String> {
     let graph = DependencyGraph::from_issues(&load_all(layout)?)?;
     let mut out = String::new();
@@ -639,6 +698,11 @@ pub fn ancestors(layout: &Layout, id: &str, depth: usize) -> Result<String> {
 }
 
 /// Transitive issues waiting on this issue, limited to a bounded number of hops.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, the blocker graph cannot be
+/// built, or `id` is not in it.
 pub fn impact(layout: &Layout, id: &str, depth: usize) -> Result<String> {
     let graph = DependencyGraph::from_issues(&load_all(layout)?)?;
     let mut out = String::new();
@@ -649,6 +713,10 @@ pub fn impact(layout: &Layout, id: &str, depth: usize) -> Result<String> {
 }
 
 /// The whole blocker and parent graph as Graphviz DOT. Node fill encodes state.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn graph(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     let all = load_all(layout)?;
     let graph = GraphIndex::new(&all);
@@ -707,6 +775,10 @@ pub fn graph(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
 
 /// A markdown roadmap grouped by project and state. Closed items collapse into
 /// one section so the document stays about live work.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn roadmap(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     let all = load_all(layout)?;
     let mut by_project: BTreeMap<String, Vec<&IssueHeading>> = BTreeMap::new();
@@ -797,13 +869,20 @@ pub fn roadmap(layout: &Layout, project_filter: Option<&str>) -> Result<String> 
 /// Outcome of [`check`]: the findings, and how many were errors.
 #[derive(Debug, Clone)]
 pub struct CheckReport {
+    /// Rendered findings, ending in a summary line.
     pub text: String,
+    /// Count of `[err]` findings.
     pub errors: usize,
+    /// Count of `[warn]` findings.
     pub warnings: usize,
 }
 
 /// Validate the corpus: every parent and blocker id resolves, dates parse, open
 /// issues carry a creation date, and ids are unique across projects.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn check(layout: &Layout) -> Result<CheckReport> {
     let all = load_all(layout)?;
 
@@ -949,6 +1028,10 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
 
 /// Every issue referring to `target_id` through a blocker edge, a parent link,
 /// a discovered-from link, or a body mention. The relation is named on the row.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn backlinks(layout: &Layout, target_id: &str) -> Result<String> {
     let all = load_all(layout)?;
     let mut out = String::new();

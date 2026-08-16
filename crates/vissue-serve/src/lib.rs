@@ -8,10 +8,14 @@ use std::path::PathBuf;
 use serde::Serialize;
 use vissue_core::config::Layout;
 
+pub mod error;
+
 #[cfg(not(unix))]
 mod stub;
 #[cfg(unix)]
 mod unix;
+
+pub use error::{Error, Result};
 
 #[cfg(not(unix))]
 pub use stub::{ensure_serve, invoke, socket_accepts};

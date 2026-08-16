@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::Result;
+use crate::error::Result;
 use vissue_core::catalog::load_recs;
 use vissue_core::config::Layout;
 use vissue_core::events;

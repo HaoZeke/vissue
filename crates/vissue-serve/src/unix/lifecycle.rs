@@ -9,7 +9,9 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, bail};
+
+use crate::error::Result;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use serde_json::json;

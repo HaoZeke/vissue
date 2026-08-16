@@ -7,7 +7,7 @@ mod lifecycle;
 mod owner;
 mod watcher;
 
-use anyhow::Result;
+use crate::error::Result;
 
 use crate::{Action, ServeConfig};
 

@@ -53,6 +53,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
+#[cfg(unix)]
 impl From<notify::Error> for Error {
     fn from(err: notify::Error) -> Self {
         Error::Other(err.into())

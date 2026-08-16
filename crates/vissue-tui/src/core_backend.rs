@@ -181,11 +181,11 @@ impl BoardBackend for CoreBackend {
     }
 
     fn wait(&self, last: u64, timeout_ms: u64) -> Result<u64, Error> {
-        let gen = events::wait_generation(&self.layout, last, 200, timeout_ms)?;
-        if gen > last {
+        let generation = events::wait_generation(&self.layout, last, 200, timeout_ms)?;
+        if generation > last {
             self.reload()?;
         }
-        Ok(gen)
+        Ok(generation)
     }
 
     fn refresh(&self) -> Result<(), Error> {

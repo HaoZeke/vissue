@@ -79,12 +79,12 @@ pub async fn run(state: Arc<OwnerState>) -> Result<()> {
                 }
             }
             _ = poll.tick() => {
-                let gen = events::generation(&state.layout);
+                let generation = events::generation(&state.layout);
                 let mtimes = collect_mtimes(&state.layout);
                 let mut dirty = HashSet::new();
                 let mut full = false;
-                if gen != last_gen {
-                    last_gen = gen;
+                if generation != last_gen {
+                    last_gen = generation;
                     full = true;
                 }
                 if mtimes != last_mtimes {

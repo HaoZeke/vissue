@@ -351,8 +351,8 @@ fn read_methods_over_the_fixture() {
         .request("issue/show", json!({"id": "atlas-2c3d"}))
         .unwrap();
     assert_eq!(show["id"], "atlas-2c3d");
-    let gen = client.request("events/gen", json!({})).unwrap();
-    assert!(gen["revision"].as_u64().unwrap() >= 1);
+    let generation = client.request("events/gen", json!({})).unwrap();
+    assert!(generation["revision"].as_u64().unwrap() >= 1);
 }
 
 #[test]

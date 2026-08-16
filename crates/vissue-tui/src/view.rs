@@ -177,9 +177,13 @@ pub fn render_plain(
     height: u16,
 ) -> Result<String, vissue_core::error::Error> {
     let backend = TestBackend::new(width, height);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.draw(|f| draw(f, app))?;
+    let mut terminal = Terminal::new(backend).map_err(io_to_core)?;
+    terminal.draw(|f| draw(f, app)).map_err(io_to_core)?;
     Ok(buffer_plain(terminal.backend()))
+}
+
+fn io_to_core<E: std::fmt::Display>(err: E) -> vissue_core::error::Error {
+    vissue_core::error::Error::Other(anyhow::anyhow!("{err}"))
 }
 
 /// Flatten a test buffer to trimmed lines joined by `\n`.

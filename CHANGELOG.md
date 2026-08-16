@@ -6,6 +6,15 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.4.1](https://github.com/HaoZeke/vissue/releases/tag/v0.4.1) - 2026-08-16
+
+### Fixed
+
+- `vissue-serve` compiles on Windows again. The `notify` crate is a
+  Unix-only dependency; converting `notify::Error` is now gated the
+  same way.
+
+
 ## [0.4.0](https://github.com/HaoZeke/vissue/releases/tag/v0.4.0) - 2026-08-16
 
 ### Changed

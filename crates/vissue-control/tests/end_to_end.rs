@@ -93,7 +93,8 @@ fn serve(listener: UnixListener, count: usize) {
                     .and_then(|p| p.get("id"))
                     .and_then(Value::as_str)
                     .unwrap_or("");
-                match service.detail(id) {
+                let looked_up = service.detail(id);
+                match looked_up {
                     // The real server flattens the detail into the result, so
                     // a stand-in that nests it would let a client pass here
                     // and fail against `vissue serve`.
@@ -229,8 +230,11 @@ fn an_unknown_method_comes_back_as_method_not_found() {
     drop(client);
     // Drain the remaining accepts so the server thread finishes.
     for _ in 0..3 {
-        if let Ok(mut c) = Client::connect(&path) {
-            let _ = c.request(Method::IssueList.as_str(), json!({}));
+        match Client::connect(&path) {
+            Ok(mut c) => {
+                let _ = c.request(Method::IssueList.as_str(), json!({}));
+            }
+            Err(_) => {}
         }
     }
     handle.join().expect("server thread");

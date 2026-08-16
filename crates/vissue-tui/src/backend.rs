@@ -80,7 +80,7 @@ impl SinceGate {
 
 /// Read and mutate the board. Implementations are `CoreBackend` and
 /// `ControlBackend`.
-pub trait BoardBackend: Send + Sync {
+pub trait BoardBackend: Send + Sync + std::fmt::Debug {
     fn layout(&self) -> &Layout;
     fn generation(&self) -> u64;
     fn revision(&self) -> u64;

@@ -1,5 +1,7 @@
 //! `vissue-mcp`: a Model Context Protocol server over vissue-core.
 
+#![allow(missing_debug_implementations)]
+
 use rmcp::ServiceExt;
 
 mod server;

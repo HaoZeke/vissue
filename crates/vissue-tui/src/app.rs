@@ -26,6 +26,7 @@ pub struct BoardRow {
 }
 
 /// Interactive board. Talks only to [`BoardBackend`].
+#[derive(Debug)]
 pub struct App {
     backend: Box<dyn BoardBackend>,
     agent: String,
@@ -651,6 +652,7 @@ fn format_related(hits: &[vissue_core::views::RelatedHit]) -> String {
 }
 
 /// Options for the interactive `vissue tui` entry point.
+#[derive(Debug)]
 pub struct RunOpts {
     pub layout: Layout,
     pub socket: PathBuf,

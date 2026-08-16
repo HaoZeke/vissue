@@ -10,13 +10,14 @@ use vissue_control::rpc::{JsonRpcRequest, Notification};
 
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(2);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Sink {
     id: u64,
     writer: Arc<Mutex<UnixStream>>,
     framing: Framing,
 }
 
+#[derive(Debug)]
 pub struct Bus {
     next_id: Mutex<u64>,
     sinks: Mutex<Vec<Sink>>,

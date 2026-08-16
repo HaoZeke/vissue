@@ -88,6 +88,7 @@ fn offline_never_touches_the_socket() {
 }
 
 /// Records `since_revision` the way `ControlBackend` does after initialize.
+#[derive(Debug)]
 struct RecordingBackend {
     gate: SinceGate,
     last: Mutex<Option<Option<u64>>>,

@@ -21,6 +21,7 @@ pub type EnsureFn = fn(&ServeConfig) -> Result<vissue_serve::EnsureResult, Strin
 pub type ConnectFn = fn(&Path, &Layout, &str) -> Result<Box<dyn BoardBackend>, AttachFail>;
 
 /// Hooks so `--offline` can be tested with a connector that panics.
+#[derive(Debug)]
 pub struct AttachHooks {
     pub probe: ProbeFn,
     pub ensure: EnsureFn,
@@ -81,6 +82,7 @@ fn default_connect(
 
 /// Result of the post-paint attach attempt. First paint always used
 /// [`CoreBackend`] already.
+#[derive(Debug)]
 pub enum AttachOutcome {
     Stay {
         status: ServeStatus,

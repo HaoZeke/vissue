@@ -23,6 +23,19 @@ pub struct Client {
     on_notification: Option<Box<dyn FnMut(Notification) + Send>>,
 }
 
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("framing", &self.framing)
+            .field("next_id", &self.next_id)
+            .field(
+                "on_notification",
+                &self.on_notification.as_ref().map(|_| "set"),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
 impl Client {
     /// Connect to `path`. Uses JSONL framing.
     pub fn connect(path: impl AsRef<Path>) -> Result<Self, Error> {

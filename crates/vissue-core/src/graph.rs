@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::model::IssueHeading;
 
 /// A blocker edge points from the prerequisite to the issue waiting on it.
+#[derive(Debug)]
 pub struct DependencyGraph {
     dag: Dag<String, ()>,
     ids: HashMap<String, NodeIndex>,

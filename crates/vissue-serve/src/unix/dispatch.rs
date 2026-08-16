@@ -24,6 +24,7 @@ use super::catalog::{INITIAL_REVISION, load_project_recs};
 use super::owner::{OwnerState, Session};
 use crate::LIVE_CAPABILITIES;
 
+#[derive(Debug)]
 pub struct DispatchOut {
     pub response: Option<JsonRpcResponse>,
     pub after: Vec<Notification>,

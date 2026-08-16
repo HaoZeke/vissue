@@ -58,6 +58,14 @@ pub struct OwnerHandle {
     pub socket: PathBuf,
 }
 
+impl std::fmt::Debug for OwnerHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OwnerHandle")
+            .field("socket", &self.socket)
+            .finish_non_exhaustive()
+    }
+}
+
 impl OwnerHandle {
     pub fn spawn(cfg: ServeConfig) -> Result<Self> {
         use super::lifecycle::wait_until_accepts;

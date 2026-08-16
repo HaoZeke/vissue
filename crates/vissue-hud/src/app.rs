@@ -19,7 +19,7 @@ const HUD_W: f32 = 960.0;
 const HUD_H: f32 = 760.0;
 
 /// First-paint inputs for the board.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BootOpts {
     pub layout: Layout,
     pub socket: PathBuf,
@@ -55,6 +55,7 @@ pub enum Message {
 }
 
 /// iced application state.
+#[derive(Debug)]
 pub struct HudApp {
     pub palette: Palette,
     window_id: Option<window::Id>,

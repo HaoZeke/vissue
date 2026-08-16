@@ -22,6 +22,7 @@ use vissue_core::views::{
 use crate::backend::{BackendKind, BoardBackend, ListPage, MutResult, SinceGate, UpdateReq};
 
 /// JSON-RPC client after a matching `initialize`.
+#[derive(Debug)]
 pub struct ControlBackend {
     layout: Layout,
     identity: String,

@@ -38,6 +38,7 @@ pub fn load_recs(layout: &Layout) -> anyhow::Result<Vec<IssueRec>> {
 }
 
 /// Read-only queries over a cached `&[IssueRec]`.
+#[derive(Debug)]
 pub struct CatalogService<'a> {
     issues: &'a [IssueRec],
 }

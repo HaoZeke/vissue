@@ -71,6 +71,7 @@ impl From<std::io::Error> for SummonError {
 }
 
 /// Holds the listener thread and bound path for process lifetime.
+#[derive(Debug)]
 pub struct SummonServer {
     path: PathBuf,
     #[allow(dead_code)]

@@ -16,6 +16,7 @@ use vissue_core::views::{
 use crate::backend::{BackendKind, BoardBackend, ListPage, MutResult, UpdateReq};
 
 /// One-shot parse of the tracker, refreshed after mutations and `wait`.
+#[derive(Debug)]
 pub struct CoreBackend {
     layout: Layout,
     identity: String,

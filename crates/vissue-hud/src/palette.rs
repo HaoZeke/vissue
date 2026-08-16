@@ -289,6 +289,19 @@ pub struct Palette {
     project_sel: usize,
 }
 
+impl std::fmt::Debug for Palette {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Palette")
+            .field("agent", &self.agent)
+            .field("status", &self.status)
+            .field("visible", &self.visible)
+            .field("filter", &self.filter)
+            .field("focus", &self.focus)
+            .field("selected", &self.selected)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Close or cancel confirmation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmKind {
@@ -1416,6 +1429,7 @@ fn body_preview(body: &str, lines: usize) -> String {
 }
 
 /// One project group in the current filter.
+#[derive(Debug)]
 pub struct ProjectSection<'a> {
     pub project: &'a str,
     pub start: usize,

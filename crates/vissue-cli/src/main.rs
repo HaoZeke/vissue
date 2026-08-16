@@ -1,5 +1,7 @@
 //! `vissue`: plain-text issue tracking over per-project orgmode files.
 
+#![allow(missing_debug_implementations)]
+
 use anyhow::{Context, Result, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use std::io::{Read, Write};

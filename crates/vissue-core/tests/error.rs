@@ -4,6 +4,8 @@
 //! Both are checked here, because a caller that has to parse the text is the
 //! thing the enum exists to prevent.
 
+#![allow(missing_docs)]
+
 use std::error::Error as _;
 
 use vissue_core::error::Error;

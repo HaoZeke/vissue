@@ -6,6 +6,8 @@
 //! layer, so a version bump that changed any of them would leave those tests
 //! green and every client unable to connect.
 
+#![allow(missing_docs)]
+
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};

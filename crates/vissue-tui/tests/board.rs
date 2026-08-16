@@ -1,5 +1,7 @@
 //! Scripted keys and a first-paint snapshot on a tempfile vault.
 
+#![allow(missing_docs)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

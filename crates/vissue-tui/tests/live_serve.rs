@@ -15,6 +15,8 @@
 
 #![cfg(unix)]
 
+#![allow(missing_docs)]
+
 use std::path::Path;
 use std::time::Duration;
 

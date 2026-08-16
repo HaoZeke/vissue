@@ -4,6 +4,8 @@
 //! so a case can state exactly the corpus it needs: a claim held by someone,
 //! a deadline that is already overdue, a blocker that names nothing.
 
+#![allow(missing_docs)]
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 

@@ -9,6 +9,8 @@
 //! way `vissue-hud` itself does, so it keeps working across changes to how
 //! the module is laid out inside.
 
+#![allow(missing_docs)]
+
 use vissue_core::config::{DEFAULT_PREFIX, Layout};
 use vissue_core::ops::{self, CreateOpts};
 use vissue_hud::palette::{BoardFilter, ConfirmKind, DetailTab, Focus, Palette, PaletteKey};

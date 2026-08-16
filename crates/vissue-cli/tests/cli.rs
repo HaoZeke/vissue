@@ -1,5 +1,7 @@
 //! Command-line behaviour, exercised through the built binary.
 
+#![allow(missing_docs)]
+
 use std::fs;
 use std::path::Path;
 use std::process::Command;

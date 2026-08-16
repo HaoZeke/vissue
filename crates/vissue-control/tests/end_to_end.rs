@@ -11,6 +11,8 @@
 
 #![cfg(unix)]
 
+#![allow(missing_docs)]
+
 use std::collections::BTreeMap;
 use std::io::{BufReader, BufWriter};
 use std::os::unix::net::UnixListener;

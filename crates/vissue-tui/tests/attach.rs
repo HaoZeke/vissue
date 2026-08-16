@@ -1,5 +1,7 @@
 //! Attach story: `--offline` never connects; first list after init drops since.
 
+#![allow(missing_docs)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};

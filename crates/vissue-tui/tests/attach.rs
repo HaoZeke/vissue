@@ -138,34 +138,34 @@ impl BoardBackend for RecordingBackend {
         })
     }
     fn get(&self, _id: &str) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::get is unused in this test")
     }
     fn excerpt(&self, _id: &str) -> Result<vissue_core::views::Excerpt, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::excerpt is unused in this test")
     }
     fn search(
         &self,
         _q: &str,
         _n: usize,
     ) -> Result<Vec<vissue_core::views::SearchHit>, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::search is unused in this test")
     }
     fn claims(
         &self,
         _h: Option<&str>,
         _p: Option<&str>,
     ) -> Result<Vec<vissue_core::views::ClaimRow>, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::claims is unused in this test")
     }
     fn agenda(
         &self,
         _d: i64,
         _p: Option<&str>,
     ) -> Result<Vec<vissue_core::views::AgendaRow>, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::agenda is unused in this test")
     }
     fn tree(&self, _id: &str) -> Result<vissue_core::views::TreeNode, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::tree is unused in this test")
     }
     fn related(
         &self,
@@ -173,25 +173,25 @@ impl BoardBackend for RecordingBackend {
         _d: usize,
         _n: usize,
     ) -> Result<Vec<vissue_core::views::RelatedHit>, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::related is unused in this test")
     }
     fn projects(&self) -> Result<Vec<String>, vissue_core::error::Error> {
         Ok(vec![])
     }
     fn claim(&self, _id: &str, _f: bool) -> Result<MutResult, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::claim is unused in this test")
     }
     fn note(&self, _id: &str, _t: &str) -> Result<MutResult, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::note is unused in this test")
     }
     fn update(&self, _r: UpdateReq) -> Result<MutResult, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::update is unused in this test")
     }
     fn open(
         &self,
         _id: &str,
     ) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
-        unimplemented!()
+        panic!("RecordingBackend::open is unused in this test")
     }
     fn wait(&self, last: u64, _ms: u64) -> Result<u64, vissue_core::error::Error> {
         Ok(last)

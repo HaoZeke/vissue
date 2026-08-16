@@ -360,9 +360,7 @@ fn takeover_or_fail(socket: &Path) -> Result<()> {
         return Ok(());
     }
     match StdUnixStream::connect(socket) {
-        Ok(_) => {
-            return Err(anyhow!("control socket already in use: {}", socket.display()).into());
-        }
+        Ok(_) => Err(anyhow!("control socket already in use: {}", socket.display()).into()),
         Err(err)
             if err.kind() == io::ErrorKind::ConnectionRefused
                 || err.kind() == io::ErrorKind::NotFound =>
@@ -371,13 +369,11 @@ fn takeover_or_fail(socket: &Path) -> Result<()> {
                 .with_context(|| format!("unlink stale socket {}", socket.display()))?;
             Ok(())
         }
-        Err(err) => {
-            return Err(anyhow!(
-                "control socket already in use: {} ({err})",
-                socket.display()
-            )
-            .into());
-        }
+        Err(err) => Err(anyhow!(
+            "control socket already in use: {} ({err})",
+            socket.display()
+        )
+        .into()),
     }
 }
 

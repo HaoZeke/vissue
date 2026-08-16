@@ -1,6 +1,12 @@
 //! `vissue`: plain-text issue tracking over per-project orgmode files.
 
-#![allow(missing_debug_implementations)]
+#![allow(
+    missing_debug_implementations,
+    missing_docs,
+    rustdoc::missing_crate_level_docs,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};

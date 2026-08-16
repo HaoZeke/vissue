@@ -1,6 +1,12 @@
 //! `vissue-mcp`: a Model Context Protocol server over vissue-core.
 
-#![allow(missing_debug_implementations)]
+#![allow(
+    missing_debug_implementations,
+    missing_docs,
+    rustdoc::missing_crate_level_docs,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
 
 use rmcp::ServiceExt;
 

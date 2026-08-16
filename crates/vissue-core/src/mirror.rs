@@ -41,9 +41,7 @@ impl Format {
         match s {
             "org" => Ok(Format::Org),
             "markdown" | "md" => Ok(Format::Markdown),
-            other => {
-                return Err(anyhow!("unknown format {other:?}; allowed: org, markdown").into());
-            }
+            other => Err(anyhow!("unknown format {other:?}; allowed: org, markdown").into()),
         }
     }
 }

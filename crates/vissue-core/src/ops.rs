@@ -1,6 +1,6 @@
 //! Mutating verbs: create, update, and move issues between projects.
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, anyhow};
 
 use crate::error::Result;
 use chrono::NaiveDate;
@@ -391,8 +391,7 @@ pub fn claim_as(layout: &Layout, id: &str, force: bool, identity: &str) -> Resul
             return Err(Error::InvalidState {
                 id: id.to_string(),
                 state: h.state.clone(),
-            }
-            .into());
+            });
         }
         if let Some(holder) = h.claimed_by() {
             if holder != identity && !force {
@@ -400,8 +399,7 @@ pub fn claim_as(layout: &Layout, id: &str, force: bool, identity: &str) -> Resul
                     id: id.to_string(),
                     holder: holder.to_string(),
                     claimed_at: h.claimed_at().map(str::to_string),
-                }
-                .into());
+                });
             }
             if holder != identity {
                 let previous = holder.to_string();

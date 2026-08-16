@@ -1,6 +1,6 @@
 //! In-memory dependency graph for validation and bounded multi-hop queries.
 
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 
 use crate::error::Result;
 use daggy::{Dag, NodeIndex};

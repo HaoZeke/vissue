@@ -790,7 +790,7 @@ fn walk_from(
     kind: WalkKind,
 ) -> Result<Vec<WalkHit>> {
     let graph =
-        DependencyGraph::from_headings(issues.iter().map(|r| &r.heading)).map_err(Error::from)?;
+        DependencyGraph::from_headings(issues.iter().map(|r| &r.heading))?;
     let walked = match kind {
         WalkKind::Ancestors => graph.ancestors(id, depth)?,
         WalkKind::Impact => graph.descendants(id, depth)?,

@@ -10,18 +10,26 @@ pub const MAX_HEADER_LINES: usize = 32;
 /// How the peer framed the last message. Replies use the same style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Framing {
+    /// One JSON body plus a single trailing newline.
     Jsonl,
+    /// LSP-style `Content-Length` headers, then the body bytes.
     Headers,
 }
 
 /// A framing read that cannot produce a body.
 #[derive(Debug)]
 pub enum FrameError {
+    /// Underlying reader or writer failed.
     Io(io::Error),
+    /// Header block exceeded [`MAX_HEADER_LINES`].
     TooManyHeaders,
+    /// Header block ended without a `Content-Length`.
     MissingContentLength,
+    /// `Content-Length` is not a decimal usize.
     InvalidContentLength,
+    /// Body is larger than [`MAX_MESSAGE_BYTES`].
     MessageTooLarge,
+    /// Stream ended before a complete frame.
     Incomplete,
 }
 
@@ -87,6 +95,11 @@ pub fn classify_first_line(line: &[u8]) -> Framing {
 }
 
 /// Write `payload` using `framing`. Does not append a second newline to JSON.
+///
+/// # Errors
+///
+/// Returns an error when `payload` exceeds [`MAX_MESSAGE_BYTES`] or the writer
+/// fails.
 pub fn write_message<W: Write>(writer: &mut W, payload: &[u8], framing: Framing) -> io::Result<()> {
     if payload.len() > MAX_MESSAGE_BYTES {
         return Err(io::Error::new(
@@ -112,6 +125,12 @@ pub fn write_message<W: Write>(writer: &mut W, payload: &[u8], framing: Framing)
 ///
 /// The cap is the body size: a JSONL payload of [`MAX_MESSAGE_BYTES`] plus its
 /// terminating newline (or CRLF) is accepted. That matches [`write_message`].
+///
+/// # Errors
+///
+/// Returns an error when the stream ends mid-frame, the header block is too
+/// long or lacks a valid `Content-Length`, the body exceeds
+/// [`MAX_MESSAGE_BYTES`], or the reader fails.
 pub fn read_message<R: BufRead>(reader: &mut R) -> Result<(Vec<u8>, Framing), FrameError> {
     let first = read_line_limited(reader, MAX_MESSAGE_BYTES + 2)?;
     if is_header_line(&first) {

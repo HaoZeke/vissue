@@ -9,32 +9,50 @@ use vissue_core::views::{
     AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRow, RelatedHit, SearchHit, TreeNode, WalkHit,
 };
 
+/// One entry in the on-disk change log.
 pub use vissue_core::events::Event;
 
 /// Protocol version accepted by `initialize`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// JSON-RPC parse error (`-32700`).
 pub const PARSE_ERROR: i32 = -32700;
+/// JSON-RPC invalid request (`-32600`).
 pub const INVALID_REQUEST: i32 = -32600;
+/// JSON-RPC method not found (`-32601`).
 pub const METHOD_NOT_FOUND: i32 = -32601;
+/// JSON-RPC invalid params (`-32602`).
 pub const INVALID_PARAMS: i32 = -32602;
+/// JSON-RPC internal error (`-32603`).
 pub const INTERNAL_ERROR: i32 = -32603;
+/// Issue not found (`-32004`).
 pub const NOT_FOUND: i32 = -32004;
+/// Claim conflict (`-32009`).
 pub const CONFLICT: i32 = -32009;
+/// Closed issue or invalid state (`-32010`).
 pub const INVALID_STATE: i32 = -32010;
+/// Blocker cycle (`-32022`).
 pub const CYCLE: i32 = -32022;
 
+/// Catalog rebuilt. Params: [`VaultChanged`].
 pub const NOTIFY_VAULT_CHANGED: &str = "vault/changed";
+/// Shared selection. Params: [`IssueSelected`].
 pub const NOTIFY_ISSUE_SELECTED: &str = "issue/selected";
+/// Owner is exiting. Params: `{}`.
 pub const NOTIFY_SHUTTING_DOWN: &str = "serve/shutting_down";
 
 /// Wire-level failure for a control client or dispatcher.
 #[derive(Debug)]
 pub enum Error {
+    /// Socket or file I/O.
     Io(std::io::Error),
+    /// JSON encode or decode.
     Json(serde_json::Error),
+    /// Frame read or write.
     Frame(FrameError),
+    /// Server JSON-RPC error object.
     Rpc(JsonRpcError),
+    /// Method or platform the client cannot handle.
     Unsupported(&'static str),
 }
 
@@ -89,23 +107,31 @@ impl From<JsonRpcError> for Error {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum JsonRpcId {
+    /// Numeric id.
     Number(i64),
+    /// String id.
     String(String),
+    /// JSON `null`. A response, never a notification.
     Null,
 }
 
 /// JSON-RPC 2.0 request or notification envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
+    /// Always `"2.0"`.
     pub jsonrpc: String,
+    /// Present on a call; absent on a notification.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<JsonRpcId>,
+    /// Method name.
     pub method: String,
+    /// Params object, or omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<Value>,
 }
 
 impl JsonRpcRequest {
+    /// Request with `id`.
     pub fn call(id: JsonRpcId, method: impl Into<String>, params: Value) -> Self {
         Self {
             jsonrpc: "2.0".into(),
@@ -115,6 +141,7 @@ impl JsonRpcRequest {
         }
     }
 
+    /// Notification (no `id`).
     pub fn notification(method: impl Into<String>, params: Value) -> Self {
         Self {
             jsonrpc: "2.0".into(),
@@ -124,6 +151,7 @@ impl JsonRpcRequest {
         }
     }
 
+    /// True when `id` is absent.
     pub fn is_notification(&self) -> bool {
         self.id.is_none()
     }
@@ -132,16 +160,21 @@ impl JsonRpcRequest {
 /// JSON-RPC 2.0 response envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonRpcResponse {
+    /// Always `"2.0"`.
     pub jsonrpc: String,
+    /// Request id echoed back. `None` or [`JsonRpcId::Null`] on some errors.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<JsonRpcId>,
+    /// Success body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
+    /// Failure body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcError>,
 }
 
 impl JsonRpcResponse {
+    /// Success response.
     pub fn ok(id: Option<JsonRpcId>, result: Value) -> Self {
         Self {
             jsonrpc: "2.0".into(),
@@ -151,6 +184,7 @@ impl JsonRpcResponse {
         }
     }
 
+    /// Error response.
     pub fn err(id: Option<JsonRpcId>, error: JsonRpcError) -> Self {
         Self {
             jsonrpc: "2.0".into(),
@@ -164,12 +198,16 @@ impl JsonRpcResponse {
 /// JSON-RPC error object. Application codes carry `data.code`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonRpcError {
+    /// JSON-RPC or application numeric code.
     pub code: i32,
+    /// Human-readable message.
     pub message: String,
+    /// Optional payload. Application codes put `code` here as a string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
 }
 
+/// `-32700` parse error.
 pub fn parse_error() -> JsonRpcError {
     JsonRpcError {
         code: PARSE_ERROR,
@@ -178,6 +216,7 @@ pub fn parse_error() -> JsonRpcError {
     }
 }
 
+/// `-32600` invalid request.
 pub fn invalid_request() -> JsonRpcError {
     JsonRpcError {
         code: INVALID_REQUEST,
@@ -186,6 +225,7 @@ pub fn invalid_request() -> JsonRpcError {
     }
 }
 
+/// `-32601` method not found. `data.method` is `method`.
 pub fn method_not_found(method: &str) -> JsonRpcError {
     JsonRpcError {
         code: METHOD_NOT_FOUND,
@@ -194,6 +234,7 @@ pub fn method_not_found(method: &str) -> JsonRpcError {
     }
 }
 
+/// `-32602` invalid params with `message`.
 pub fn invalid_params(message: impl Into<String>) -> JsonRpcError {
     JsonRpcError {
         code: INVALID_PARAMS,
@@ -202,6 +243,7 @@ pub fn invalid_params(message: impl Into<String>) -> JsonRpcError {
     }
 }
 
+/// `-32603` internal error with `message`.
 pub fn internal_error(message: impl Into<String>) -> JsonRpcError {
     JsonRpcError {
         code: INTERNAL_ERROR,
@@ -240,34 +282,60 @@ pub fn error_from_core(err: &CoreError) -> JsonRpcError {
 /// v1 methods the owner advertises on `initialize`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Method {
+    /// Handshake. Not listed in [`V1_CAPABILITIES`].
     Initialize,
+    /// Process identity, root, prefix, and crate version.
     IdentityGet,
+    /// Filtered issue rows.
     IssueList,
+    /// One issue plus revision.
     IssueGet,
+    /// Frontier: `issue/list` with `ready: true`.
     IssueReady,
+    /// Substring search over id, title, properties, tags, and body.
     IssueSearch,
+    /// Live claims.
     IssueClaims,
+    /// Deadlines and scheduled starts.
     IssueAgenda,
+    /// Alias of [`Self::IssueGet`].
     IssueShow,
+    /// Secret-screened body range.
     IssueExcerpt,
+    /// Children and blockers.
     IssueTree,
+    /// Bounded neighborhood with evidence.
     IssueRelated,
+    /// Direct children.
     IssueChildren,
+    /// Walk up the blocker graph.
     IssueAncestors,
+    /// Walk down the blocker graph.
     IssueImpact,
+    /// Everything pointing at the id.
     IssueBacklinks,
+    /// Shared selection; notifies `issue/selected`.
     IssueOpen,
+    /// Create an issue.
     IssueCreate,
+    /// State, priority, block, unblock.
     IssueUpdate,
+    /// Take the issue.
     IssueClaim,
+    /// Dated logbook entry.
     IssueNote,
+    /// Move to another project.
     IssueRefile,
+    /// Project names plus revision.
     ProjectList,
+    /// Pull of the on-disk event log.
     EventsSince,
+    /// Current generation and revision.
     EventsGen,
 }
 
 impl Method {
+    /// Wire method name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Initialize => "initialize",
@@ -298,6 +366,11 @@ impl Method {
         }
     }
 
+    /// Parse a v1 wire name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `name` is not a v1 method.
     pub fn parse(name: &str) -> Result<Self, JsonRpcError> {
         match name {
             "initialize" => Ok(Self::Initialize),
@@ -358,28 +431,45 @@ pub const V1_CAPABILITIES: &[&str] = &[
     "identity/get",
 ];
 
+/// `initialize` params. camelCase on the wire.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
+    /// Must be [`PROTOCOL_VERSION`].
     pub protocol_version: u32,
+    /// Client name, e.g. `vissue-tui`. Empty when omitted.
     #[serde(default)]
     pub client: String,
+    /// Connection identity. Required and non-empty.
     pub agent: String,
 }
 
+/// `initialize` result. camelCase on the wire.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
+    /// Echo of [`PROTOCOL_VERSION`].
     pub protocol_version: u32,
+    /// Advertised methods. See [`V1_CAPABILITIES`].
     pub capabilities: Vec<String>,
+    /// Tracker root the owner bound.
     pub root: String,
+    /// Layout prefix the owner bound.
     pub prefix: String,
+    /// On-disk generation counter.
     pub generation: u64,
+    /// Serve-local catalog revision. Starts at 1.
     pub revision: u64,
+    /// Owner identity.
     pub identity: String,
 }
 
 /// Parse `initialize` params. Missing/empty `agent` and version != 1 are -32602.
+///
+/// # Errors
+///
+/// Returns an error when `value` is not an object, `protocolVersion` is missing
+/// or not 1, or `agent` is missing or empty.
 pub fn parse_initialize_params(value: &Value) -> Result<InitializeParams, JsonRpcError> {
     let obj = value
         .as_object()
@@ -414,231 +504,345 @@ pub fn parse_initialize_params(value: &Value) -> Result<InitializeParams, JsonRp
     })
 }
 
+/// Filters for `issue/list` and `issue/ready`. snake_case on the wire.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct IssueListParams {
+    /// Restrict to this project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
+    /// Restrict to this TODO keyword.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// When `true`, only the frontier (no open blockers).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ready: Option<bool>,
+    /// Case-insensitive substring over id, title, tags, and properties.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
+    /// Max rows after offset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
+    /// Skip this many matching rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<usize>,
+    /// When this equals the current revision, the result is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since_revision: Option<u64>,
 }
 
+/// Page of issue rows, or an unchanged marker.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct IssueListResult {
+    /// Matching rows. Empty when [`Self::unchanged`].
     #[serde(default)]
     pub issues: Vec<IssueRow>,
+    /// Issues in the selected project (or whole vault) before other filters.
     #[serde(default)]
     pub total: u64,
+    /// Rows matching state, ready, and query, before limit and offset.
     #[serde(default)]
     pub matched: u64,
+    /// Current serve revision.
     pub revision: u64,
+    /// Current on-disk generation.
     #[serde(default)]
     pub generation: u64,
+    /// `since_revision` matched; `issues` is empty.
     #[serde(default)]
     pub unchanged: bool,
 }
 
+/// Single issue id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdParams {
+    /// Issue id.
     pub id: String,
 }
 
+/// One issue plus the serve revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IssueGetResult {
+    /// Flattened detail fields on the wire.
     #[serde(flatten)]
     pub issue: IssueDetail,
+    /// Current serve revision.
     pub revision: u64,
 }
 
+/// `issue/search` params. Default `limit` is 20.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchParams {
+    /// Substring over id, title, properties, tags, and body.
     pub query: String,
+    /// Max hits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }
 
+/// `issue/claims` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ClaimsParams {
+    /// Restrict to this holder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub holder: Option<String>,
+    /// Restrict to this project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
 }
 
+/// `issue/agenda` params. Default `days` is 14.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct AgendaParams {
+    /// Horizon in days.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub days: Option<i64>,
+    /// Restrict to this project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
 }
 
+/// `issue/tree` params. `format` is `nodes`, `ascii`, or `dot`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TreeParams {
+    /// Root issue id.
     pub id: String,
+    /// `nodes` (default), `ascii`, or `dot`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
 }
 
+/// `issue/tree` result: a node graph or rendered text.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TreeResult {
+    /// Structured tree (`format` omitted or `nodes`).
     Nodes(TreeNode),
-    Text { text: String },
+    /// Rendered `ascii` or `dot`.
+    Text {
+        /// Graph text.
+        text: String,
+    },
 }
 
+/// `issue/related` params. Default `depth` is 2 and `limit` is 20.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RelatedParams {
+    /// Center issue id.
     pub id: String,
+    /// Graph walk depth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<usize>,
+    /// Max hits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }
 
+/// Params for children, ancestors, impact, and backlinks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WalkParams {
+    /// Start issue id.
     pub id: String,
+    /// Walk depth. Omitted means the method default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<usize>,
 }
 
+/// `project/list` result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ProjectListResult {
+    /// Project names under the prefix.
     pub projects: Vec<String>,
+    /// Current serve revision.
     pub revision: u64,
 }
 
+/// `events/since` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct EventsSinceParams {
+    /// Return events with sequence greater than this.
     pub since: u64,
+    /// Max events.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }
 
+/// Pull of the on-disk event log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventsSinceResult {
+    /// Events after `since`.
     pub events: Vec<Event>,
+    /// Current generation after the pull.
     pub generation: u64,
 }
 
+/// `events/gen` result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventsGenResult {
+    /// On-disk generation counter.
     pub generation: u64,
+    /// Serve-local catalog revision.
     pub revision: u64,
 }
 
+/// `identity/get` result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdentityResult {
+    /// Connection or process identity.
     pub identity: String,
+    /// Tracker root.
     pub root: String,
+    /// Layout prefix.
     pub prefix: String,
+    /// Crate version string.
     pub version: String,
 }
 
+/// `issue/create` params. Fields match the CLI create verb.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateParams {
+    /// Target project.
     pub project: String,
+    /// Heading title.
     pub title: String,
+    /// Override the connection agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    /// Priority letter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<char>,
+    /// `:TYPE:` property.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issue_type: Option<String>,
+    /// Org deadline stamp.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline: Option<String>,
+    /// Org scheduled stamp.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scheduled: Option<String>,
+    /// Space-separated tags.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<String>,
+    /// Parent issue id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    /// Body prose written under the properties drawer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 }
 
+/// `issue/update` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateParams {
+    /// Issue id.
     pub id: String,
+    /// New TODO keyword.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// New priority letter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<String>,
+    /// Add this blocker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block: Option<String>,
+    /// Remove this blocker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unblock: Option<String>,
+    /// Override the connection agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
 }
 
+/// `issue/claim` params. `force` defaults to false.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClaimParams {
+    /// Issue id.
     pub id: String,
+    /// Take over an existing claim.
     #[serde(default)]
     pub force: bool,
+    /// Override the connection agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
 }
 
+/// `issue/note` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoteParams {
+    /// Issue id.
     pub id: String,
+    /// Logbook text.
     pub text: String,
 }
 
+/// `issue/refile` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RefileParams {
+    /// Issue id.
     pub id: String,
+    /// Destination project.
     pub to: String,
 }
 
+/// Mutation result shared by create, update, claim, note, and refile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MutResult {
+    /// True when the write succeeded.
     pub ok: bool,
+    /// Same text the CLI would print.
     pub report: String,
+    /// Post-write detail. Null on refile of a vanished source.
     #[serde(default)]
     pub issue: Option<IssueDetail>,
+    /// Serve revision after the write.
     pub revision: u64,
+    /// On-disk generation after the write.
     pub generation: u64,
 }
 
+/// `vault/changed` params. Broadcast after a catalog rebuild.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VaultChanged {
+    /// On-disk generation.
     pub generation: u64,
+    /// Serve-local revision.
     pub revision: u64,
+    /// Dirty project names.
     #[serde(default)]
     pub projects: Vec<String>,
+    /// Touched issue ids, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<String>>,
 }
 
+/// `issue/selected` params. Broadcast after `issue/open`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IssueSelected {
+    /// Selected issue id.
     pub id: String,
+    /// Project of that issue.
     pub project: String,
 }
 
 /// Push notifications. No `id` on the wire.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Notification {
+    /// [`NOTIFY_VAULT_CHANGED`].
     VaultChanged(VaultChanged),
+    /// [`NOTIFY_ISSUE_SELECTED`].
     IssueSelected(IssueSelected),
+    /// [`NOTIFY_SHUTTING_DOWN`].
     ServeShuttingDown,
-    Unknown { method: String, params: Value },
+    /// Method the client does not know, or params that failed to decode.
+    Unknown {
+        /// Wire method name.
+        method: String,
+        /// Raw params.
+        params: Value,
+    },
 }
 
 impl Notification {
+    /// Wire method name.
     pub fn method(&self) -> &str {
         match self {
             Self::VaultChanged(_) => NOTIFY_VAULT_CHANGED,
@@ -648,6 +852,7 @@ impl Notification {
         }
     }
 
+    /// Parse a method/params pair. Unknown names stay [`Self::Unknown`].
     pub fn parse(method: &str, params: Value) -> Self {
         match method {
             NOTIFY_VAULT_CHANGED => match serde_json::from_value(params.clone()) {
@@ -672,6 +877,7 @@ impl Notification {
         }
     }
 
+    /// Params object for the wire.
     pub fn to_params(&self) -> Value {
         match self {
             Self::VaultChanged(body) => serde_json::to_value(body).unwrap_or(Value::Null),
@@ -685,34 +891,60 @@ impl Notification {
 /// Typed v1 request.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Request {
+    /// Handshake.
     Initialize(InitializeParams),
+    /// Process identity, root, prefix, and crate version.
     IdentityGet,
+    /// Filtered issue rows.
     IssueList(IssueListParams),
+    /// One issue plus revision.
     IssueGet(IdParams),
+    /// Frontier: `issue/list` with `ready: true`.
     IssueReady(IssueListParams),
+    /// Substring search over id, title, properties, tags, and body.
     IssueSearch(SearchParams),
+    /// Live claims.
     IssueClaims(ClaimsParams),
+    /// Deadlines and scheduled starts.
     IssueAgenda(AgendaParams),
+    /// Alias of [`Self::IssueGet`].
     IssueShow(IdParams),
+    /// Secret-screened body range.
     IssueExcerpt(IdParams),
+    /// Children and blockers.
     IssueTree(TreeParams),
+    /// Bounded neighborhood with evidence.
     IssueRelated(RelatedParams),
+    /// Direct children.
     IssueChildren(WalkParams),
+    /// Walk up the blocker graph.
     IssueAncestors(WalkParams),
+    /// Walk down the blocker graph.
     IssueImpact(WalkParams),
+    /// Everything pointing at the id.
     IssueBacklinks(WalkParams),
+    /// Shared selection; notifies `issue/selected`.
     IssueOpen(IdParams),
+    /// Create an issue.
     IssueCreate(CreateParams),
+    /// State, priority, block, unblock.
     IssueUpdate(UpdateParams),
+    /// Take the issue.
     IssueClaim(ClaimParams),
+    /// Dated logbook entry.
     IssueNote(NoteParams),
+    /// Move to another project.
     IssueRefile(RefileParams),
+    /// Project names plus revision.
     ProjectList,
+    /// Pull of the on-disk event log.
     EventsSince(EventsSinceParams),
+    /// Current generation and revision.
     EventsGen,
 }
 
 impl Request {
+    /// Wire [`Method`] for this request.
     pub fn method(&self) -> Method {
         match self {
             Self::Initialize(_) => Method::Initialize,
@@ -743,6 +975,11 @@ impl Request {
         }
     }
 
+    /// Parse a method/params pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `method` is unknown or `params` fail to decode.
     pub fn parse(method: &str, params: Option<Value>) -> Result<Self, JsonRpcError> {
         let method = Method::parse(method)?;
         let params = match params {
@@ -778,6 +1015,7 @@ impl Request {
         }
     }
 
+    /// Params object for the wire.
     pub fn to_params(&self) -> Value {
         match self {
             Self::Initialize(p) => serde_json::to_value(p).unwrap_or(Value::Null),
@@ -810,34 +1048,64 @@ impl Request {
 /// Typed v1 result body.
 #[derive(Debug, Clone)]
 pub enum Response {
+    /// Handshake.
     Initialize(InitializeResult),
+    /// Process identity, root, prefix, and crate version.
     IdentityGet(IdentityResult),
+    /// Filtered issue rows.
     IssueList(IssueListResult),
+    /// One issue plus revision.
     IssueGet(IssueGetResult),
+    /// Frontier page.
     IssueReady(IssueListResult),
+    /// Search hits.
     IssueSearch(Vec<SearchHit>),
+    /// Live claims.
     IssueClaims(Vec<ClaimRow>),
+    /// Deadlines and scheduled starts.
     IssueAgenda(Vec<AgendaRow>),
+    /// Alias of [`Self::IssueGet`].
     IssueShow(IssueGetResult),
+    /// Secret-screened body range.
     IssueExcerpt(Excerpt),
+    /// Children and blockers.
     IssueTree(TreeResult),
+    /// Bounded neighborhood with evidence.
     IssueRelated(Vec<RelatedHit>),
+    /// Direct children.
     IssueChildren(Vec<WalkHit>),
+    /// Walk up the blocker graph.
     IssueAncestors(Vec<WalkHit>),
+    /// Walk down the blocker graph.
     IssueImpact(Vec<WalkHit>),
+    /// Everything pointing at the id.
     IssueBacklinks(Vec<WalkHit>),
+    /// Shared selection result.
     IssueOpen(IssueGetResult),
+    /// Create result.
     IssueCreate(MutResult),
+    /// Update result.
     IssueUpdate(MutResult),
+    /// Claim result.
     IssueClaim(MutResult),
+    /// Note result.
     IssueNote(MutResult),
+    /// Refile result.
     IssueRefile(MutResult),
+    /// Project names plus revision.
     ProjectList(ProjectListResult),
+    /// Pull of the on-disk event log.
     EventsSince(EventsSinceResult),
+    /// Current generation and revision.
     EventsGen(EventsGenResult),
 }
 
 impl Response {
+    /// Serialize the result body (not the envelope).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the body cannot be encoded as JSON.
     pub fn to_value(&self) -> Result<Value, serde_json::Error> {
         match self {
             Self::Initialize(v) => serde_json::to_value(v),

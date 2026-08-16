@@ -38,11 +38,19 @@ impl std::fmt::Debug for Client {
 
 impl Client {
     /// Connect to `path`. Uses JSONL framing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the socket cannot be opened or cloned.
     pub fn connect(path: impl AsRef<Path>) -> Result<Self, Error> {
         Self::connect_with_framing(path, Framing::Jsonl)
     }
 
     /// Connect and send every request in `framing`. The owner replies in kind.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the socket cannot be opened or cloned.
     pub fn connect_with_framing(path: impl AsRef<Path>, framing: Framing) -> Result<Self, Error> {
         let stream = UnixStream::connect(path.as_ref())?;
         let reader = BufReader::new(stream.try_clone()?);
@@ -55,6 +63,7 @@ impl Client {
         })
     }
 
+    /// Framing style this client writes.
     pub fn framing(&self) -> Framing {
         self.framing
     }
@@ -68,6 +77,11 @@ impl Client {
     }
 
     /// Send `method`/`params` and return the result object.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the write or read fails, the payload is not JSON,
+    /// the response id does not match, or the server returns a JSON-RPC error.
     pub fn request(&mut self, method: &str, params: Value) -> Result<Value, Error> {
         let id = JsonRpcId::Number(self.next_id);
         self.next_id += 1;
@@ -101,16 +115,30 @@ impl Client {
     }
 
     /// Typed request helper. Result is the raw JSON body (caller decodes).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the write or read fails, the payload is not JSON,
+    /// the response id does not match, or the server returns a JSON-RPC error.
     pub fn request_typed(&mut self, req: &Request) -> Result<Value, Error> {
         self.request(req.method().as_str(), req.to_params())
     }
 
     /// Send a notification (no `id`). Does not wait.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the notification cannot be encoded or written.
     pub fn notify(&mut self, method: &str, params: Value) -> Result<(), Error> {
         self.write_rpc(&JsonRpcRequest::notification(method, params))
     }
 
     /// Block until the next JSON-RPC notification, or `timeout`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the wait times out, the read or decode fails, or
+    /// the next message is a response rather than a notification.
     pub fn wait_notification(&mut self, timeout: Duration) -> Result<Notification, Error> {
         self.reader.get_ref().set_read_timeout(Some(timeout))?;
         let result = read_next_notification(&mut self.reader);
@@ -170,6 +198,11 @@ fn id_mismatch(server_error: Option<JsonRpcError>) -> JsonRpcError {
 }
 
 /// Decode a typed [`Response`] from a raw result when the method is known.
+///
+/// # Errors
+///
+/// Returns an error when `method` is not a v1 method or `value` does not match
+/// that method's result shape.
 pub fn decode_response(method: &str, value: Value) -> Result<Response, Error> {
     match crate::rpc::Method::parse(method).map_err(Error::Rpc)? {
         crate::rpc::Method::Initialize => Ok(Response::Initialize(serde_json::from_value(value)?)),

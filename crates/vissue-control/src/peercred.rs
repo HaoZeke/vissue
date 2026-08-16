@@ -18,6 +18,11 @@ pub fn current_uid() -> u32 {
 }
 
 /// Peer uid from `SO_PEERCRED` on Linux, or `getpeereid` on BSD/macOS.
+///
+/// # Errors
+///
+/// Returns an error when the socket option cannot be read, or this OS cannot
+/// report peer credentials.
 pub fn peer_uid<F: AsFd>(sock: &F) -> io::Result<u32> {
     peer_uid_impl(sock)
 }

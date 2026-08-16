@@ -52,3 +52,15 @@ impl From<std::io::Error> for Error {
         Error::Other(err.into())
     }
 }
+
+impl From<notify::Error> for Error {
+    fn from(err: notify::Error) -> Self {
+        Error::Other(err.into())
+    }
+}
+
+impl From<fmt::Error> for Error {
+    fn from(err: fmt::Error) -> Self {
+        Error::Other(err.into())
+    }
+}

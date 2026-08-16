@@ -402,12 +402,15 @@ impl VissueServer {
 
     #[tool(description = "The generation counter. Compare against the last value seen.")]
     async fn vissue_gen(&self) -> Result<CallToolResult, McpError> {
-        text(Ok(format!("{}\n", events::generation(&self.layout))))
+        text(Ok::<_, vissue_core::error::Error>(format!(
+            "{}\n",
+            events::generation(&self.layout)
+        )))
     }
 
     #[tool(description = "Report the server version and the resolved root and prefix.")]
     async fn vissue_identity(&self) -> Result<CallToolResult, McpError> {
-        text(Ok(format!(
+        text(Ok::<_, vissue_core::error::Error>(format!(
             "vissue-mcp {}\nroot:   {}\nprefix: {}\nroot={}\nprefix={}\n",
             env!("CARGO_PKG_VERSION"),
             self.layout.root().display(),
@@ -476,7 +479,7 @@ impl VissueServer {
 
     #[tool(description = "The identity a claim would record.")]
     async fn vissue_whoami(&self) -> Result<CallToolResult, McpError> {
-        text(Ok(format!(
+        text(Ok::<_, vissue_core::error::Error>(format!(
             "{}\n",
             vissue_core::config::identity(&self.layout)
         )))

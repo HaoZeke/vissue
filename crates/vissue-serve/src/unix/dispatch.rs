@@ -139,9 +139,7 @@ fn map_core(err: CoreError) -> JsonRpcError {
     error_from_core(&err)
 }
 
-fn map_anyhow(err: anyhow::Error) -> JsonRpcError {
-    map_core(CoreError::from(err))
-}
+
 
 fn map_json(err: serde_json::Error) -> JsonRpcError {
     internal_error(err.to_string())
@@ -411,7 +409,7 @@ fn dispatch_events_since(
 ) -> Result<Value, JsonRpcError> {
     let params: EventsSinceParams = decode(params)?;
     let limit = params.limit.unwrap_or(50);
-    let events = events::since(&state.layout, params.since, limit).map_err(map_anyhow)?;
+    let events = events::since(&state.layout, params.since, limit).map_err(map_core)?;
     serde_json::to_value(EventsSinceResult {
         events,
         generation: events::generation(&state.layout),
@@ -483,7 +481,7 @@ fn dispatch_create(
             body: params.body.as_deref(),
         },
     )
-    .map_err(map_anyhow)?;
+    .map_err(map_core)?;
     let id = report.split_whitespace().next().unwrap_or("");
     let issue = if id.is_empty() {
         None
@@ -510,7 +508,7 @@ fn dispatch_update(
         params.unblock.as_deref(),
         &agent,
     )
-    .map_err(map_anyhow)?;
+    .map_err(map_core)?;
     let issue = detail_one(&state.layout, &params.id);
     mut_result(state, outcome.report, issue)
 }
@@ -539,7 +537,7 @@ fn dispatch_claim(
     let params: ClaimParams = decode(params)?;
     let agent = resolve_agent(session, params.agent.as_deref())?;
     let report =
-        ops::claim_as(&state.layout, &params.id, params.force, &agent).map_err(map_anyhow)?;
+        ops::claim_as(&state.layout, &params.id, params.force, &agent).map_err(map_core)?;
     let issue = detail_one(&state.layout, &params.id);
     mut_result(state, report, issue)
 }
@@ -551,7 +549,7 @@ fn dispatch_note(
 ) -> Result<Value, JsonRpcError> {
     let params: NoteParams = decode(params)?;
     let _ = resolve_agent(session, None)?;
-    let report = ops::note(&state.layout, &params.id, &params.text).map_err(map_anyhow)?;
+    let report = ops::note(&state.layout, &params.id, &params.text).map_err(map_core)?;
     let issue = detail_one(&state.layout, &params.id);
     mut_result(state, report, issue)
 }
@@ -563,7 +561,7 @@ fn dispatch_refile(
 ) -> Result<Value, JsonRpcError> {
     let params: RefileParams = decode(params)?;
     let _ = resolve_agent(session, None)?;
-    let report = ops::refile(&state.layout, &params.id, &params.to).map_err(map_anyhow)?;
+    let report = ops::refile(&state.layout, &params.id, &params.to).map_err(map_core)?;
     let issue = detail_one(&state.layout, &params.id);
     mut_result(state, report, issue)
 }

@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow};
 
 use crate::error::Result;
 use nix::sys::signal::{Signal, kill};
@@ -58,10 +58,11 @@ fn serve_exe_from(current: &Path, path_var: Option<&std::ffi::OsStr>) -> Result<
             }
         }
     }
-    bail!(
+    Err(anyhow!(
         "cannot find a vissue CLI to spawn serve (running as {})",
         current.display()
-    );
+    )
+    .into())
 }
 const TERM_WAIT: Duration = Duration::from_secs(5);
 const KILL_WAIT: Duration = Duration::from_secs(2);

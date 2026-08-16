@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow};
 
 use crate::error::Result;
 use fs2::FileExt;
@@ -101,7 +101,7 @@ impl OwnerHandle {
             });
         });
         if !wait_until_accepts(&socket, Duration::from_secs(5)) {
-            bail!("owner did not accept on {}", socket.display());
+            return Err(anyhow!("owner did not accept on {}", socket.display()).into());
         }
         Ok(Self {
             shutdown: Some(tx),
@@ -305,7 +305,9 @@ fn chmod_path(path: &Path, mode: u32) -> Result<()> {
         .with_context(|| format!("stat {}", path.display()))?
         .permissions();
     perms.set_mode(mode);
-    fs::set_permissions(path, perms).with_context(|| format!("chmod {:o} {}", mode, path.display()))
+    fs::set_permissions(path, perms)
+        .with_context(|| format!("chmod {:o} {}", mode, path.display()))
+        .map_err(crate::error::Error::from)
 }
 
 fn acquire_lock(socket: &Path) -> Result<File> {
@@ -358,7 +360,9 @@ fn takeover_or_fail(socket: &Path) -> Result<()> {
         return Ok(());
     }
     match StdUnixStream::connect(socket) {
-        Ok(_) => bail!("control socket already in use: {}", socket.display()),
+        Ok(_) => {
+            return Err(anyhow!("control socket already in use: {}", socket.display()).into());
+        }
         Err(err)
             if err.kind() == io::ErrorKind::ConnectionRefused
                 || err.kind() == io::ErrorKind::NotFound =>
@@ -368,10 +372,11 @@ fn takeover_or_fail(socket: &Path) -> Result<()> {
             Ok(())
         }
         Err(err) => {
-            bail!(
+            return Err(anyhow!(
                 "control socket already in use: {} ({err})",
                 socket.display()
             )
+            .into());
         }
     }
 }

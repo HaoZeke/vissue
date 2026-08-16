@@ -1,7 +1,9 @@
 //! Read-only verbs. Every function returns its text instead of printing, so a
 //! CLI, an MCP server, and a library caller share one implementation.
 
-use anyhow::{Result, bail};
+use anyhow::bail;
+
+use crate::error::{Error, Result};
 use chrono::{Local, NaiveDate};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -128,7 +130,7 @@ pub fn ready(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
 /// Returns an error if the corpus cannot be read, or `id` is not in it.
 pub fn show(layout: &Layout, id: &str) -> Result<String> {
     let (h, path, project) =
-        find_by_id(layout, id)?.ok_or_else(|| anyhow::anyhow!("issue {id} not found"))?;
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
     let mut out = String::new();
     writeln!(out, "ID:       {}", h.id)?;
     writeln!(out, "Project:  {project}")?;
@@ -495,7 +497,9 @@ pub fn tree(layout: &Layout, root_id: &str, format: &str) -> Result<String> {
     let all = load_all(layout)?;
     let graph = GraphIndex::new(&all);
     let Some(root_heading) = graph.by_id.get(root_id) else {
-        bail!("issue {root_id} not found");
+        return Err(Error::IssueNotFound {
+            id: root_id.to_string(),
+        });
     };
     let mut out = String::new();
     let root = root_heading.id.as_str();

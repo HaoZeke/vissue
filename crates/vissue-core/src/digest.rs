@@ -6,7 +6,7 @@
 //! files means formatting churn that does not change an issue does not change
 //! the digest either. Every function here reads; none writes.
 
-use anyhow::Result;
+use crate::error::Result;
 use serde_json::{Value, json};
 use std::fmt::Write as _;
 use xxhash_rust::xxh3::xxh3_64;

@@ -1246,10 +1246,7 @@ fn claim_conflict_is_matchable_without_parsing_display() {
     vissue_core::process_env::clear_override("VISSUE_AGENT");
 
     let err = refused.unwrap_err();
-    let typed = err
-        .downcast_ref::<Error>()
-        .expect("claim conflict should be a typed Error");
-    match typed {
+    match &err {
         Error::ClaimConflict {
             id,
             holder,
@@ -1327,8 +1324,8 @@ fn missing_ids_are_typed_issue_not_found() {
     }
 
     let err = vissue_core::ops::claim(&layout, "no-such", false).unwrap_err();
-    match err.downcast_ref::<Error>() {
-        Some(Error::IssueNotFound { id }) => assert_eq!(id, "no-such"),
+    match &err {
+        Error::IssueNotFound { id } => assert_eq!(id, "no-such"),
         other => panic!("expected IssueNotFound from claim, got {other:?}"),
     }
 
@@ -1349,8 +1346,8 @@ fn claiming_a_closed_issue_is_typed_invalid_state() {
     let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
     let (_dir, layout) = writable_copy();
     let err = vissue_core::ops::claim(&layout, "atlas-4g5h", false).unwrap_err();
-    match err.downcast_ref::<Error>() {
-        Some(Error::InvalidState { id, state }) => {
+    match &err {
+        Error::InvalidState { id, state } => {
             assert_eq!(id, "atlas-4g5h");
             assert_eq!(state, "DONE");
         }

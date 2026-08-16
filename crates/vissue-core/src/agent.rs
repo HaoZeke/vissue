@@ -1,7 +1,7 @@
 //! Verbs shaped for a program rather than a person: structured rows, claiming,
 //! a body excerpt, and a hygiene checklist.
 
-use anyhow::Result;
+use crate::error::Result;
 use serde_json::Value;
 use std::fmt::Write as _;
 

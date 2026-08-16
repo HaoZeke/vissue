@@ -1,6 +1,8 @@
 //! The on-disk store: one `issues.org` per project, parsed and rewritten whole.
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, anyhow};
+
+use crate::error::Result;
 use fs2::FileExt;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -84,11 +86,15 @@ pub fn replace_file_atomically(path: &Path, body: &str) -> Result<()> {
     let tmp = parent.join(format!(".{}.tmp.{}-{}", base, std::process::id(), seq));
     if let Err(e) = write_synced(&tmp, body.as_bytes()) {
         let _ = fs::remove_file(&tmp);
-        return Err(e).with_context(|| format!("write temp {}", tmp.display()));
+        return Err(e)
+            .with_context(|| format!("write temp {}", tmp.display()))
+            .map_err(crate::error::Error::from);
     }
     if let Err(e) = fs::rename(&tmp, path) {
         let _ = fs::remove_file(&tmp);
-        return Err(e).with_context(|| format!("rename {} -> {}", tmp.display(), path.display()));
+        return Err(e)
+            .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))
+            .map_err(crate::error::Error::from);
     }
     Ok(())
 }
@@ -278,12 +284,15 @@ impl IssueDoc {
         // an unsynced temporary can land as a truncated issues.org.
         if let Err(e) = write_synced(&tmp, out.as_bytes()) {
             let _ = fs::remove_file(&tmp);
-            return Err(e).with_context(|| format!("write temp {}", tmp.display()));
+            return Err(e)
+                .with_context(|| format!("write temp {}", tmp.display()))
+                .map_err(crate::error::Error::from);
         }
         if let Err(e) = fs::rename(&tmp, &self.path) {
             let _ = fs::remove_file(&tmp);
             return Err(e)
-                .with_context(|| format!("rename {} -> {}", tmp.display(), self.path.display()));
+                .with_context(|| format!("rename {} -> {}", tmp.display(), self.path.display()))
+                .map_err(crate::error::Error::from);
         }
         self.announce_write();
         Ok(())

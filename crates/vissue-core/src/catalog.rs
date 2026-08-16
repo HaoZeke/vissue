@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 
 use crate::config::Layout;
-use crate::error::Error;
+use crate::error::{Error, Result};
 use crate::graph::DependencyGraph;
 use crate::model::{IssueHeading, READY_STATES};
 use crate::related::related_hits_from;
@@ -26,7 +26,7 @@ pub(crate) const BODY_EXCERPT_MAX_CHARS: usize = 4000;
 ///
 /// Returns an error if a project directory cannot be listed or an
 /// `issues.org` cannot be read or parsed.
-pub fn load_recs(layout: &Layout) -> anyhow::Result<Vec<IssueRec>> {
+pub fn load_recs(layout: &Layout) -> Result<Vec<IssueRec>> {
     let mut recs = Vec::new();
     for project in list_projects(layout)? {
         let path = layout.project_issues_path(&project);
@@ -54,7 +54,7 @@ impl<'a> CatalogService<'a> {
         Self { issues }
     }
 
-    fn rec(&self, id: &str) -> Result<&IssueRec, Error> {
+    fn rec(&self, id: &str) -> Result<&IssueRec> {
         self.issues
             .iter()
             .find(|r| r.heading.id == id)
@@ -66,7 +66,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Does not fail for a parsed catalog.
-    pub fn issues_rows(&self, q: ListQuery) -> Result<Vec<IssueRow>, Error> {
+    pub fn issues_rows(&self, q: ListQuery) -> Result<Vec<IssueRow>> {
         issues_rows_from(self.issues, q)
     }
 
@@ -75,7 +75,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Does not fail for a parsed catalog.
-    pub fn ready(&self, project: Option<&str>) -> Result<Vec<IssueRow>, Error> {
+    pub fn ready(&self, project: Option<&str>) -> Result<Vec<IssueRow>> {
         issues_rows_from(
             self.issues,
             ListQuery {
@@ -91,7 +91,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Returns an error if `id` is not in the catalog.
-    pub fn detail(&self, id: &str) -> Result<IssueDetail, Error> {
+    pub fn detail(&self, id: &str) -> Result<IssueDetail> {
         Ok(issue_detail(self.rec(id)?))
     }
 
@@ -101,7 +101,7 @@ impl<'a> CatalogService<'a> {
     ///
     /// Returns an error if `id` is not in the catalog, or the heading's file
     /// cannot be read.
-    pub fn excerpt(&self, id: &str) -> Result<Excerpt, Error> {
+    pub fn excerpt(&self, id: &str) -> Result<Excerpt> {
         excerpt_from(self.rec(id)?)
     }
 
@@ -110,7 +110,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Does not fail for a parsed catalog.
-    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, Error> {
+    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
         search_hits_from(self.issues, query, limit)
     }
 
@@ -123,7 +123,7 @@ impl<'a> CatalogService<'a> {
         &self,
         holder: Option<&str>,
         project: Option<&str>,
-    ) -> Result<Vec<ClaimRow>, Error> {
+    ) -> Result<Vec<ClaimRow>> {
         claims_from(self.issues, holder, project)
     }
 
@@ -132,7 +132,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Does not fail for a parsed catalog.
-    pub fn agenda(&self, days: i64, project: Option<&str>) -> Result<Vec<AgendaRow>, Error> {
+    pub fn agenda(&self, days: i64, project: Option<&str>) -> Result<Vec<AgendaRow>> {
         agenda_rows_from(self.issues, days, project)
     }
 
@@ -141,7 +141,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Returns an error if `id` is not in the catalog.
-    pub fn tree(&self, id: &str) -> Result<TreeNode, Error> {
+    pub fn tree(&self, id: &str) -> Result<TreeNode> {
         tree_from(self.issues, id)
     }
 
@@ -155,7 +155,7 @@ impl<'a> CatalogService<'a> {
         id: &str,
         depth: usize,
         limit: usize,
-    ) -> Result<Vec<crate::views::RelatedHit>, Error> {
+    ) -> Result<Vec<crate::views::RelatedHit>> {
         related_hits_from(self.issues, id, depth, limit)
     }
 
@@ -164,7 +164,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Returns an error if `id` is not in the catalog and no children exist.
-    pub fn children(&self, id: &str) -> Result<Vec<WalkHit>, Error> {
+    pub fn children(&self, id: &str) -> Result<Vec<WalkHit>> {
         children_from(self.issues, id)
     }
 
@@ -174,7 +174,7 @@ impl<'a> CatalogService<'a> {
     ///
     /// Returns an error if `id` is not in the catalog, or the blocker graph
     /// cannot be built.
-    pub fn ancestors(&self, id: &str, depth: usize) -> Result<Vec<WalkHit>, Error> {
+    pub fn ancestors(&self, id: &str, depth: usize) -> Result<Vec<WalkHit>> {
         walk_from(self.issues, id, depth, WalkKind::Ancestors)
     }
 
@@ -184,7 +184,7 @@ impl<'a> CatalogService<'a> {
     ///
     /// Returns an error if `id` is not in the catalog, or the blocker graph
     /// cannot be built.
-    pub fn impact(&self, id: &str, depth: usize) -> Result<Vec<WalkHit>, Error> {
+    pub fn impact(&self, id: &str, depth: usize) -> Result<Vec<WalkHit>> {
         walk_from(self.issues, id, depth, WalkKind::Impact)
     }
 
@@ -193,7 +193,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Returns an error if `id` is not in the catalog and no backlinks exist.
-    pub fn backlinks(&self, id: &str) -> Result<Vec<WalkHit>, Error> {
+    pub fn backlinks(&self, id: &str) -> Result<Vec<WalkHit>> {
         backlinks_from(self.issues, id)
     }
 }
@@ -203,7 +203,7 @@ impl<'a> CatalogService<'a> {
 /// # Errors
 ///
 /// Does not fail for a parsed catalog.
-pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRow>, Error> {
+pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRow>> {
     let active_blockers: HashSet<&str> = if q.ready {
         issues
             .iter()
@@ -338,7 +338,7 @@ fn issue_detail(rec: &IssueRec) -> IssueDetail {
 /// # Errors
 ///
 /// Returns an error if the heading's file cannot be read.
-pub fn excerpt_from(rec: &IssueRec) -> Result<Excerpt, Error> {
+pub fn excerpt_from(rec: &IssueRec) -> Result<Excerpt> {
     let content = fs::read_to_string(&rec.path)?;
     let lines: Vec<&str> = content.lines().collect();
     let from = rec.heading.line_start.saturating_sub(1).min(lines.len());
@@ -386,7 +386,7 @@ pub fn excerpt_from(rec: &IssueRec) -> Result<Excerpt, Error> {
 ///
 /// Returns an error if the heading's file cannot be read, or the heading
 /// looks like secret material.
-pub fn org_text_from(rec: &IssueRec) -> Result<String, Error> {
+pub fn org_text_from(rec: &IssueRec) -> Result<String> {
     let content = fs::read_to_string(&rec.path)?;
     let lines: Vec<&str> = content.lines().collect();
     let from = rec.heading.line_start.saturating_sub(1).min(lines.len());
@@ -512,7 +512,7 @@ pub fn search_hits_from(
     issues: &[IssueRec],
     query: &str,
     limit: usize,
-) -> Result<Vec<SearchHit>, Error> {
+) -> Result<Vec<SearchHit>> {
     let needle = query.to_lowercase();
     let mut hits: Vec<(char, String, String, SearchHit)> = Vec::new();
     for rec in issues {
@@ -593,7 +593,7 @@ pub fn claims_from(
     issues: &[IssueRec],
     holder: Option<&str>,
     project: Option<&str>,
-) -> Result<Vec<ClaimRow>, Error> {
+) -> Result<Vec<ClaimRow>> {
     let today = Local::now().date_naive();
     let mut rows: Vec<(String, ClaimRow)> = Vec::new();
     for rec in issues {
@@ -640,7 +640,7 @@ pub fn agenda_rows_from(
     issues: &[IssueRec],
     days: i64,
     project: Option<&str>,
-) -> Result<Vec<AgendaRow>, Error> {
+) -> Result<Vec<AgendaRow>> {
     let today = Local::now().date_naive();
     let horizon = today + chrono::Duration::days(days);
     let mut rows: Vec<(chrono::NaiveDate, char, AgendaRow)> = Vec::new();
@@ -688,7 +688,7 @@ pub fn agenda_rows_from(
 /// # Errors
 ///
 /// Returns an error if `id` is not in the catalog.
-pub fn tree_from(issues: &[IssueRec], id: &str) -> Result<TreeNode, Error> {
+pub fn tree_from(issues: &[IssueRec], id: &str) -> Result<TreeNode> {
     if !issues.iter().any(|r| r.heading.id == id) {
         return Err(Error::IssueNotFound { id: id.to_string() });
     }
@@ -753,7 +753,7 @@ fn build_tree<'a>(
 /// # Errors
 ///
 /// Returns an error if `parent_id` is not in the catalog and no children exist.
-pub fn children_from(issues: &[IssueRec], parent_id: &str) -> Result<Vec<WalkHit>, Error> {
+pub fn children_from(issues: &[IssueRec], parent_id: &str) -> Result<Vec<WalkHit>> {
     let mut rows: Vec<(char, String, String, WalkHit)> = Vec::new();
     for rec in issues {
         if rec.heading.parent() == Some(parent_id) {
@@ -788,7 +788,7 @@ fn walk_from(
     id: &str,
     depth: usize,
     kind: WalkKind,
-) -> Result<Vec<WalkHit>, Error> {
+) -> Result<Vec<WalkHit>> {
     let graph =
         DependencyGraph::from_headings(issues.iter().map(|r| &r.heading)).map_err(Error::from)?;
     let walked = match kind {
@@ -815,7 +815,7 @@ fn walk_from(
 /// # Errors
 ///
 /// Returns an error if `target_id` is not in the catalog and no backlinks exist.
-pub fn backlinks_from(issues: &[IssueRec], target_id: &str) -> Result<Vec<WalkHit>, Error> {
+pub fn backlinks_from(issues: &[IssueRec], target_id: &str) -> Result<Vec<WalkHit>> {
     let mut out = Vec::new();
     for rec in issues {
         if rec.heading.id == target_id {
@@ -858,7 +858,7 @@ pub fn backlinks_from(issues: &[IssueRec], target_id: &str) -> Result<Vec<WalkHi
 ///
 /// Returns an error if `id` is not in the catalog, or `format` is not
 /// `ascii`, `text`, or `dot`.
-pub fn tree_text_from(issues: &[IssueRec], id: &str, format: &str) -> Result<String, Error> {
+pub fn tree_text_from(issues: &[IssueRec], id: &str, format: &str) -> Result<String> {
     if !issues.iter().any(|r| r.heading.id == id) {
         return Err(Error::IssueNotFound { id: id.to_string() });
     }

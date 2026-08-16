@@ -88,8 +88,8 @@ fn only_the_opaque_variant_has_a_source() {
 
 #[test]
 fn a_typed_error_survives_a_trip_through_anyhow() {
-    // ops returns anyhow::Error; a caller that wants to match must get the
-    // variant back rather than an opaque wrapper around it.
+    // A caller that wrapped the enum in anyhow must get the variant back
+    // rather than an opaque wrapper around it.
     let original = anyhow::Error::new(Error::ClaimConflict {
         id: "atlas-1a2b".into(),
         holder: "worker-1".into(),

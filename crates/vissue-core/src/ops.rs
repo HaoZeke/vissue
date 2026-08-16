@@ -1,6 +1,8 @@
 //! Mutating verbs: create, update, and move issues between projects.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, anyhow, bail};
+
+use crate::error::Result;
 use chrono::NaiveDate;
 use std::collections::BTreeMap;
 
@@ -634,11 +636,13 @@ pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<S
             .with_context(|| format!("write inbox {}", inbox.display()))?;
     }
     if let Some(error) = failure {
-        return Err(error.context(format!(
-            "folded {} before failing: {}",
-            created.len(),
-            created.join(" ")
-        )));
+        return Err(crate::error::Error::Other(
+            anyhow::Error::from(error).context(format!(
+                "folded {} before failing: {}",
+                created.len(),
+                created.join(" ")
+            )),
+        ));
     }
     if created.is_empty() {
         return Ok("folded 0 (nothing unstamped)\n".into());

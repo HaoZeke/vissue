@@ -14,7 +14,9 @@
 //! turn it off, for a caller that needs the tracker to stay
 //! untouched.
 
-use anyhow::{Context, Result};
+use anyhow::Context;
+
+use crate::error::Result;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -140,7 +142,9 @@ fn write_gen(dir: &Path, seq: u64) -> Result<()> {
     fs::write(&tmp, format!("{seq}\n"))?;
     if let Err(e) = fs::rename(&tmp, &target) {
         let _ = fs::remove_file(&tmp);
-        return Err(e).with_context(|| format!("rename {} -> {}", tmp.display(), target.display()));
+        return Err(e)
+            .with_context(|| format!("rename {} -> {}", tmp.display(), target.display()))
+            .map_err(crate::error::Error::from);
     }
     Ok(())
 }

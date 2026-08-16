@@ -224,13 +224,14 @@ fn accept_then_connect_switches_to_control() {
         ensure: ensure_unused,
         connect: connect_ok,
     };
-    match try_attach(
+    let outcome = try_attach(
         &layout,
         &PathBuf::from("/tmp/vissue-tui-switch.sock"),
         "agent",
         false,
         &hooks,
-    ) {
+    );
+    match outcome {
         AttachOutcome::Switch { backend, status } => {
             assert_eq!(status, ServeStatus::Live);
             assert_eq!(backend.live(), BackendKind::Control);
@@ -305,7 +306,8 @@ mod decision {
             ensure: never_ensure,
             connect: ok_connect,
         };
-        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+        let outcome = try_attach(&layout, &socket(), "agent", false, &hooks);
+        match outcome {
             AttachOutcome::Switch {
                 status: ServeStatus::Live,
                 ..
@@ -336,7 +338,8 @@ mod decision {
             ensure: never_ensure,
             connect: mismatch_connect,
         };
-        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+        let outcome = try_attach(&layout, &socket(), "agent", false, &hooks);
+        match outcome {
             AttachOutcome::Stay { status, message } => {
                 // Distinct from Offline: the board says which vault it is on,
                 // because writing into the wrong one is the harm being avoided.
@@ -361,7 +364,8 @@ mod decision {
             ensure: never_ensure,
             connect: failing_connect,
         };
-        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+        let outcome = try_attach(&layout, &socket(), "agent", false, &hooks);
+        match outcome {
             AttachOutcome::Stay { status, message } => {
                 assert_eq!(status, ServeStatus::Offline);
                 assert!(message.contains("connection reset"), "{message}");
@@ -400,7 +404,8 @@ mod decision {
             ensure: spawning_ensure,
             connect: ok_connect,
         };
-        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+        let outcome = try_attach(&layout, &socket(), "agent", false, &hooks);
+        match outcome {
             AttachOutcome::Switch {
                 status: ServeStatus::Live,
                 ..
@@ -436,7 +441,8 @@ mod decision {
             ensure: silent_ensure,
             connect: ok_connect,
         };
-        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+        let outcome = try_attach(&layout, &socket(), "agent", false, &hooks);
+        match outcome {
             AttachOutcome::Stay { status, message } => {
                 assert_eq!(status, ServeStatus::Offline);
                 assert!(message.contains("never accepted"), "{message}");
@@ -458,7 +464,8 @@ mod decision {
             ensure: failing_ensure,
             connect: ok_connect,
         };
-        match try_attach(&layout, &socket(), "agent", false, &hooks) {
+        let outcome = try_attach(&layout, &socket(), "agent", false, &hooks);
+        match outcome {
             AttachOutcome::Stay { status, message } => {
                 assert_eq!(status, ServeStatus::Offline);
                 assert!(message.contains("no such binary"), "{message}");

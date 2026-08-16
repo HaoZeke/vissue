@@ -336,7 +336,8 @@ fn the_client_recovers_the_error_the_server_meant() {
     }
 
     // An id that does not exist is its own error, not a generic failure.
-    match rival.get("atlas-zzzz") {
+    let missing = rival.get("atlas-zzzz");
+    match missing {
         Err(Error::IssueNotFound { id }) => assert_eq!(id, "atlas-zzzz"),
         other => panic!("expected a not-found, got {other:?}"),
     }
@@ -354,7 +355,8 @@ fn attaching_to_the_wrong_tracker_is_refused_by_name() {
     let elsewhere = tempfile::tempdir().expect("tempdir");
     let other = Layout::new(elsewhere.path(), DEFAULT_PREFIX);
 
-    match ControlBackend::connect(&owner.socket, &other, "wrong-vault") {
+    let attached = ControlBackend::connect(&owner.socket, &other, "wrong-vault");
+    match attached {
         Err(ControlAttachError::Mismatch {
             want_root,
             got_root,

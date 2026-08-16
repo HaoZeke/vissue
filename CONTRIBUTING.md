@@ -15,6 +15,11 @@ bash tests/release_surface.sh
 bash tests/org_interop.sh ./target/release/vissue   # needs emacs
 ```
 
+The published `rust-version` is 1.89, and CI tests that toolchain. Clippy
+and fmt CI may use a newer pinned toolchain. `rust-version` moves when a
+dependency or language feature requires it, as a minor bump; this is not
+a latest-stable-only project.
+
 Before changing file rewrites, add a fixture that includes properties, body
 text, LOGBOOK entries, and CLOCK entries. Tests must show that data outside the
 operation's ownership remains unchanged.

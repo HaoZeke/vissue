@@ -199,7 +199,8 @@ The workspace publishes seven crates at one version:
 [`vissue-control`](https://crates.io/crates/vissue-control),
 [`vissue-serve`](https://crates.io/crates/vissue-serve),
 [`vissue-tui`](https://crates.io/crates/vissue-tui).
-Tagged releases carry prebuilt archives and a shell installer; see the
+Tagged releases carry prebuilt archives (glibc and musl Linux for the CLI
+and MCP; the HUD is glibc only) and a shell installer; see the
 [releases page](https://github.com/HaoZeke/vissue/releases). To take unreleased
 `main`, name the repository:
 

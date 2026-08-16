@@ -49,9 +49,12 @@ for the length of the run. crates.io accepts it because the registry side
 pins this repository, this workflow file, and the `crates-io` environment; a
 mismatch fails there rather than falling back to a long-lived credential.
 
-A `v*` tag runs it. The workflow packages every crate first, each against
-its siblings' local paths, then publishes them in dependency order, waiting
-for each to appear in the index before the next one that names it.
+A `v*` tag runs `release.yml`. That workflow builds the platform archives,
+attests them, creates the GitHub release, and then calls
+`publish-crates.yml` as a reusable workflow. The crates.io trusted
+publisher still names `publish-crates.yml`; that filename is the pin, not
+the Release wrapper. The crates workflow no longer has its own tag
+trigger, so a tag cannot start two publishes.
 
 ## First public version
 
@@ -108,12 +111,17 @@ $ git push origin main
 $ git push origin vX.Y.Z
 ```
 
-`release.yml` builds the platform archives and creates the GitHub release.
-`publish-crates.yml` publishes every crate through OIDC.
+`release.yml` builds the archives (including musl for `vissue-cli` and
+`vissue-mcp`; the HUD stays on glibc because iced links native graphics
+stacks), attests them, creates the GitHub release, and calls
+`publish-crates.yml` to publish every crate through OIDC.
 
-To rehearse without uploading, run the workflow by hand: `dry_run` defaults
-to true, so it mints the token and packages everything while uploading
-nothing.
+There is no Homebrew tap. `GITHUB_TOKEN` cannot push a formula to another
+repository, and `HaoZeke/homebrew-tap` does not exist.
+
+To rehearse crates.io without uploading, dispatch that workflow by hand:
+`dry_run` defaults to true, so it mints the token and packages everything
+while uploading nothing.
 
 ```console
 $ gh workflow run crates.io --ref vX.Y.Z

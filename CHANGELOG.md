@@ -6,6 +6,18 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.4.0](https://github.com/HaoZeke/vissue/releases/tag/v0.4.0) - 2026-08-16
+
+### Changed
+
+- Library crates return typed errors instead of `anyhow::Result`.
+  `vissue-core` exposes `Error` and `Result`; `vissue-tui` and
+  `vissue-serve` do the same. The CLI, MCP server, and HUD still
+  use anyhow at the process edge. Match on the enum; do not parse
+  the display text.
+- The workspace uses Rust edition 2024. The published MSRV is still 1.89.
+
+
 ## [0.3.0](https://github.com/HaoZeke/vissue/releases/tag/v0.3.0) - 2026-08-15
 
 ### Added

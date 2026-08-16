@@ -2,7 +2,9 @@ name: crates.io
 
 on:
   # cargo-dist calls this from Release after the GitHub release exists.
-  # The filename stays publish-crates.yml: crates.io trusted publishing pins it.
+  # crates.io pins the JWT workflow filename. A tag call presents as
+  # release.yml; workflow_dispatch presents as this file. Both must be
+  # pinned on every crate.
   workflow_call:
     inputs:
       plan:
@@ -105,9 +107,10 @@ jobs:
 
       # Trusted publishing: exchange this job's OIDC identity for a token
       # that lives only for the length of the run. crates.io accepts it
-      # because the registry side pins this repository, this workflow file
-      # and the environment above; a mismatch fails here rather than
-      # reaching for a long-lived credential.
+      # because the registry side pins this repository, the JWT workflow
+      # filename (release.yml on a tag call, this file on dispatch), and
+      # the environment above; a mismatch fails here rather than reaching
+      # for a long-lived credential.
       - name: Mint a trusted-publishing token
         id: auth
         uses: rust-lang/crates-io-auth-action@v1.0.5

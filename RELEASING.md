@@ -51,17 +51,21 @@ mismatch fails there rather than falling back to a long-lived credential.
 
 A `v*` tag runs `release.yml`. That workflow builds the platform archives,
 attests them, creates the GitHub release, and then calls
-`publish-crates.yml` as a reusable workflow. The crates.io trusted
-publisher still names `publish-crates.yml`; that filename is the pin, not
-the Release wrapper. The crates workflow no longer has its own tag
-trigger, so a tag cannot start two publishes.
+`publish-crates.yml` as a reusable workflow. crates.io reads the
+**caller** workflow filename from the GitHub OIDC JWT, so a tag publish
+presents as `release.yml`. A `workflow_dispatch` of the crates workflow
+presents as `publish-crates.yml`. Each crate therefore needs both
+filenames pinned (same repository, same `crates-io` environment). The
+crates workflow has no tag trigger of its own, so a tag cannot start two
+publishes.
 
 ## First public version
 
-The seven workspace crates exist on crates.io from 0.3.0, and each has a
-trusted publisher: repository `HaoZeke/vissue`, workflow
-`publish-crates.yml`, environment `crates-io`. Later `v*` tags publish
-through OIDC. The GitHub environment already exists; recreate it with
+The seven workspace crates exist on crates.io from 0.3.0, and each has
+trusted publishers for repository `HaoZeke/vissue`, environment
+`crates-io`, and both workflow filenames `release.yml` and
+`publish-crates.yml`. Later `v*` tags publish through OIDC. The GitHub
+environment already exists; recreate it with
 
 ```console
 $ gh api --method PUT repos/HaoZeke/vissue/environments/crates-io
@@ -90,12 +94,13 @@ $ for crate in $(./scripts/publish-order.py); do
   done
 ```
 
-Then add the same trusted publisher to the new crate, at
+Then add trusted publishers to the new crate, at
 `https://crates.io/crates/<name>/settings`, or via
 
 `POST /api/v1/trusted_publishing/github_configs` with
 `crate`, `repository_owner=HaoZeke`, `repository_name=vissue`,
-`workflow_filename=publish-crates.yml`, `environment=crates-io`.
+`environment=crates-io`, once for `workflow_filename=release.yml` and
+once for `workflow_filename=publish-crates.yml`.
 
 After that the token is never needed again, and it should be revoked.
 

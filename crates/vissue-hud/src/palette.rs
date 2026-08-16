@@ -43,20 +43,30 @@ Body edits stay in the file.
 /// Where a row came from before the filter merge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemSource {
+    /// Actionable ready queue.
     Ready,
+    /// Title and body search.
     Search,
+    /// Full filtered list.
     List,
+    /// Open claims.
     Claims,
+    /// Deadlines and scheduled dates.
     Agenda,
 }
 
 /// Same panes as the terminal board.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoardFilter {
+    /// Actionable ready queue.
     Ready,
+    /// Full filtered list.
     List,
+    /// Open claims.
     Claims,
+    /// Deadlines and scheduled dates.
     Agenda,
+    /// Title and body search.
     Search,
 }
 
@@ -70,6 +80,7 @@ impl BoardFilter {
         (Self::Search, "Search"),
     ];
 
+    /// Chip label drawn on the board.
     pub fn label(self) -> &'static str {
         match self {
             Self::Ready => "Ready",
@@ -80,6 +91,7 @@ impl BoardFilter {
         }
     }
 
+    /// Next filter in chip order.
     pub fn next(self) -> Self {
         let i = Self::ALL.iter().position(|(p, _)| *p == self).unwrap_or(0);
         Self::ALL[(i + 1) % Self::ALL.len()].0
@@ -89,14 +101,20 @@ impl BoardFilter {
 /// Detail card. Same tabs as the terminal board.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DetailTab {
+    /// Metadata from `issue/get`.
     Show,
+    /// On-disk heading range.
     Excerpt,
+    /// Parent and child tree.
     Tree,
+    /// Related-issue hits.
     Related,
+    /// Logbook notes.
     Notes,
 }
 
 impl DetailTab {
+    /// Tab order cycled by Enter on a selected row.
     pub const ALL: [Self; 5] = [
         Self::Show,
         Self::Excerpt,
@@ -105,6 +123,7 @@ impl DetailTab {
         Self::Notes,
     ];
 
+    /// Tab label drawn on the detail card.
     pub fn label(self) -> &'static str {
         match self {
             Self::Show => "show",
@@ -115,6 +134,7 @@ impl DetailTab {
         }
     }
 
+    /// Next tab in [`Self::ALL`] order.
     pub fn next(self) -> Self {
         let i = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
         Self::ALL[(i + 1) % Self::ALL.len()]
@@ -124,35 +144,55 @@ impl DetailTab {
 /// Which field owns typing. List is the default so j/k move rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
+    /// Row list (or the home project list).
     List,
+    /// Search query field.
     Search,
+    /// Add-task field.
     Add,
+    /// Logbook note field.
     Note,
+    /// Home project list.
     Project,
+    /// Help overlay.
     Help,
 }
 
 /// One selectable palette row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HudItem {
+    /// Issue id shown in the first column.
     pub id: String,
+    /// Heading title.
     pub title: String,
+    /// Project name.
     pub project: String,
+    /// Org TODO state (`TODO`, `STARTED`, ...).
     pub state: String,
+    /// Priority letter (`A`, `B`, or `C`).
     pub priority: String,
+    /// Pane that produced this row.
     pub source: ItemSource,
+    /// Identity holding the issue, when claimed.
     pub claimed_by: Option<String>,
+    /// Agenda date, when the row came from Agenda.
     pub due: Option<String>,
+    /// Ids listed in `:BLOCKED_BY:`.
     pub blocked_by: Vec<String>,
+    /// Pane-specific suffix: holder, agenda date, or search snippet.
     pub extra: String,
+    /// `:PARENT:` id, when set.
     pub parent: Option<String>,
+    /// Forest indent; `0` for a root heading.
     pub depth: usize,
 }
 
 /// One row on the home project list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectCard {
+    /// Project directory name.
     pub name: String,
+    /// Ready-queue count for this project.
     pub ready: usize,
 }
 
@@ -241,13 +281,21 @@ impl HudItem {
 /// Key the overlay understands. iced maps native keys onto this.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaletteKey {
+    /// Printable character, including mapped chords.
     Char(char),
+    /// Enter / Return.
     Enter,
+    /// Escape.
     Esc,
+    /// Up arrow.
     Up,
+    /// Down arrow.
     Down,
+    /// Backspace.
     Backspace,
+    /// Space.
     Space,
+    /// Tab.
     Tab,
 }
 
@@ -305,11 +353,14 @@ impl std::fmt::Debug for Palette {
 /// Close or cancel confirmation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmKind {
+    /// Set state to DONE.
     Done,
+    /// Set state to CANCELLED.
     Cancelled,
 }
 
 impl ConfirmKind {
+    /// Org TODO keyword this confirmation applies.
     pub fn state(self) -> &'static str {
         match self {
             Self::Done => "DONE",
@@ -319,11 +370,22 @@ impl ConfirmKind {
 }
 
 impl Palette {
+    /// Open a file-backed board and load the Ready pane.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the vault cannot be parsed or the first pane cannot
+    /// be loaded.
     pub fn open_core(layout: Layout, agent: String) -> anyhow::Result<Self> {
         let backend = CoreBackend::open(layout, agent.clone())?;
         Self::with_backend(Box::new(backend), agent, ServeStatus::Offline)
     }
 
+    /// Build a board around an existing backend and load the Ready pane.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the first pane cannot be loaded.
     pub fn with_backend(
         backend: Box<dyn BoardBackend>,
         agent: String,
@@ -377,50 +439,62 @@ impl Palette {
         Ok(palette)
     }
 
+    /// How the status line labels the current store.
     pub fn serve_status(&self) -> ServeStatus {
         self.status
     }
 
+    /// Identity used for claims and updates.
     pub fn agent(&self) -> &str {
         &self.agent
     }
 
+    /// Whether the overlay window is mapped.
     pub fn visible(&self) -> bool {
         self.visible
     }
 
+    /// Search query text.
     pub fn query(&self) -> &str {
         &self.query
     }
 
+    /// Status-line message, if any.
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    /// On-disk excerpt for the selected issue, if loaded.
     pub fn excerpt(&self) -> Option<&Excerpt> {
         self.excerpt.as_ref()
     }
 
+    /// Last loaded issue detail, if any.
     pub fn detail(&self) -> Option<&IssueDetail> {
         self.detail.as_ref()
     }
 
+    /// Logbook note draft while the note field is open.
     pub fn note_draft(&self) -> Option<&str> {
         self.note_draft.as_deref()
     }
 
+    /// Add-task draft text.
     pub fn add_draft(&self) -> &str {
         &self.add_draft
     }
 
+    /// Active list filter.
     pub fn filter(&self) -> BoardFilter {
         self.filter
     }
 
+    /// Which field owns typing.
     pub fn focus(&self) -> Focus {
         self.focus
     }
 
+    /// Cached row count for a filter chip.
     pub fn count(&self, filter: BoardFilter) -> usize {
         match filter {
             BoardFilter::Ready => self.ready_count,
@@ -431,36 +505,44 @@ impl Palette {
         }
     }
 
+    /// Active detail card tab.
     pub fn detail_tab(&self) -> DetailTab {
         self.detail_tab
     }
 
+    /// Text drawn in the detail card.
     pub fn detail_body(&self) -> &str {
         &self.detail_body
     }
 
+    /// Open project filter, if any.
     pub fn project(&self) -> Option<&str> {
         self.project.as_deref()
     }
 
+    /// Pending DONE/CANCELLED confirmation.
     pub fn confirm(&self) -> Option<ConfirmKind> {
         self.confirm
     }
 
+    /// Last id or URL copied with `y` or a markdown click.
     pub fn clipboard(&self) -> &str {
         &self.clipboard
     }
 
+    /// Store `text` as the clipboard and report it on the status line.
     pub fn set_clipboard(&mut self, text: impl Into<String>) {
         let text = text.into();
         self.message = format!("copied {text}");
         self.clipboard = text;
     }
 
+    /// Parsed markdown for the detail card, if any.
     pub fn detail_md(&self) -> Option<&icedtea::widget::MarkdownDoc> {
         self.detail_md.as_ref()
     }
 
+    /// Help overlay body.
     pub fn help_text(&self) -> &'static str {
         HELP
     }
@@ -470,20 +552,24 @@ impl Palette {
         self.project.is_none() && matches!(self.filter, BoardFilter::Ready | BoardFilter::List)
     }
 
+    /// Home project cards, ready-count descending.
     pub fn project_cards(&self) -> &[ProjectCard] {
         &self.project_cards
     }
 
+    /// Index into [`Self::project_cards`].
     pub fn selected_project_index(&self) -> usize {
         self.project_sel
     }
 
+    /// Name of the selected home project card, if any.
     pub fn selected_project_name(&self) -> Option<&str> {
         self.project_cards
             .get(self.project_sel)
             .map(|c| c.name.as_str())
     }
 
+    /// Open `name` and load its Ready pane.
     pub fn enter_project(&mut self, name: &str) {
         self.project = Some(name.to_string());
         self.query.clear();
@@ -496,6 +582,7 @@ impl Palette {
         let _ = self.reload();
     }
 
+    /// Return to the home project list.
     pub fn leave_project(&mut self) {
         self.project = None;
         self.items.clear();
@@ -531,6 +618,7 @@ impl Palette {
         out
     }
 
+    /// Collapse or expand `project` in the current filter.
     pub fn toggle_project(&mut self, project: &str) {
         if !self.collapsed.remove(project) {
             self.collapsed.insert(project.to_string());
@@ -561,18 +649,22 @@ impl Palette {
         self.collapse_seeded = true;
     }
 
+    /// The store this board is talking to.
     pub fn backend(&self) -> &dyn BoardBackend {
         self.backend.as_ref()
     }
 
+    /// Catalog generation from the current backend.
     pub fn generation(&self) -> u64 {
         self.backend.generation()
     }
 
+    /// Serve revision from the current backend. Core is always 0.
     pub fn revision(&self) -> u64 {
         self.backend.revision()
     }
 
+    /// Rows that match the current query, in display order.
     pub fn filtered_items(&self) -> Vec<&HudItem> {
         self.filtered
             .iter()
@@ -580,20 +672,24 @@ impl Palette {
             .collect()
     }
 
+    /// Selected row, if the filter is not empty.
     pub fn selected_item(&self) -> Option<&HudItem> {
         self.filtered
             .get(self.selected)
             .and_then(|&i| self.items.get(i))
     }
 
+    /// Id of the selected row, if the filter is not empty.
     pub fn selected_id(&self) -> Option<&str> {
         self.selected_item().map(|i| i.id.as_str())
     }
 
+    /// Index into [`Self::filtered_items`].
     pub fn selected_index(&self) -> usize {
         self.selected
     }
 
+    /// One-line `serve:` / gen / rev / agent / message summary.
     pub fn status_line(&self) -> String {
         let kind = match self.status {
             ServeStatus::Live => "live",
@@ -614,6 +710,10 @@ impl Palette {
     }
 
     /// Post-paint attach. `--offline` never probes the socket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pane cannot be reloaded after the attach attempt.
     pub fn attach(
         &mut self,
         socket: &Path,
@@ -637,16 +737,19 @@ impl Palette {
         self.reload()
     }
 
+    /// Replace the search query and reload matching rows.
     pub fn set_query(&mut self, query: impl Into<String>) {
         self.query = query.into();
         self.excerpt = None;
         let _ = self.reload();
     }
 
+    /// Map the overlay window.
     pub fn show(&mut self) {
         self.visible = true;
     }
 
+    /// Unmap the overlay and drop drafts.
     pub fn hide(&mut self) {
         self.note_draft = None;
         self.add_draft.clear();
@@ -655,6 +758,7 @@ impl Palette {
         self.visible = false;
     }
 
+    /// Invert mapped state.
     pub fn toggle(&mut self) {
         if self.visible {
             self.hide();
@@ -663,6 +767,7 @@ impl Palette {
         }
     }
 
+    /// Apply a compositor summon verb.
     pub fn apply_summon(&mut self, req: &SummonRequest) {
         match req.action {
             SummonAction::Show => self.show(),
@@ -671,6 +776,7 @@ impl Palette {
         }
     }
 
+    /// Dispatch one overlay key. Ignored while hidden.
     pub fn handle_key(&mut self, key: PaletteKey) {
         if !self.visible {
             return;
@@ -908,6 +1014,7 @@ impl Palette {
         }
     }
 
+    /// Switch the list filter and reload rows.
     pub fn set_filter(&mut self, filter: BoardFilter) {
         if self.filter == filter {
             self.focus = if filter == BoardFilter::Search {
@@ -943,11 +1050,13 @@ impl Palette {
         }
     }
 
+    /// Advance the detail card to the next tab.
     pub fn cycle_detail_tab(&mut self) {
         self.detail_tab = self.detail_tab.next();
         self.refresh_detail();
     }
 
+    /// Open `tab` on the detail card.
     pub fn set_detail_tab(&mut self, tab: DetailTab) {
         self.detail_tab = tab;
         self.refresh_detail();
@@ -1068,6 +1177,7 @@ impl Palette {
         self.detail_md = Some(icedtea::widget::parse(&self.detail_body));
     }
 
+    /// Select the filtered row with this issue id, if present.
     pub fn select_id(&mut self, id: &str) {
         if let Some(pos) = self
             .filtered
@@ -1082,6 +1192,7 @@ impl Palette {
         }
     }
 
+    /// Flip `id` between DONE and TODO.
     pub fn toggle_done(&mut self, id: &str) {
         let current = match self.backend.get(id) {
             Ok(detail) => detail.state,
@@ -1104,11 +1215,13 @@ impl Palette {
         }
     }
 
+    /// Replace the add-task draft and focus the add field.
     pub fn set_add_draft(&mut self, text: impl Into<String>) {
         self.add_draft = text.into();
         self.focus = Focus::Add;
     }
 
+    /// Create an issue from the add-task draft in the current project.
     pub fn submit_add(&mut self) {
         let title = self.add_draft.trim().to_string();
         if title.is_empty() {
@@ -1145,11 +1258,13 @@ impl Palette {
         }
     }
 
+    /// Replace the logbook note draft and focus the note field.
     pub fn set_note_draft(&mut self, text: impl Into<String>) {
         self.note_draft = Some(text.into());
         self.focus = Focus::Note;
     }
 
+    /// Append the note draft to the selected issue.
     pub fn submit_note(&mut self) {
         let Some(text) = self.note_draft.clone() else {
             return;
@@ -1160,6 +1275,7 @@ impl Palette {
         }
     }
 
+    /// Focus the add-task field, entering the selected project from home.
     pub fn focus_add(&mut self) {
         if self.browsing() {
             if let Some(name) = self.selected_project_name().map(str::to_string) {
@@ -1169,6 +1285,7 @@ impl Palette {
         self.focus = Focus::Add;
     }
 
+    /// Switch to Search and focus the query field.
     pub fn focus_search(&mut self) {
         if self.filter != BoardFilter::Search {
             self.set_filter(BoardFilter::Search);
@@ -1176,10 +1293,12 @@ impl Palette {
         self.focus = Focus::Search;
     }
 
+    /// Return typing to the row list.
     pub fn focus_list(&mut self) {
         self.focus = Focus::List;
     }
 
+    /// Load the on-disk excerpt for the selected issue.
     pub fn show_excerpt(&mut self) {
         let Some(id) = self.selected_id().map(str::to_string) else {
             return;
@@ -1193,6 +1312,7 @@ impl Palette {
         }
     }
 
+    /// Claim the selected issue for [`Self::agent`].
     pub fn claim_selected(&mut self) {
         let Some(id) = self.selected_id().map(str::to_string) else {
             return;
@@ -1206,6 +1326,7 @@ impl Palette {
         }
     }
 
+    /// Reload when serve revision or core generation advances.
     pub fn poll_updates(&mut self) {
         let last = match self.backend.live() {
             vissue_tui::BackendKind::Control => self.backend.revision(),
@@ -1218,6 +1339,11 @@ impl Palette {
         }
     }
 
+    /// Fetch the current filter from the backend and refresh detail.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend cannot load the pane.
     pub fn reload(&mut self) -> anyhow::Result<()> {
         if self.browsing() {
             self.reload_browser();
@@ -1431,10 +1557,15 @@ fn body_preview(body: &str, lines: usize) -> String {
 /// One project group in the current filter.
 #[derive(Debug)]
 pub struct ProjectSection<'a> {
+    /// Project name shared by the rows.
     pub project: &'a str,
+    /// Inclusive start index into the filtered list.
     pub start: usize,
+    /// Exclusive end index into the filtered list.
     pub end: usize,
+    /// Whether the group is collapsed.
     pub collapsed: bool,
+    /// Filtered index plus row for each item in the group.
     pub rows: Vec<(usize, &'a HudItem)>,
 }
 

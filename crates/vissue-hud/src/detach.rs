@@ -38,6 +38,11 @@ pub fn child_args(cli: &HudCli) -> Vec<String> {
 /// Spawn this executable with [`child_args`] and wait until the summon socket
 /// accepts. The child is placed in its own process group and can still see
 /// SIGHUP from the parent terminal.
+///
+/// # Errors
+///
+/// Returns an error if the HUD log cannot be opened, this executable cannot
+/// be found, or the child process cannot be spawned.
 pub fn start_detached(cli: &HudCli) -> anyhow::Result<i32> {
     if summon::already_running() {
         return Ok(0);

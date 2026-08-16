@@ -21,42 +21,69 @@ const HUD_H: f32 = 760.0;
 /// First-paint inputs for the board.
 #[derive(Clone, Debug)]
 pub struct BootOpts {
+    /// Vault root and project prefix.
     pub layout: Layout,
+    /// Control socket to attach after first paint.
     pub socket: PathBuf,
+    /// Skip the socket and stay on [`vissue_tui::CoreBackend`].
     pub offline: bool,
+    /// Identity stamped on claims and updates.
     pub agent: String,
+    /// Whether the window starts mapped.
     pub visible: bool,
 }
 
 /// iced messages. Mapping from native keys lives here so view stays dumb.
 #[derive(Debug, Clone)]
 pub enum Message {
+    /// Board key after native mapping.
     Key(PaletteKey),
+    /// 50 ms poll: serve wait plus summon socket.
     Tick,
+    /// Latest iced window id, once the shell reports one.
     WindowId(Option<window::Id>),
+    /// Close request: hide rather than exit.
     Close,
+    /// Switch the list filter chip.
     Filter(BoardFilter),
+    /// Select the row with this issue id.
     SelectId(String),
+    /// Toggle DONE on this issue id.
     ToggleDone(String),
+    /// Replace the search query.
     QueryChanged(String),
+    /// Replace the add-task draft.
     AddChanged(String),
+    /// Submit the add-task draft.
     AddSubmit,
+    /// Replace the logbook note draft.
     NoteChanged(String),
+    /// Submit the logbook note draft.
     NoteSubmit,
+    /// Focus the add-task field.
     FocusAdd,
+    /// Switch to Search and focus the query field.
     FocusSearch,
+    /// Return typing to the row list.
     FocusList,
+    /// Open this detail tab.
     DetailTab(DetailTab),
+    /// Collapse or expand this project group.
     ToggleProject(String),
+    /// Enter this project from the home list.
     SelectProject(String),
+    /// Return to the home project list.
     LeaveProject,
+    /// Copy a markdown link target.
     MdLink(String),
+    /// Discarded click (tab-bar close, unused).
     Noop,
 }
 
 /// iced application state.
 #[derive(Debug)]
 pub struct HudApp {
+    /// Overlay state the view reads.
     pub palette: Palette,
     window_id: Option<window::Id>,
 }
@@ -213,6 +240,11 @@ pub fn board_window() -> window::Settings {
 }
 
 /// First paint via core, attach unless `--offline`, then the iced loop.
+///
+/// # Errors
+///
+/// Returns an error if the vault cannot be opened, attach reload fails, or
+/// the iced application cannot start.
 pub fn run(opts: BootOpts) -> anyhow::Result<()> {
     let mut palette = Palette::open_core(opts.layout, opts.agent)?;
     palette.attach(&opts.socket, opts.offline, &attach::hud_hooks())?;

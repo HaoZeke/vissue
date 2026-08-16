@@ -3,9 +3,16 @@
 use iced::Color;
 use icedtea::theme::{Tokens, mix};
 
-pub use icedtea::typo::{
-    BODY as SIZE_BODY, META as SIZE_HINT, META as SIZE_META, TITLE as SIZE_TITLE, UI as FACE,
-};
+/// Body size in pixels (`icedtea::typo::BODY`).
+pub use icedtea::typo::BODY as SIZE_BODY;
+/// Meta size in pixels (`icedtea::typo::META`).
+pub use icedtea::typo::META as SIZE_META;
+/// Hint size; same token as [`SIZE_META`].
+pub use icedtea::typo::META as SIZE_HINT;
+/// Title size in pixels (`icedtea::typo::TITLE`).
+pub use icedtea::typo::TITLE as SIZE_TITLE;
+/// icedtea UI typeface.
+pub use icedtea::typo::UI as FACE;
 
 /// Sidebar and chrome (`#181825`).
 pub const MANTLE: Color = Color::from_rgb8(0x18, 0x18, 0x25);

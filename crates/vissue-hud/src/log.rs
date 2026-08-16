@@ -35,10 +35,12 @@ pub fn write(level: &str, msg: &str) {
     }
 }
 
+/// Append an `error` line, skipping empty or duplicate text.
 pub fn error(msg: &str) {
     write("error", msg);
 }
 
+/// Append an `info` line, skipping empty or duplicate text.
 pub fn info(msg: &str) {
     write("info", msg);
 }

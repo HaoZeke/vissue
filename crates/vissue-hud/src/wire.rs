@@ -4,12 +4,21 @@ use serde_json::Value;
 use vissue_control::rpc::{IssueListResult, Notification, VaultChanged};
 
 /// Parse an `issue/list` result body (snake_case rows, `claimed_by` on list).
+///
+/// # Errors
+///
+/// Returns an error if `value` is not an `issue/list` result body.
 pub fn decode_issue_list(value: &Value) -> Result<IssueListResult, String> {
     serde_json::from_value(value.clone()).map_err(|err| err.to_string())
 }
 
 /// Parse a `vault/changed` notification, either the params object or a full
 /// JSON-RPC envelope with `method` set.
+///
+/// # Errors
+///
+/// Returns an error if `value` is not a `vault/changed` params object or
+/// envelope.
 pub fn decode_vault_changed(value: &Value) -> Result<VaultChanged, String> {
     if value.get("method").and_then(Value::as_str) == Some("vault/changed") {
         let params = value.get("params").cloned().unwrap_or(Value::Null);

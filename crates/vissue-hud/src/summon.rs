@@ -17,19 +17,25 @@ pub const SOCKET_ENV: &str = vissue_control::HUD_SOCKET_ENV;
 /// Operator action for the iced loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SummonAction {
+    /// Map the HUD window.
     Show,
+    /// Unmap the HUD window.
     Hide,
+    /// Invert mapped state.
     Toggle,
 }
 
 /// One summon request: verb plus optional xdg-activation token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SummonRequest {
+    /// Verb the iced loop applies.
     pub action: SummonAction,
+    /// Optional xdg-activation token; never set on [`SummonAction::Hide`].
     pub token: Option<String>,
 }
 
 impl SummonRequest {
+    /// Request `action` with no activation token.
     pub fn new(action: SummonAction) -> Self {
         Self {
             action,
@@ -41,11 +47,17 @@ impl SummonRequest {
 /// Why a summon send or bind failed.
 #[derive(Debug)]
 pub enum SummonError {
+    /// Summon sockets are Unix-only.
     Unsupported,
+    /// Socket path resolved empty.
     NoPath,
+    /// No HUD is accepting on this path.
     NotRunning(String),
+    /// Another HUD already owns this path.
     AlreadyRunning(String),
+    /// Filesystem or stream I/O failed.
     Io(std::io::Error),
+    /// Thread spawn or other bind-side failure.
     Other(String),
 }
 
@@ -165,6 +177,11 @@ pub fn socket_accepts(path: &Path) -> bool {
 }
 
 /// Send one summon command to a running HUD.
+///
+/// # Errors
+///
+/// Returns an error if the platform has no summon socket, no HUD is accepting
+/// on the default path, or the write fails.
 pub fn send_command(action: SummonAction) -> Result<(), SummonError> {
     let token = match action {
         SummonAction::Hide => {
@@ -177,6 +194,11 @@ pub fn send_command(action: SummonAction) -> Result<(), SummonError> {
 }
 
 /// Send a parsed request to the default socket.
+///
+/// # Errors
+///
+/// Returns an error if the platform has no summon socket, no HUD is accepting
+/// on the default path, or the write fails.
 pub fn send_request(req: SummonRequest) -> Result<(), SummonError> {
     #[cfg(unix)]
     {
@@ -190,11 +212,21 @@ pub fn send_request(req: SummonRequest) -> Result<(), SummonError> {
 }
 
 /// Send `action` to `path` (no env token).
+///
+/// # Errors
+///
+/// Returns an error if the platform has no summon socket, no HUD is accepting
+/// on `path`, or the write fails.
 pub fn send_command_to(path: &Path, action: SummonAction) -> Result<(), SummonError> {
     send_request_to(path, &SummonRequest::new(action))
 }
 
 /// Write one wire line to `path`.
+///
+/// # Errors
+///
+/// Returns an error if the platform has no summon socket, no HUD is accepting
+/// on `path`, or the write fails.
 pub fn send_request_to(path: &Path, req: &SummonRequest) -> Result<(), SummonError> {
     #[cfg(unix)]
     {
@@ -226,6 +258,12 @@ pub fn encode_request(req: &SummonRequest) -> String {
 }
 
 /// Bind the summon socket and start the accept thread.
+///
+/// # Errors
+///
+/// Returns an error if the platform has no summon socket, the path cannot be
+/// resolved, another HUD already owns the socket, the listener cannot bind,
+/// or the accept thread cannot spawn.
 pub fn install() -> Result<SummonServer, SummonError> {
     #[cfg(unix)]
     {
@@ -244,6 +282,14 @@ pub fn try_recv() -> Option<SummonRequest> {
 }
 
 /// Block until the next summon request.
+///
+/// # Errors
+///
+/// Returns an error if the accept thread has dropped the sender.
+///
+/// # Panics
+///
+/// Panics if the summon action mutex is poisoned.
 pub fn recv_action() -> Result<SummonRequest, RecvError> {
     loop {
         let outcome = {

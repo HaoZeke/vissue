@@ -62,11 +62,24 @@ impl HudCli {
 }
 
 /// Parse args and run: summon bounce, detach, or the iced loop.
+///
+/// # Errors
+///
+/// Returns an error if a summon send fails, detach cannot spawn, the vault
+/// cannot be resolved, the summon socket cannot be bound, or the iced loop
+/// cannot start.
 pub fn run_cli() -> anyhow::Result<i32> {
     let cli = HudCli::parse();
     run_with(cli)
 }
 
+/// Run already-parsed flags: bounce off a live HUD, detach, or own the loop.
+///
+/// # Errors
+///
+/// Returns an error if a summon send fails, detach cannot spawn, the vault
+/// cannot be resolved, the summon socket cannot be bound, or the iced loop
+/// cannot start.
 pub fn run_with(cli: HudCli) -> anyhow::Result<i32> {
     if summon::already_running() {
         if let Some(action) = cli.summon_action() {

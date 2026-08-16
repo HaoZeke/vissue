@@ -47,7 +47,7 @@ impl DependencyGraph {
         let mut seen_edges = HashSet::new();
         for issue in &headings {
             if graph.ids.contains_key(&issue.id) {
-                bail!("duplicate issue id {}", issue.id);
+                return Err(anyhow!("duplicate issue id {}", issue.id).into());
             }
             let node = graph.dag.add_node(issue.id.clone());
             graph.ids.insert(issue.id.clone(), node);
@@ -59,7 +59,7 @@ impl DependencyGraph {
                 };
                 let to = graph.ids[&issue.id];
                 if from == to {
-                    bail!("issue {} blocks itself", issue.id);
+                    return Err(anyhow!("issue {} blocks itself", issue.id).into());
                 }
                 if !seen_edges.insert((from, to)) {
                     continue;

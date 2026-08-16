@@ -1,7 +1,7 @@
 //! Read-only verbs. Every function returns its text instead of printing, so a
 //! CLI, an MCP server, and a library caller share one implementation.
 
-use anyhow::bail;
+use anyhow::anyhow;
 
 use crate::error::{Error, Result};
 use chrono::{Local, NaiveDate};
@@ -506,7 +506,7 @@ pub fn tree(layout: &Layout, root_id: &str, format: &str) -> Result<String> {
     match format {
         "ascii" | "text" => tree_ascii(&graph, root, 0, &mut HashSet::new(), &mut out),
         "dot" => tree_dot(&graph, root, &mut out),
-        _ => bail!("unknown format {format:?}; allowed: ascii, dot"),
+        _ => return Err(anyhow!("unknown format {format:?}; allowed: ascii, dot").into()),
     }
     Ok(out)
 }

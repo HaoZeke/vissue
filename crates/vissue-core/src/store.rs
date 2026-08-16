@@ -345,7 +345,7 @@ fn parse_heading(lines: &[&str], start: usize) -> Result<(IssueHeading, usize)> 
         .map(|(s, a)| (s.to_string(), a.trim_start()))
         .unwrap_or((trimmed.to_string(), ""));
     if !TODO_KEYWORDS.contains(&state.as_str()) {
-        return Err(anyhow!("unknown TODO keyword {:?}", state));
+        return Err(anyhow!("unknown TODO keyword {:?}", state).into());
     }
 
     let (priority, heading_text) = match parse_priority_cookie(after) {
@@ -561,7 +561,8 @@ pub fn resolve_existing_project_case(layout: &Layout, project: &str) -> Result<S
         _ => Err(anyhow!(
             "project {project:?} is ambiguous; case-insensitive matches: {}",
             matches.join(", ")
-        )),
+        )
+        .into()),
     }
 }
 
@@ -654,7 +655,8 @@ pub fn generate_id(project: &str, existing: &[String], length: usize) -> Result<
     Err(anyhow!(
         "no free id left for {project:?} at id_length = {len}; \
          raise `id_length` under [issues] in vissue.toml"
-    ))
+    )
+    .into())
 }
 
 /// Walk up from `start` for a `.project-ctx.toml` and read `[project].name`.

@@ -1,6 +1,6 @@
 //! Explainable, derived connections between Org issue headings.
 
-use anyhow::bail;
+use anyhow::anyhow;
 
 use crate::error::Result;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -130,7 +130,7 @@ pub fn related(
     format: &str,
 ) -> Result<String> {
     if !matches!(format, "text" | "org") {
-        bail!("related format must be text or org, got {format:?}");
+        return Err(anyhow!("related format must be text or org, got {format:?}").into());
     }
     let loaded = load_all(layout)?;
     let recs: Vec<IssueRec> = loaded

@@ -4,7 +4,7 @@
 //! the backlog. It carries a banner naming it as generated output, because the
 //! next run overwrites it and hand edits are lost.
 
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow};
 
 use crate::error::Result;
 use chrono::Local;
@@ -41,7 +41,9 @@ impl Format {
         match s {
             "org" => Ok(Format::Org),
             "markdown" | "md" => Ok(Format::Markdown),
-            other => bail!("unknown format {other:?}; allowed: org, markdown"),
+            other => {
+                return Err(anyhow!("unknown format {other:?}; allowed: org, markdown").into());
+            }
         }
     }
 }

@@ -27,7 +27,7 @@ use crate::store::{
 pub fn resolve_project(layout: &Layout, explicit: Option<&str>) -> Result<String> {
     if let Some(p) = explicit {
         if p.is_empty() {
-            bail!("--project given but empty");
+            return Err(anyhow!("--project given but empty").into());
         }
         return resolve_existing_project_case(layout, p);
     }
@@ -74,14 +74,14 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
     let cfg = VissueConfig::load(layout)?;
     let priority = opts.priority.unwrap_or(cfg.issues.default_priority);
     if !"ABC".contains(priority) {
-        bail!("invalid priority {priority:?}; allowed: A B C");
+        return Err(anyhow!("invalid priority {priority:?}; allowed: A B C").into());
     }
     let path = layout.project_issues_path(&project);
 
     // Validating the parent scans every org file, so do it outside the lock.
     if let Some(p) = opts.parent
         && !collect_org_ids(layout)?.contains(p) {
-            bail!("--parent {p} does not refer to any known id");
+            return Err(anyhow!("--parent {p} does not refer to any known id").into());
         }
 
     with_issues_lock(&path, || {
@@ -232,7 +232,7 @@ pub fn update_as(
 
         if let Some(s) = new_state {
             if !TODO_KEYWORDS.contains(&s) {
-                bail!("invalid state {s:?}; allowed: {TODO_KEYWORDS:?}");
+                return Err(anyhow!("invalid state {s:?}; allowed: {TODO_KEYWORDS:?}").into());
             }
             if h.state != s {
                 let from = h.state.clone();
@@ -246,7 +246,7 @@ pub fn update_as(
 
         if let Some(p) = new_priority {
             if !"ABC".contains(p) {
-                bail!("invalid priority {p:?}; allowed: A B C");
+                return Err(anyhow!("invalid priority {p:?}; allowed: A B C").into());
             }
             if h.priority != p {
                 h.priority = p;
@@ -454,7 +454,7 @@ pub fn note(layout: &Layout, id: &str, text: &str) -> Result<String> {
         .join(" ")
         .replace('"', "'");
     if text.is_empty() {
-        bail!("note text is empty");
+        return Err(anyhow!("note text is empty").into());
     }
     let (_h0, path, project) =
         find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
@@ -509,7 +509,7 @@ pub fn append_body(layout: &Layout, id: &str, text: &str) -> Result<String> {
 pub fn append_body_as(layout: &Layout, id: &str, text: &str, identity: &str) -> Result<String> {
     let text = text.trim_end();
     if text.trim().is_empty() {
-        bail!("append text is empty");
+        return Err(anyhow!("append text is empty").into());
     }
     let (_h0, path, project) =
         find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;

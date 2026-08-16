@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/vissue-core",
     "crates/vissue-cli",
@@ -33,7 +33,7 @@ missing_panics_doc = "warn"
 
 [workspace.package]
 version = "0.3.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.89"
 license = "MIT"
 repository = "https://github.com/HaoZeke/vissue"

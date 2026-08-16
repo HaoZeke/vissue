@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use iced::widget::markdown;
-use iced::widget::{column, container, mouse_area, row, text, Space};
+use iced::widget::{Space, column, container, mouse_area, row, text};
 use iced::{Alignment, Element, Fill, Length};
 use icedtea::a11y::{A11y, Role};
 use icedtea::collection::Tabs;

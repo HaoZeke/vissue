@@ -3,8 +3,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use vissue_core::catalog::{excerpt_from, load_recs, CatalogService};
-use vissue_core::config::{Layout, DEFAULT_PREFIX};
+use vissue_core::catalog::{CatalogService, excerpt_from, load_recs};
+use vissue_core::config::{DEFAULT_PREFIX, Layout};
 use vissue_core::error::Error;
 use vissue_core::graph::DependencyGraph;
 use vissue_core::mirror::{self, Format};
@@ -122,10 +122,12 @@ fn export_rows_carry_the_documented_schema() {
     assert_eq!(parser["tags"][0], "parser");
     assert_eq!(parser["logbook"][0]["to"], "STARTED");
     assert_eq!(parser["logbook"][0]["from"], "TODO");
-    assert!(parser["body"]
-        .as_str()
-        .unwrap()
-        .starts_with("Scope: read the header block"));
+    assert!(
+        parser["body"]
+            .as_str()
+            .unwrap()
+            .starts_with("Scope: read the header block")
+    );
 }
 
 #[test]
@@ -454,10 +456,12 @@ fn stale_reports_open_issues_with_old_creation_dates() {
         !text.contains("atlas-4g5h"),
         "closed issue reported: {text}"
     );
-    assert!(report::stale(&layout, 30, Some("beacon"))
-        .unwrap()
-        .lines()
-        .all(|l| l.starts_with("beacon-")));
+    assert!(
+        report::stale(&layout, 30, Some("beacon"))
+            .unwrap()
+            .lines()
+            .all(|l| l.starts_with("beacon-"))
+    );
 }
 
 #[test]
@@ -689,21 +693,29 @@ fn check_names_a_parent_cycle() {
 #[test]
 fn a_search_finds_body_and_property_text() {
     let layout = fixture_layout();
-    assert!(report::search(&layout, "backoff table", 10)
-        .unwrap()
-        .contains("beacon-5j6k"));
+    assert!(
+        report::search(&layout, "backoff table", 10)
+            .unwrap()
+            .contains("beacon-5j6k")
+    );
     // A tag is searchable whether it sits on the heading or in the drawer,
     // and the scan folds case either way.
-    assert!(report::search(&layout, "PARSER", 10)
-        .unwrap()
-        .contains("atlas-1a2b"));
-    assert!(report::search(&layout, "core", 10)
-        .unwrap()
-        .contains("atlas-1a2b"));
+    assert!(
+        report::search(&layout, "PARSER", 10)
+            .unwrap()
+            .contains("atlas-1a2b")
+    );
+    assert!(
+        report::search(&layout, "core", 10)
+            .unwrap()
+            .contains("atlas-1a2b")
+    );
     // Still reaches drawer properties: TYPE on the same issue.
-    assert!(report::search(&layout, "feature", 10)
-        .unwrap()
-        .contains("atlas-1a2b"));
+    assert!(
+        report::search(&layout, "feature", 10)
+            .unwrap()
+            .contains("atlas-1a2b")
+    );
     assert_eq!(
         report::search(&layout, "nothing matches this", 10).unwrap(),
         ""
@@ -717,9 +729,11 @@ fn children_lists_issues_under_a_parent() {
     assert!(text.contains("atlas-2c3d"), "{text}");
     assert_eq!(text.lines().count(), 1, "{text}");
     // A design document may also be a parent.
-    assert!(report::children(&layout, "beacon-design-0001")
-        .unwrap()
-        .contains("beacon-5j6k"));
+    assert!(
+        report::children(&layout, "beacon-design-0001")
+            .unwrap()
+            .contains("beacon-5j6k")
+    );
 }
 
 #[test]
@@ -972,9 +986,11 @@ fn a_claimed_issue_shows_its_holder_and_age() {
     // An unclaimed issue renders exactly as it did before claims existed.
     let unclaimed = report::list(&layout, Some("atlas"), Some("TODO"), false).unwrap();
     assert!(!unclaimed.contains("claimed"), "{unclaimed}");
-    assert!(!report::show(&layout, "atlas-2c3d")
-        .unwrap()
-        .contains("Claimed:"));
+    assert!(
+        !report::show(&layout, "atlas-2c3d")
+            .unwrap()
+            .contains("Claimed:")
+    );
 }
 
 #[test]
@@ -1317,11 +1333,13 @@ fn missing_ids_are_typed_issue_not_found() {
     // A known issue with no children is empty, not not-found. A design-document
     // parent is not an IssueRec but still has children.
     assert!(catalog.children("atlas-4g5h").unwrap().is_empty());
-    assert!(catalog
-        .children("beacon-design-0001")
-        .unwrap()
-        .iter()
-        .any(|hit| hit.id == "beacon-5j6k"));
+    assert!(
+        catalog
+            .children("beacon-design-0001")
+            .unwrap()
+            .iter()
+            .any(|hit| hit.id == "beacon-5j6k")
+    );
 }
 
 #[test]

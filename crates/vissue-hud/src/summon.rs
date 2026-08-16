@@ -465,12 +465,16 @@ mod tests {
     fn summon_error_display_names_the_case() {
         assert!(SummonError::Unsupported.to_string().contains("platform"));
         assert!(SummonError::NoPath.to_string().contains("path"));
-        assert!(SummonError::NotRunning("x".into())
-            .to_string()
-            .contains("x"));
-        assert!(SummonError::AlreadyRunning("y".into())
-            .to_string()
-            .contains("y"));
+        assert!(
+            SummonError::NotRunning("x".into())
+                .to_string()
+                .contains("x")
+        );
+        assert!(
+            SummonError::AlreadyRunning("y".into())
+                .to_string()
+                .contains("y")
+        );
         assert!(SummonError::Other("z".into()).to_string().contains("z"));
         let io = SummonError::from(std::io::Error::other("io"));
         assert!(io.to_string().contains("io"));

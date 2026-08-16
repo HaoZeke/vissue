@@ -10,7 +10,7 @@ use crate::graph::DependencyGraph;
 use crate::model::{IssueHeading, READY_STATES};
 use crate::related::related_hits_from;
 use crate::report::parse_org_date;
-use crate::store::{list_projects, project_selected, IssueDoc};
+use crate::store::{IssueDoc, list_projects, project_selected};
 use crate::views::{
     AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRec, IssueRow, ListQuery, SearchHit, TreeNode,
     WalkHit,

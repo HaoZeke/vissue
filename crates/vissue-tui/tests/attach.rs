@@ -1,13 +1,13 @@
 //! Attach story: `--offline` never connects; first list after init drops since.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use vissue_core::config::Layout;
 use vissue_core::views::ListQuery;
 use vissue_serve::ServeConfig;
-use vissue_tui::attach::{try_attach, AttachFail, AttachHooks, AttachOutcome, ServeStatus};
+use vissue_tui::attach::{AttachFail, AttachHooks, AttachOutcome, ServeStatus, try_attach};
 use vissue_tui::backend::{BoardBackend, ListPage, MutResult, UpdateReq};
 use vissue_tui::{BackendKind, SinceGate};
 

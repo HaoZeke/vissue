@@ -18,7 +18,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use vissue_core::config::{Layout, DEFAULT_PREFIX};
+use vissue_core::config::{DEFAULT_PREFIX, Layout};
 use vissue_core::ops::{self, CreateOpts};
 use vissue_serve::{OwnerHandle, ServeConfig};
 use vissue_tui::backend::{BackendKind, BoardBackend};

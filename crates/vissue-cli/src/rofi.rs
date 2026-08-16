@@ -3,7 +3,7 @@
 //! The seat theme (font, colours, window chrome) comes from the user's
 //! rofi config. This module only feeds rows and reads the exit code.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

@@ -185,8 +185,8 @@ fn status_json_and_socket_modes() {
 
 #[test]
 fn initialize_requires_agent_over_the_socket() {
-    use vissue_control::client::Client;
     use vissue_control::Error;
+    use vissue_control::client::Client;
 
     let h = Harness::new();
     assert!(h.start_d().status.success());
@@ -354,8 +354,8 @@ fn committed_completions_omit_foreground() {
 
 #[test]
 fn claim_uses_client_agent_not_process_env() {
-    use vissue_control::client::Client;
     use vissue_control::Error;
+    use vissue_control::client::Client;
 
     let h = Harness::new();
     let start = Command::new(bin())

@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use vissue_control::client::Client;
-use vissue_control::{Error, Notification, NOTIFY_ISSUE_SELECTED, NOTIFY_VAULT_CHANGED};
+use vissue_control::{Error, NOTIFY_ISSUE_SELECTED, NOTIFY_VAULT_CHANGED, Notification};
 use vissue_core::agent;
 use vissue_core::config::Layout;
 use vissue_core::ops;
@@ -293,11 +293,13 @@ fn read_methods_over_the_fixture() {
     assert!(!search.as_array().unwrap().is_empty());
 
     let claims = client.request("issue/claims", json!({})).unwrap();
-    assert!(claims
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|r| r["holder"] == "fixture-agent"));
+    assert!(
+        claims
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["holder"] == "fixture-agent")
+    );
 
     let agenda = client
         .request("issue/agenda", json!({"days": 400}))
@@ -328,11 +330,13 @@ fn read_methods_over_the_fixture() {
     let children = client
         .request("issue/children", json!({"id": "atlas-1a2b"}))
         .unwrap();
-    assert!(children
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|r| r["id"] == "atlas-2c3d"));
+    assert!(
+        children
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == "atlas-2c3d")
+    );
 
     let _ = client
         .request("issue/ancestors", json!({"id": "atlas-2c3d"}))

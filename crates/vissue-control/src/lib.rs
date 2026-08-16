@@ -12,19 +12,18 @@ pub mod client;
 pub mod peercred;
 
 pub use frame::{
-    classify_first_line, is_header_line, read_message, write_message, FrameError, Framing,
-    MAX_HEADER_LINES, MAX_MESSAGE_BYTES,
+    FrameError, Framing, MAX_HEADER_LINES, MAX_MESSAGE_BYTES, classify_first_line, is_header_line,
+    read_message, write_message,
 };
 pub use path::{
-    beside_socket, control_log_path, default_socket_path, hud_log_path, hud_socket_path,
-    runtime_dir, socket_lock_path, socket_pid_path, HUD_LOG_ENV, HUD_SOCKET_ENV, SERVE_LOG_ENV,
-    SOCKET_ENV,
+    HUD_LOG_ENV, HUD_SOCKET_ENV, SERVE_LOG_ENV, SOCKET_ENV, beside_socket, control_log_path,
+    default_socket_path, hud_log_path, hud_socket_path, runtime_dir, socket_lock_path,
+    socket_pid_path,
 };
 pub use rpc::{
-    error_from_core, invalid_params, invalid_request, method_not_found, parse_error,
-    parse_initialize_params, Error, Event, InitializeParams, InitializeResult, JsonRpcError,
-    JsonRpcId, JsonRpcRequest, JsonRpcResponse, Method, Notification, Request, Response,
-    NOTIFY_ISSUE_SELECTED, NOTIFY_SHUTTING_DOWN, NOTIFY_VAULT_CHANGED, PROTOCOL_VERSION,
-    V1_CAPABILITIES,
+    Error, Event, InitializeParams, InitializeResult, JsonRpcError, JsonRpcId, JsonRpcRequest,
+    JsonRpcResponse, Method, NOTIFY_ISSUE_SELECTED, NOTIFY_SHUTTING_DOWN, NOTIFY_VAULT_CHANGED,
+    Notification, PROTOCOL_VERSION, Request, Response, V1_CAPABILITIES, error_from_core,
+    invalid_params, invalid_request, method_not_found, parse_error, parse_initialize_params,
 };
 pub use vissue_core::views::*;

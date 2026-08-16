@@ -16,7 +16,7 @@ mod unix;
 #[cfg(not(unix))]
 pub use stub::{ensure_serve, invoke, socket_accepts};
 #[cfg(unix)]
-pub use unix::{ensure_serve, invoke, socket_accepts, OwnerHandle};
+pub use unix::{OwnerHandle, ensure_serve, invoke, socket_accepts};
 
 /// How the CLI (or a later TUI/HUD) wants to talk to the owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

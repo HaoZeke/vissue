@@ -1,9 +1,9 @@
 //! In-memory dependency graph for validation and bounded multi-hop queries.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use daggy::{Dag, NodeIndex};
-use petgraph::algo::{has_path_connecting, toposort};
 use petgraph::Direction;
+use petgraph::algo::{has_path_connecting, toposort};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::error::Error;

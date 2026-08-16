@@ -1,6 +1,6 @@
 //! `vissue`: plain-text issue tracking over per-project orgmode files.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use std::io::{Read, Write};
 use std::path::PathBuf;

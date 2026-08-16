@@ -9,15 +9,15 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
-use nix::sys::signal::{kill, Signal};
+use anyhow::{Context, Result, bail};
+use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use serde_json::json;
 use vissue_control::client::Client;
 use vissue_core::events;
 
 use super::owner::{lock_is_free, log_path, prepare_socket_dir, read_pid_file, remove_pid_file};
-use crate::{EnsureResult, ServeConfig, Status, ACCEPT_TIMEOUT_MS, SERVE_REVISION};
+use crate::{ACCEPT_TIMEOUT_MS, EnsureResult, SERVE_REVISION, ServeConfig, Status};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 

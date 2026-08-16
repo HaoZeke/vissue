@@ -7,7 +7,7 @@
 //! the digest either. Every function here reads; none writes.
 
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fmt::Write as _;
 use xxhash_rust::xxh3::xxh3_64;
 
@@ -138,7 +138,7 @@ impl CorpusDigest {
 mod tests {
     use super::*;
     use crate::config::DEFAULT_PREFIX;
-    use crate::ops::{create, CreateOpts};
+    use crate::ops::{CreateOpts, create};
     use std::fs;
 
     /// A tracker with `projects` projects, two issues each.

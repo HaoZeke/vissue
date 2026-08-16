@@ -7,10 +7,10 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::frame::{read_message, write_message, Framing};
+use crate::frame::{Framing, read_message, write_message};
 use crate::rpc::{
-    invalid_request, Error, JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, Notification,
-    Request, Response,
+    Error, JsonRpcError, JsonRpcId, JsonRpcRequest, JsonRpcResponse, Notification, Request,
+    Response, invalid_request,
 };
 
 /// Connected client. One stream; notifications arriving during [`Self::request`]
@@ -220,7 +220,7 @@ pub fn decode_response(method: &str, value: Value) -> Result<Response, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{read_message, write_message, Framing};
+    use crate::frame::{Framing, read_message, write_message};
     use crate::rpc::{JsonRpcRequest, NOTIFY_VAULT_CHANGED};
     use serde_json::json;
     use std::io::{BufReader, Write};

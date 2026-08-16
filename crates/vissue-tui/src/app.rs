@@ -7,11 +7,11 @@ use ratatui::crossterm::event::KeyEvent;
 use vissue_core::config::Layout;
 use vissue_core::views::{IssueDetail, ListQuery};
 
-use crate::attach::{try_attach, AttachHooks, AttachOutcome, ServeStatus};
+use crate::attach::{AttachHooks, AttachOutcome, ServeStatus, try_attach};
 use crate::backend::{BoardBackend, ListPage, UpdateReq};
 use crate::core_backend::CoreBackend;
 use crate::keys::{
-    char_of, is_press, Action, ConfirmKind, DetailTab, Focus, Pane, PromptKind, HELP,
+    Action, ConfirmKind, DetailTab, Focus, HELP, Pane, PromptKind, char_of, is_press,
 };
 
 /// One displayed row. Every pane maps onto this shape so keys share a path.

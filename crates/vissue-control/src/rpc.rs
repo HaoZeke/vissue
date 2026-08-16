@@ -1,7 +1,7 @@
 //! JSON-RPC 2.0 types. Handshake is camelCase; issue payloads are snake_case.
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 
 use crate::frame::FrameError;
 use vissue_core::error::Error as CoreError;
@@ -1068,10 +1068,12 @@ mod tests {
         });
         let value = resp.to_value().unwrap();
         assert_eq!(value["protocolVersion"], 1);
-        assert!(value["capabilities"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("issue/list")));
+        assert!(
+            value["capabilities"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("issue/list"))
+        );
     }
 
     #[test]
@@ -1194,62 +1196,80 @@ mod tests {
         assert!(Response::IssueGet(get.clone()).to_value().unwrap()["id"] == "atlas-1a2b");
         assert!(Response::IssueShow(get.clone()).to_value().is_ok());
         assert!(Response::IssueOpen(get).to_value().is_ok());
-        assert!(Response::IssueExcerpt(Excerpt {
-            id: "atlas-1a2b".into(),
-            file: "issues.org".into(),
-            line_start: 1,
-            line_end: 2,
-            text: "body".into(),
-            suppressed: false,
-        })
-        .to_value()
-        .is_ok());
+        assert!(
+            Response::IssueExcerpt(Excerpt {
+                id: "atlas-1a2b".into(),
+                file: "issues.org".into(),
+                line_start: 1,
+                line_end: 2,
+                text: "body".into(),
+                suppressed: false,
+            })
+            .to_value()
+            .is_ok()
+        );
         assert!(Response::IssueSearch(vec![]).to_value().unwrap().is_array());
         assert!(Response::IssueClaims(vec![]).to_value().unwrap().is_array());
         assert!(Response::IssueAgenda(vec![]).to_value().unwrap().is_array());
-        assert!(Response::IssueRelated(vec![])
-            .to_value()
-            .unwrap()
-            .is_array());
-        assert!(Response::IssueChildren(vec![])
-            .to_value()
-            .unwrap()
-            .is_array());
-        assert!(Response::IssueAncestors(vec![])
-            .to_value()
-            .unwrap()
-            .is_array());
+        assert!(
+            Response::IssueRelated(vec![])
+                .to_value()
+                .unwrap()
+                .is_array()
+        );
+        assert!(
+            Response::IssueChildren(vec![])
+                .to_value()
+                .unwrap()
+                .is_array()
+        );
+        assert!(
+            Response::IssueAncestors(vec![])
+                .to_value()
+                .unwrap()
+                .is_array()
+        );
         assert!(Response::IssueImpact(vec![]).to_value().unwrap().is_array());
-        assert!(Response::IssueBacklinks(vec![])
+        assert!(
+            Response::IssueBacklinks(vec![])
+                .to_value()
+                .unwrap()
+                .is_array()
+        );
+        assert!(
+            Response::ProjectList(ProjectListResult {
+                projects: vec!["atlas".into()],
+                revision: 1,
+            })
             .to_value()
-            .unwrap()
-            .is_array());
-        assert!(Response::ProjectList(ProjectListResult {
-            projects: vec!["atlas".into()],
-            revision: 1,
-        })
-        .to_value()
-        .is_ok());
-        assert!(Response::EventsGen(EventsGenResult {
-            generation: 1,
-            revision: 1,
-        })
-        .to_value()
-        .is_ok());
-        assert!(Response::EventsSince(EventsSinceResult {
-            events: vec![],
-            generation: 1,
-        })
-        .to_value()
-        .is_ok());
-        assert!(Response::IdentityGet(IdentityResult {
-            identity: "a".into(),
-            root: "/".into(),
-            prefix: "Software".into(),
-            version: "0.2.0".into(),
-        })
-        .to_value()
-        .is_ok());
+            .is_ok()
+        );
+        assert!(
+            Response::EventsGen(EventsGenResult {
+                generation: 1,
+                revision: 1,
+            })
+            .to_value()
+            .is_ok()
+        );
+        assert!(
+            Response::EventsSince(EventsSinceResult {
+                events: vec![],
+                generation: 1,
+            })
+            .to_value()
+            .is_ok()
+        );
+        assert!(
+            Response::IdentityGet(IdentityResult {
+                identity: "a".into(),
+                root: "/".into(),
+                prefix: "Software".into(),
+                version: "0.2.0".into(),
+            })
+            .to_value()
+            .is_ok()
+        );
         let mut_ok = MutResult {
             ok: true,
             report: "ok".into(),
@@ -1262,21 +1282,27 @@ mod tests {
         assert!(Response::IssueUpdate(mut_ok.clone()).to_value().is_ok());
         assert!(Response::IssueNote(mut_ok.clone()).to_value().is_ok());
         assert!(Response::IssueRefile(mut_ok).to_value().is_ok());
-        assert!(Response::IssueTree(TreeResult::Text { text: "* a".into() })
+        assert!(
+            Response::IssueTree(TreeResult::Text { text: "* a".into() })
+                .to_value()
+                .is_ok()
+        );
+        assert!(
+            Response::IssueList(IssueListResult {
+                revision: 1,
+                ..IssueListResult::default()
+            })
             .to_value()
-            .is_ok());
-        assert!(Response::IssueList(IssueListResult {
-            revision: 1,
-            ..IssueListResult::default()
-        })
-        .to_value()
-        .is_ok());
-        assert!(Response::IssueReady(IssueListResult {
-            revision: 1,
-            ..IssueListResult::default()
-        })
-        .to_value()
-        .is_ok());
+            .is_ok()
+        );
+        assert!(
+            Response::IssueReady(IssueListResult {
+                revision: 1,
+                ..IssueListResult::default()
+            })
+            .to_value()
+            .is_ok()
+        );
     }
 
     #[test]

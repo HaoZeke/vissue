@@ -1,9 +1,9 @@
 //! File-backed board: `CatalogService` plus `ops` with an explicit identity.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use vissue_core::catalog::{load_recs, CatalogService};
+use vissue_core::catalog::{CatalogService, load_recs};
 use vissue_core::config::Layout;
 use vissue_core::error::Error;
 use vissue_core::events;
@@ -230,11 +230,13 @@ mod tests {
         let tree = backend.tree("atlas-1a2b").unwrap();
         assert_eq!(tree.id, "atlas-1a2b");
         assert!(!backend.related("atlas-1a2b", 2, 5).unwrap().is_empty());
-        assert!(backend
-            .excerpt("atlas-2c3d")
-            .unwrap()
-            .text
-            .contains("summary"));
+        assert!(
+            backend
+                .excerpt("atlas-2c3d")
+                .unwrap()
+                .text
+                .contains("summary")
+        );
         assert_eq!(backend.open("atlas-2c3d").unwrap().id, "atlas-2c3d");
         assert!(backend.get("missing").is_err());
     }

@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use vissue_core::catalog::{
-    agenda_rows_from, backlinks_from, children_from, claims_from, excerpt_from, issues_rows_from,
-    search_hits_from, tree_from, tree_text_from, CatalogService,
+    CatalogService, agenda_rows_from, backlinks_from, children_from, claims_from, excerpt_from,
+    issues_rows_from, search_hits_from, tree_from, tree_text_from,
 };
 use vissue_core::error::Error;
 use vissue_core::model::IssueHeading;
@@ -237,10 +237,12 @@ fn search_reads_the_body_the_tags_and_the_id() {
             "{needle:?} missed the issue"
         );
     }
-    assert!(service
-        .search("nothing matches this", 10)
-        .unwrap()
-        .is_empty());
+    assert!(
+        service
+            .search("nothing matches this", 10)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -279,13 +281,17 @@ fn an_overdue_deadline_sorts_ahead_and_reports_its_age() {
 fn the_agenda_keeps_a_blocked_issue_and_narrows_by_project() {
     // A blocked issue's date does not stop mattering while it waits.
     let recs = corpus();
-    assert!(agenda_rows_from(&recs, 30, Some("atlas"))
-        .unwrap()
-        .iter()
-        .any(|r| r.state == "BLOCKED"));
-    assert!(agenda_rows_from(&recs, 30, Some("beacon"))
-        .unwrap()
-        .is_empty());
+    assert!(
+        agenda_rows_from(&recs, 30, Some("atlas"))
+            .unwrap()
+            .iter()
+            .any(|r| r.state == "BLOCKED")
+    );
+    assert!(
+        agenda_rows_from(&recs, 30, Some("beacon"))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

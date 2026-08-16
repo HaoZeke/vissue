@@ -22,7 +22,7 @@ pub mod report;
 pub mod store;
 pub mod views;
 
-pub use config::{Layout, VissueConfig, DEFAULT_PREFIX};
+pub use config::{DEFAULT_PREFIX, Layout, VissueConfig};
 pub use model::{IssueHeading, LogEntry, READY_STATES, TODO_HEADER, TODO_KEYWORDS};
 pub use ops::CreateOpts;
 pub use store::IssueDoc;

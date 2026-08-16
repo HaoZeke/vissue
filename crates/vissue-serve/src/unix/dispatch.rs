@@ -3,16 +3,16 @@
 use std::time::Instant;
 
 use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use vissue_control::rpc::{
-    error_from_core, internal_error, invalid_params, method_not_found, parse_initialize_params,
     AgendaParams, ClaimParams, ClaimsParams, CreateParams, EventsGenResult, EventsSinceParams,
     EventsSinceResult, IdParams, IdentityResult, InitializeResult, IssueGetResult, IssueListParams,
     IssueListResult, IssueSelected, JsonRpcError, JsonRpcRequest, JsonRpcResponse, MutResult,
-    NoteParams, Notification, ProjectListResult, RefileParams, RelatedParams, SearchParams,
-    TreeParams, TreeResult, UpdateParams, WalkParams, PROTOCOL_VERSION,
+    NoteParams, Notification, PROTOCOL_VERSION, ProjectListResult, RefileParams, RelatedParams,
+    SearchParams, TreeParams, TreeResult, UpdateParams, WalkParams, error_from_core,
+    internal_error, invalid_params, method_not_found, parse_initialize_params,
 };
-use vissue_core::catalog::{load_recs, tree_text_from, CatalogService};
+use vissue_core::catalog::{CatalogService, load_recs, tree_text_from};
 use vissue_core::config::Layout;
 use vissue_core::error::Error as CoreError;
 use vissue_core::events;
@@ -20,7 +20,7 @@ use vissue_core::ops::{self, CreateOpts};
 use vissue_core::store::find_by_id;
 use vissue_core::views::{IssueDetail, ListQuery};
 
-use super::catalog::{load_project_recs, INITIAL_REVISION};
+use super::catalog::{INITIAL_REVISION, load_project_recs};
 use super::owner::{OwnerState, Session};
 use crate::LIVE_CAPABILITIES;
 

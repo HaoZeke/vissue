@@ -4,7 +4,7 @@
 //! detail panes, the drafts driven directly rather than typed, and what the
 //! summon socket does to visibility. The key handling is in `board_keys.rs`.
 
-use vissue_core::config::{Layout, DEFAULT_PREFIX};
+use vissue_core::config::{DEFAULT_PREFIX, Layout};
 use vissue_core::ops::{self, CreateOpts};
 use vissue_hud::palette::{BoardFilter, DetailTab, Focus, Palette};
 use vissue_hud::summon::{SummonAction, SummonRequest};

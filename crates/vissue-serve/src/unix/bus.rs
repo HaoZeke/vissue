@@ -5,7 +5,7 @@ use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use vissue_control::frame::{write_message, Framing};
+use vissue_control::frame::{Framing, write_message};
 use vissue_control::rpc::{JsonRpcRequest, Notification};
 
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -94,7 +94,7 @@ mod tests {
     use std::os::unix::net::UnixListener;
     use std::thread;
     use vissue_control::frame::read_message;
-    use vissue_control::rpc::{VaultChanged, NOTIFY_VAULT_CHANGED};
+    use vissue_control::rpc::{NOTIFY_VAULT_CHANGED, VaultChanged};
 
     #[test]
     fn broadcast_reaches_a_registered_client() {

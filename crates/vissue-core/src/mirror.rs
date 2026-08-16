@@ -4,15 +4,15 @@
 //! the backlog. It carries a banner naming it as generated output, because the
 //! next run overwrites it and hand edits are lost.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Local;
 use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::config::Layout;
-use crate::digest::{corpus_digest, CorpusDigest};
-use crate::model::{today_inactive_bracket, IssueHeading, TODO_HEADER};
-use crate::store::{list_projects, IssueDoc};
+use crate::digest::{CorpusDigest, corpus_digest};
+use crate::model::{IssueHeading, TODO_HEADER, today_inactive_bracket};
+use crate::store::{IssueDoc, list_projects};
 
 /// Body lines carried into the projection before it is cut short.
 pub const BODY_LINES: usize = 12;
@@ -447,7 +447,7 @@ fn compact_body(body: &str) -> String {
 mod tests {
     use super::*;
     use crate::config::DEFAULT_PREFIX;
-    use crate::ops::{create, CreateOpts};
+    use crate::ops::{CreateOpts, create};
     use std::fs;
 
     fn seeded_layout() -> (tempfile::TempDir, Layout) {

@@ -14,8 +14,8 @@ pub mod view;
 #[cfg(unix)]
 pub mod control;
 
-pub use app::{run, App, RunOpts};
-pub use attach::{try_attach, AttachHooks, AttachOutcome, ServeStatus};
+pub use app::{App, RunOpts, run};
+pub use attach::{AttachHooks, AttachOutcome, ServeStatus, try_attach};
 pub use backend::{BackendKind, BoardBackend, ListPage, MutResult, SinceGate, UpdateReq};
 pub use core_backend::CoreBackend;
 pub use keys::{Action, ConfirmKind, DetailTab, Focus, Pane};

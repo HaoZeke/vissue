@@ -9,14 +9,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use serde_json::Value;
 use tokio::net::UnixListener;
 use tokio::sync::Semaphore;
-use vissue_control::frame::{read_message, write_message, FrameError, Framing};
+use vissue_control::frame::{FrameError, Framing, read_message, write_message};
 use vissue_control::peercred::accept_socket;
-use vissue_control::rpc::{invalid_request, parse_error, JsonRpcResponse, Notification};
+use vissue_control::rpc::{JsonRpcResponse, Notification, invalid_request, parse_error};
 use vissue_control::{beside_socket, socket_lock_path, socket_pid_path};
 
 use super::bus::Bus;
@@ -772,8 +772,8 @@ mod tests {
 
     #[test]
     fn header_framing_roundtrips_on_the_owner() {
-        use vissue_control::client::Client;
         use vissue_control::Framing;
+        use vissue_control::client::Client;
 
         let dir = tempfile::tempdir().unwrap();
         let owner = start_test_owner(dir.path());

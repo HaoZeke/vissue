@@ -545,9 +545,11 @@ fn append_reads_a_file_and_stdin() {
     assert!(shown.contains("took a Read"), "{shown}");
 
     // --text is the same thing without a file.
-    assert!(mk(&["append", &id, "--text", "second pass"])
-        .status
-        .success());
+    assert!(
+        mk(&["append", &id, "--text", "second pass"])
+            .status
+            .success()
+    );
     let shown = String::from_utf8_lossy(&mk(&["show", &id]).stdout).to_string();
     assert!(shown.contains("second pass"), "{shown}");
 

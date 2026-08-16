@@ -5,7 +5,7 @@ use anyhow::Result;
 use serde_json::Value;
 use std::fmt::Write as _;
 
-use crate::catalog::{excerpt_from, format_body_excerpt, load_recs, CatalogService};
+use crate::catalog::{CatalogService, excerpt_from, format_body_excerpt, load_recs};
 use crate::config::Layout;
 use crate::error::Error;
 use crate::ops;
@@ -167,7 +167,7 @@ mod tests {
     use super::*;
     use crate::catalog::secret_marker;
     use crate::config::DEFAULT_PREFIX;
-    use crate::ops::{create, update, CreateOpts};
+    use crate::ops::{CreateOpts, create, update};
     use crate::store::IssueDoc;
     use std::fs;
 

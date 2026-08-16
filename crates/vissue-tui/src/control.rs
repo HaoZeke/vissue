@@ -1,16 +1,16 @@
 //! Socket-backed board. Unix only; clients never bind the control socket.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde_json::Value;
 use vissue_control::client::Client;
 use vissue_control::rpc::{
-    ClaimParams, Error as RpcError, IdParams, InitializeResult, IssueListParams, IssueListResult,
-    MutResult as WireMut, NoteParams, Notification, RelatedParams, Request, SearchParams,
-    TreeParams, UpdateParams, CONFLICT, CYCLE, INVALID_STATE, NOT_FOUND,
+    CONFLICT, CYCLE, ClaimParams, Error as RpcError, INVALID_STATE, IdParams, InitializeResult,
+    IssueListParams, IssueListResult, MutResult as WireMut, NOT_FOUND, NoteParams, Notification,
+    RelatedParams, Request, SearchParams, TreeParams, UpdateParams,
 };
 use vissue_control::{InitializeParams, PROTOCOL_VERSION};
 use vissue_core::config::Layout;

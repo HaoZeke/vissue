@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use vissue_core::config::Layout;
-use vissue_tui::attach::{try_attach, AttachFail, AttachHooks, AttachOutcome};
+use vissue_tui::attach::{AttachFail, AttachHooks, AttachOutcome, try_attach};
 use vissue_tui::backend::BoardBackend;
 
 /// HUD `initialize.client` name.

@@ -17,13 +17,13 @@ use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::thread;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use vissue_control::client::Client;
-use vissue_control::frame::{read_message, write_message, Framing};
+use vissue_control::frame::{Framing, read_message, write_message};
 use vissue_control::rpc::{
-    error_from_core, method_not_found, IssueGetResult, JsonRpcRequest, JsonRpcResponse, Method,
+    IssueGetResult, JsonRpcRequest, JsonRpcResponse, Method, error_from_core, method_not_found,
 };
-use vissue_core::catalog::{issues_rows_from, CatalogService};
+use vissue_core::catalog::{CatalogService, issues_rows_from};
 use vissue_core::model::IssueHeading;
 use vissue_core::views::{IssueRec, ListQuery};
 

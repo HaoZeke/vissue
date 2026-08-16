@@ -1,11 +1,11 @@
 //! Draw the board. No catalog or mutation logic.
 
-use std::io::{self, stdout, Stdout};
+use std::io::{self, Stdout, stdout};
 
 use ratatui::backend::{CrosstermBackend, TestBackend};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};

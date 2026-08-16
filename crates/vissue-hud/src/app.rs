@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use iced::event::{self, Event};
-use iced::keyboard::{self, key::Named, Key};
+use iced::keyboard::{self, Key, key::Named};
 use iced::window::{self, Mode};
-use iced::{time, Element, Font, Pixels, Size, Subscription, Task};
+use iced::{Element, Font, Pixels, Size, Subscription, Task, time};
 
 use vissue_core::config::Layout;
 

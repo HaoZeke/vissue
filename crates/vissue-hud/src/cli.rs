@@ -195,15 +195,17 @@ mod tests {
         let listener = UnixListener::bind(&path).unwrap();
         std::env::set_var(crate::summon::SOCKET_ENV, &path);
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || loop {
-            let Ok((mut stream, _)) = listener.accept() else {
-                break;
-            };
-            let mut buf = String::new();
-            let _ = stream.read_to_string(&mut buf);
-            if !buf.is_empty() {
-                let _ = tx.send(buf);
-                break;
+        std::thread::spawn(move || {
+            loop {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                let mut buf = String::new();
+                let _ = stream.read_to_string(&mut buf);
+                if !buf.is_empty() {
+                    let _ = tx.send(buf);
+                    break;
+                }
             }
         });
         let code = run_with(HudCli {

@@ -5,9 +5,9 @@ use std::path::Path;
 use vissue_core::config::Layout;
 use vissue_core::ops::{self, CreateOpts};
 use vissue_core::views::{Excerpt, IssueDetail, IssueRow, ListQuery, SearchHit};
+use vissue_tui::CoreBackend;
 use vissue_tui::attach::{AttachHooks, AttachOutcome, ServeStatus};
 use vissue_tui::backend::{BoardBackend, UpdateReq};
-use vissue_tui::CoreBackend;
 
 use crate::attach;
 use crate::fuzzy::rank_indices;

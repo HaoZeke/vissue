@@ -1,7 +1,7 @@
 //! Seat mocha as icedtea tokens. Type scale is icedtea's.
 
 use iced::Color;
-use icedtea::theme::{mix, Tokens};
+use icedtea::theme::{Tokens, mix};
 
 pub use icedtea::typo::{
     BODY as SIZE_BODY, META as SIZE_HINT, META as SIZE_META, TITLE as SIZE_TITLE, UI as FACE,

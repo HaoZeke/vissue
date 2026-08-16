@@ -18,9 +18,9 @@ pub mod wire;
 pub mod app;
 pub mod view;
 
-pub use cli::{run_cli, HudCli};
+pub use cli::{HudCli, run_cli};
 pub use palette::Palette;
-pub use summon::{parse_request, sanitize_token, SummonAction, SummonRequest};
+pub use summon::{SummonAction, SummonRequest, parse_request, sanitize_token};
 
 #[cfg(test)]
 pub(crate) fn env_lock() -> std::sync::MutexGuard<'static, ()> {

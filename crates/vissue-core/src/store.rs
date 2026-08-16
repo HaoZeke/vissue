@@ -1,6 +1,6 @@
 //! The on-disk store: one `issues.org` per project, parsed and rewritten whole.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use fs2::FileExt;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::Layout;
 use crate::model::TODO_KEYWORDS;
-use crate::model::{parse_log_line, today_inactive_bracket, IssueHeading, LogEntry, TODO_HEADER};
+use crate::model::{IssueHeading, LogEntry, TODO_HEADER, parse_log_line, today_inactive_bracket};
 
 /// Process-local mutex per path, so concurrent async handlers in one process
 /// serialize even where an advisory file lock would not (same process, many
@@ -710,11 +710,7 @@ fn is_skipped_dir(entry: &walkdir::DirEntry) -> bool {
 
 fn org_id_property_value(line: &str) -> Option<&str> {
     let value = line.trim_start().strip_prefix(":ID:")?.trim();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 /// The ids a file defines, which are the ones org would read.
@@ -866,8 +862,7 @@ mod tests {
 
     #[test]
     fn a_title_opening_with_a_bracket_keeps_its_text() {
-        let content =
-            "#+TITLE: x issues\n\n* TODO [#not a cookie] stays\n:PROPERTIES:\n:ID:         x-bbbb\n:END:\n";
+        let content = "#+TITLE: x issues\n\n* TODO [#not a cookie] stays\n:PROPERTIES:\n:ID:         x-bbbb\n:END:\n";
         let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
         assert_eq!(doc.headings[0].priority, 'C');
         assert_eq!(doc.headings[0].title, "[#not a cookie] stays");
@@ -1073,9 +1068,11 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(list_projects(&layout).unwrap(), vec!["alpha", "beta"]);
-        assert!(list_projects(&Layout::new(dir.path(), DEFAULT_PREFIX))
-            .unwrap()
-            .is_empty());
+        assert!(
+            list_projects(&Layout::new(dir.path(), DEFAULT_PREFIX))
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

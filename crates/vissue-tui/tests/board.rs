@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use vissue_core::config::{Layout, DEFAULT_PREFIX};
+use vissue_core::config::{DEFAULT_PREFIX, Layout};
 use vissue_tui::view::render_plain;
 use vissue_tui::{Action, App, BoardBackend, CoreBackend, ServeStatus};
 

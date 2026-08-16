@@ -1,16 +1,16 @@
 //! Mutating verbs: create, update, and move issues between projects.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::NaiveDate;
 use std::collections::BTreeMap;
 
 use crate::config::{Layout, VissueConfig};
 use crate::error::Error;
 use crate::graph::DependencyGraph;
-use crate::model::{today_inactive_bracket, IssueHeading, LogEntry, TODO_KEYWORDS};
+use crate::model::{IssueHeading, LogEntry, TODO_KEYWORDS, today_inactive_bracket};
 use crate::store::{
-    collect_org_ids, detect_project_from_ctx, find_by_id, generate_id, load_all,
-    resolve_existing_project_case, with_issues_lock, with_issues_locks, IssueDoc,
+    IssueDoc, collect_org_ids, detect_project_from_ctx, find_by_id, generate_id, load_all,
+    resolve_existing_project_case, with_issues_lock, with_issues_locks,
 };
 
 /// Resolve the project to act on. An explicit name wins; otherwise walk up from
@@ -862,10 +862,12 @@ mod tests {
             resolve_project(&layout, Some("fromcli")).unwrap(),
             "fromcli"
         );
-        assert!(resolve_project(&layout, Some(""))
-            .unwrap_err()
-            .to_string()
-            .contains("empty"));
+        assert!(
+            resolve_project(&layout, Some(""))
+                .unwrap_err()
+                .to_string()
+                .contains("empty")
+        );
     }
 
     /// Parallel creates must not lose headings or fail the temporary rename.

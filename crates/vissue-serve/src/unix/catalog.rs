@@ -7,7 +7,7 @@ use anyhow::Result;
 use vissue_core::catalog::load_recs;
 use vissue_core::config::Layout;
 use vissue_core::events;
-use vissue_core::store::{list_projects, IssueDoc};
+use vissue_core::store::{IssueDoc, list_projects};
 use vissue_core::views::IssueRec;
 
 /// First serve-local revision after a successful load.

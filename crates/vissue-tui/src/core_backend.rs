@@ -150,7 +150,7 @@ impl BoardBackend for CoreBackend {
     }
 
     fn projects(&self) -> Result<Vec<String>, Error> {
-        store::list_projects(&self.layout).map_err(Error::from)
+        store::list_projects(&self.layout)
     }
 
     fn claim(&self, id: &str, force: bool) -> Result<MutResult, Error> {

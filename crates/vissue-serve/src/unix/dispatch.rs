@@ -139,8 +139,6 @@ fn map_core(err: CoreError) -> JsonRpcError {
     error_from_core(&err)
 }
 
-
-
 fn map_json(err: serde_json::Error) -> JsonRpcError {
     internal_error(err.to_string())
 }
@@ -211,17 +209,18 @@ fn dispatch_list(
     let params: IssueListParams = decode(params)?;
     with_service(state, |svc, revision, generation| {
         if let Some(since) = params.since_revision
-            && since == revision {
-                return serde_json::to_value(IssueListResult {
-                    issues: Vec::new(),
-                    total: 0,
-                    matched: 0,
-                    revision,
-                    generation,
-                    unchanged: true,
-                })
-                .map_err(map_json);
-            }
+            && since == revision
+        {
+            return serde_json::to_value(IssueListResult {
+                issues: Vec::new(),
+                total: 0,
+                matched: 0,
+                revision,
+                generation,
+                unchanged: true,
+            })
+            .map_err(map_json);
+        }
         let ready = ready_forced || params.ready.unwrap_or(false);
         let total = svc
             .issues_rows(ListQuery {

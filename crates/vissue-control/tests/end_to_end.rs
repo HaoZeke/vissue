@@ -10,7 +10,6 @@
 //! dispatches it against a corpus, and writes one framed response.
 
 #![cfg(unix)]
-
 #![allow(missing_docs)]
 
 use std::collections::BTreeMap;

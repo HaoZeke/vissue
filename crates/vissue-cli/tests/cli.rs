@@ -757,9 +757,10 @@ fn the_reference_lists_every_subcommand() {
             continue;
         }
         if let Some(name) = trimmed.split_whitespace().next()
-            && name != "help" {
-                commands.push(name.to_string());
-            }
+            && name != "help"
+        {
+            commands.push(name.to_string());
+        }
     }
     assert!(commands.len() > 20, "no subcommands parsed: {commands:?}");
 

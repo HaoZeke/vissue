@@ -313,9 +313,10 @@ fn chmod_path(path: &Path, mode: u32) -> Result<()> {
 fn acquire_lock(socket: &Path) -> Result<File> {
     let lock_path = socket_lock_path(socket);
     if let Some(parent) = lock_path.parent()
-        && !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
     let mut file = OpenOptions::new()
         .create(true)
         .read(true)
@@ -380,9 +381,10 @@ fn takeover_or_fail(socket: &Path) -> Result<()> {
 pub(super) fn write_pid_file(socket: &Path, pid: u32) -> Result<PathBuf> {
     let path = socket_pid_path(socket);
     if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
     fs::write(&path, format!("{pid}\n")).with_context(|| format!("write {}", path.display()))?;
     chmod_path(&path, 0o600)?;
     Ok(path)

@@ -419,9 +419,10 @@ fn load_overlay(path: &Path) -> Result<KeyMap, String> {
         map.leader = ch;
     }
     if let Some(ms) = value.get("leader_timeout_ms").and_then(|v| v.as_integer())
-        && ms > 0 {
-            map.leader_timeout_ms = ms as u64;
-        }
+        && ms > 0
+    {
+        map.leader_timeout_ms = ms as u64;
+    }
     let table = value.get("board").and_then(|v| v.as_table());
     if let Some(table) = table {
         let mut pending: Vec<(ActionId, String)> = Vec::new();

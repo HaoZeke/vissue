@@ -80,9 +80,10 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
 
     // Validating the parent scans every org file, so do it outside the lock.
     if let Some(p) = opts.parent
-        && !collect_org_ids(layout)?.contains(p) {
-            return Err(anyhow!("--parent {p} does not refer to any known id").into());
-        }
+        && !collect_org_ids(layout)?.contains(p)
+    {
+        return Err(anyhow!("--parent {p} does not refer to any known id").into());
+    }
 
     with_issues_lock(&path, || {
         let mut doc = IssueDoc::parse_file(&project, &path)?;
@@ -346,10 +347,12 @@ fn settle_claim(h: &mut IssueHeading, from: &str, to: &str, identity: &str) -> V
     if to == "STARTED" && h.claimed_by().is_none() {
         h.set_claim(identity);
         notes.push(format!("claimed by {identity}"));
-    } else if keeps_claim(from) && !keeps_claim(to)
-        && let Some((who, _when)) = h.release_claim() {
-            notes.push(format!("claim released ({who})"));
-        }
+    } else if keeps_claim(from)
+        && !keeps_claim(to)
+        && let Some((who, _when)) = h.release_claim()
+    {
+        notes.push(format!("claim released ({who})"));
+    }
     notes
 }
 

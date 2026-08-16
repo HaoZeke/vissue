@@ -50,9 +50,10 @@ pub fn start_detached(cli: &HudCli) -> anyhow::Result<i32> {
     }
     let log_path = crate::log::path();
     if let Some(parent) = log_path.parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
     let mut log_file = OpenOptions::new()
         .create(true)
         .append(true)

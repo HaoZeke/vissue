@@ -1,7 +1,6 @@
 //! Serve lifecycle through the built binary. Unix only.
 
 #![cfg(unix)]
-
 #![allow(missing_docs)]
 
 use std::fs;

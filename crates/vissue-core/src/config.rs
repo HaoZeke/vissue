@@ -211,30 +211,33 @@ pub fn identity(layout: &Layout) -> String {
         }
     }
     if let Ok(cfg) = RootConfig::load(layout.root())
-        && let Some(agent) = cfg.agent {
-            let agent = agent.trim().to_string();
-            if !agent.is_empty() {
-                return agent;
-            }
+        && let Some(agent) = cfg.agent
+    {
+        let agent = agent.trim().to_string();
+        if !agent.is_empty() {
+            return agent;
         }
+    }
     format!("{}@{}", current_user(), current_host())
 }
 
 fn current_user() -> String {
     for var in ["USER", "LOGNAME", "USERNAME"] {
         if let Ok(value) = std::env::var(var)
-            && !value.trim().is_empty() {
-                return value.trim().to_string();
-            }
+            && !value.trim().is_empty()
+        {
+            return value.trim().to_string();
+        }
     }
     "unknown".to_string()
 }
 
 fn current_host() -> String {
     if let Ok(value) = std::env::var("HOSTNAME")
-        && !value.trim().is_empty() {
-            return value.trim().to_string();
-        }
+        && !value.trim().is_empty()
+    {
+        return value.trim().to_string();
+    }
     // HOSTNAME is not exported by every shell, so fall back to the file the
     // system keeps it in.
     for path in ["/etc/hostname", "/proc/sys/kernel/hostname"] {

@@ -1,7 +1,6 @@
 //! Protocol tests against an in-process owner over a tempfile fixture copy.
 
 #![cfg(unix)]
-
 #![allow(missing_docs)]
 
 use std::fs;

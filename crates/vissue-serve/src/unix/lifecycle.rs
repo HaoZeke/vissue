@@ -318,9 +318,10 @@ pub fn start_detached(cfg: &ServeConfig) -> Result<EnsureResult> {
     prepare_socket_dir(&cfg.socket)?;
     let log = log_path(&cfg.socket);
     if let Some(parent) = log.parent()
-        && !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
     let mut log_file = OpenOptions::new()
         .create(true)
         .append(true)

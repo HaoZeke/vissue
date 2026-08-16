@@ -58,7 +58,9 @@ pub fn hud_log_path() -> PathBuf {
 /// next to the default socket.
 pub fn hud_socket_path() -> PathBuf {
     resolve_named_path(
-        vissue_core::process_env::var(HUD_SOCKET_ENV).ok().as_deref(),
+        vissue_core::process_env::var(HUD_SOCKET_ENV)
+            .ok()
+            .as_deref(),
         &default_socket_path(),
         HUD_SOCK,
     )

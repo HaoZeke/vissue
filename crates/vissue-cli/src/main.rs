@@ -990,19 +990,20 @@ fn resolve_hud_bin() -> Option<PathBuf> {
         }
     }
     if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent() {
-            let sibling = dir.join("vissue-hud");
-            if sibling.is_file() {
-                return Some(sibling);
-            }
-            #[cfg(windows)]
-            {
-                let exe = dir.join("vissue-hud.exe");
-                if exe.is_file() {
-                    return Some(exe);
-                }
+        && let Some(dir) = exe.parent()
+    {
+        let sibling = dir.join("vissue-hud");
+        if sibling.is_file() {
+            return Some(sibling);
+        }
+        #[cfg(windows)]
+        {
+            let exe = dir.join("vissue-hud.exe");
+            if exe.is_file() {
+                return Some(exe);
             }
         }
+    }
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join("vissue-hud");

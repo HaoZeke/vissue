@@ -119,11 +119,7 @@ impl<'a> CatalogService<'a> {
     /// # Errors
     ///
     /// Does not fail for a parsed catalog.
-    pub fn claims(
-        &self,
-        holder: Option<&str>,
-        project: Option<&str>,
-    ) -> Result<Vec<ClaimRow>> {
+    pub fn claims(&self, holder: Option<&str>, project: Option<&str>) -> Result<Vec<ClaimRow>> {
         claims_from(self.issues, holder, project)
     }
 
@@ -220,9 +216,10 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
             continue;
         }
         if let Some(state) = q.state.as_deref()
-            && rec.heading.state != state {
-                continue;
-            }
+            && rec.heading.state != state
+        {
+            continue;
+        }
         if q.ready {
             if !READY_STATES.contains(&rec.heading.state.as_str()) {
                 continue;
@@ -237,9 +234,10 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
             }
         }
         if let Some(needle) = q.query.as_deref()
-            && !list_query_matches(&rec.heading, needle) {
-                continue;
-            }
+            && !list_query_matches(&rec.heading, needle)
+        {
+            continue;
+        }
         rows.push((
             rec.heading.priority,
             rec.heading.state.clone(),
@@ -508,11 +506,7 @@ pub(crate) fn secret_marker(excerpt: &str) -> Option<&'static str> {
 /// # Errors
 ///
 /// Does not fail for a parsed catalog.
-pub fn search_hits_from(
-    issues: &[IssueRec],
-    query: &str,
-    limit: usize,
-) -> Result<Vec<SearchHit>> {
+pub fn search_hits_from(issues: &[IssueRec], query: &str, limit: usize) -> Result<Vec<SearchHit>> {
     let needle = query.to_lowercase();
     let mut hits: Vec<(char, String, String, SearchHit)> = Vec::new();
     for rec in issues {
@@ -604,9 +598,10 @@ pub fn claims_from(
             continue;
         };
         if let Some(filter) = holder
-            && who != filter {
-                continue;
-            }
+            && who != filter
+        {
+            continue;
+        }
         let age = rec
             .heading
             .claimed_at()
@@ -783,14 +778,8 @@ enum WalkKind {
     Impact,
 }
 
-fn walk_from(
-    issues: &[IssueRec],
-    id: &str,
-    depth: usize,
-    kind: WalkKind,
-) -> Result<Vec<WalkHit>> {
-    let graph =
-        DependencyGraph::from_headings(issues.iter().map(|r| &r.heading))?;
+fn walk_from(issues: &[IssueRec], id: &str, depth: usize, kind: WalkKind) -> Result<Vec<WalkHit>> {
+    let graph = DependencyGraph::from_headings(issues.iter().map(|r| &r.heading))?;
     let walked = match kind {
         WalkKind::Ancestors => graph.ancestors(id, depth)?,
         WalkKind::Impact => graph.descendants(id, depth)?,

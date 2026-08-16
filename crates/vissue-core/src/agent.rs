@@ -164,14 +164,15 @@ pub fn hygiene(layout: &Layout, stale_days: Option<i64>) -> Result<String> {
             }
             Some(who) => {
                 if let Some(days) = h.claim_age_days(today)
-                    && days > threshold {
-                        stale_claims += 1;
-                        writeln!(
-                            out,
-                            "[warn] claim held {days}d (over {threshold}d): {} by {who} ({project})",
-                            h.id
-                        )?;
-                    }
+                    && days > threshold
+                {
+                    stale_claims += 1;
+                    writeln!(
+                        out,
+                        "[warn] claim held {days}d (over {threshold}d): {} by {who} ({project})",
+                        h.id
+                    )?;
+                }
             }
         }
     }

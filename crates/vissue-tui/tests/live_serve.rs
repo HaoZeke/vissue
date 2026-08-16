@@ -14,7 +14,6 @@
 //! the same one `vissue tui` and `vissue hud` attach with.
 
 #![cfg(unix)]
-
 #![allow(missing_docs)]
 
 use std::path::Path;

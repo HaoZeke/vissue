@@ -383,9 +383,10 @@ fn accept_loop(listener: std::os::unix::net::UnixListener) {
             continue;
         };
         if let Some(req) = read_action(stream)
-            && tx.send(req).is_err() {
-                break;
-            }
+            && tx.send(req).is_err()
+        {
+            break;
+        }
     }
 }
 

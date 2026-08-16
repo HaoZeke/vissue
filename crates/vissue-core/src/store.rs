@@ -382,14 +382,15 @@ fn parse_heading(lines: &[&str], start: usize) -> Result<(IssueHeading, usize)> 
         while i < lines.len() && lines[i].trim() != ":END:" {
             let line = lines[i].trim();
             if let Some(rest) = line.strip_prefix(':')
-                && let Some(idx) = rest.find(':') {
-                    let key = rest[..idx].to_string();
-                    let val = rest[idx + 1..].trim().to_string();
-                    if !property_order.contains(&key) {
-                        property_order.push(key.clone());
-                    }
-                    properties.insert(key, val);
+                && let Some(idx) = rest.find(':')
+            {
+                let key = rest[..idx].to_string();
+                let val = rest[idx + 1..].trim().to_string();
+                if !property_order.contains(&key) {
+                    property_order.push(key.clone());
                 }
+                properties.insert(key, val);
+            }
             i += 1;
         }
         if i < lines.len() {
@@ -528,10 +529,12 @@ pub fn list_projects(layout: &Layout) -> Result<Vec<String>> {
     for entry in fs::read_dir(&dir).with_context(|| format!("read dir {}", dir.display()))? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() && path.join("issues.org").exists()
-            && let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                projects.push(name.to_string());
-            }
+        if path.is_dir()
+            && path.join("issues.org").exists()
+            && let Some(name) = path.file_name().and_then(|n| n.to_str())
+        {
+            projects.push(name.to_string());
+        }
     }
     projects.sort();
     Ok(projects)
@@ -666,14 +669,14 @@ pub fn detect_project_from_ctx(start: &Path) -> Option<String> {
         let candidate = dir.join(".project-ctx.toml");
         if candidate.exists()
             && let Ok(text) = fs::read_to_string(&candidate)
-                && let Ok(value) = text.parse::<toml::Value>()
-                    && let Some(name) = value
-                        .get("project")
-                        .and_then(|p| p.get("name"))
-                        .and_then(|n| n.as_str())
-                    {
-                        return Some(name.to_string());
-                    }
+            && let Ok(value) = text.parse::<toml::Value>()
+            && let Some(name) = value
+                .get("project")
+                .and_then(|p| p.get("name"))
+                .and_then(|n| n.as_str())
+        {
+            return Some(name.to_string());
+        }
         if !dir.pop() {
             break;
         }

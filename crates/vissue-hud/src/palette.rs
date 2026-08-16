@@ -1630,6 +1630,7 @@ mod tests {
 
     /// Second `ready` returns `{unchanged: true, issues: []}`, like serve
     /// when `since_revision` matches the catalog head.
+    #[derive(Debug)]
     struct UnchangedAfterFirst {
         inner: CoreBackend,
         ready_calls: std::sync::atomic::AtomicUsize,

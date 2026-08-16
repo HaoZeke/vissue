@@ -294,7 +294,7 @@ pub fn excerpt_from(rec: &IssueRec) -> Result<Excerpt, Error> {
 
 /// The heading's on-disk text in full, screened for secrets.
 ///
-/// [`excerpt_from`] caps its output at [`BODY_EXCERPT_MAX_LINES`], which is
+/// [`excerpt_from`] caps its output at the preview line cap, which is
 /// right for a preview and wrong for handing the issue to someone as a
 /// specification: an issue longer than the cap loses its tail silently. This
 /// returns the whole range, so what comes back is what the file holds.

@@ -67,7 +67,9 @@ jobs:
       - name: HUD system libraries
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev
       - name: Locked all-targets check
-        run: cargo check --locked --workspace --all-targets
+        # rust-toolchain.toml is rustup priority 4 and would win over
+        # `rustup default 1.89.0`. The +toolchain selector is priority 1.
+        run: cargo +1.89.0 check --locked --workspace --all-targets
 
   test:
     name: cargo test

@@ -1,4 +1,4 @@
-//! Matchable errors so callers do not parse [`Display`] text.
+//! Matchable errors so callers do not parse [`std::fmt::Display`] text.
 
 use std::fmt;
 

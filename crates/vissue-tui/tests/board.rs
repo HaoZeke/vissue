@@ -329,6 +329,7 @@ fn empty_search_and_project_clear() {
 
 /// Second Ready/List fetch returns `{unchanged: true, issues: []}`, like
 /// serve when `since_revision` matches the catalog head.
+#[derive(Debug)]
 struct UnchangedAfterFirst {
     inner: CoreBackend,
     ready_calls: std::sync::atomic::AtomicUsize,
@@ -473,6 +474,7 @@ fn unchanged_list_does_not_wipe_rows() {
 
 /// After attach, `since_revision` must be omitted when the pane changes.
 /// Serve `unchanged` is catalog-wide; a Ready page is not a List page.
+#[derive(Debug)]
 struct SinceOnRepeat {
     inner: CoreBackend,
     skip_since: std::sync::atomic::AtomicBool,

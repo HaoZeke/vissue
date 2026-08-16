@@ -16,14 +16,15 @@ bash tests/release_surface.sh
 bash tests/org_interop.sh ./target/release/vissue   # needs emacs
 ```
 
-The published `rust-version` is 1.89, and CI tests that toolchain. Clippy,
-fmt, and rustdoc CI use 1.97.1. `rust-toolchain.toml` pins that for local
-rustup. The dtolnay rust-toolchain action at our SHA defaults to floating
-stable and ignores the file, so every non-MSRV job names `toolchain:
-1.97.1` explicitly. Bump the file and those inputs together when taking a
-new clippy. `rust-version` moves when a dependency or
-language feature requires it, as a minor bump; this is not a
-latest-stable-only project.
+The published `rust-version` is 1.89, and the MSRV job runs
+`cargo +1.89.0 check`. Clippy, fmt, and rustdoc CI use 1.97.1.
+`rust-toolchain.toml` pins that for local rustup. The dtolnay rust-toolchain
+action at our SHA defaults to floating stable and ignores the file, so
+every non-MSRV job names `toolchain: 1.97.1` explicitly. The MSRV job
+must use `cargo +1.89.0`; a bare `cargo` would follow the file and
+compile 1.97.1. Bump the file and those inputs together when taking a
+new clippy. `rust-version` moves when a dependency or language feature
+requires it, as a minor bump; this is not a latest-stable-only project.
 
 Before changing file rewrites, add a fixture that includes properties, body
 text, LOGBOOK entries, and CLOCK entries. Tests must show that data outside the

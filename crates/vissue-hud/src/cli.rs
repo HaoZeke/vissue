@@ -126,7 +126,7 @@ pub(crate) fn run_owner(cli: HudCli) -> anyhow::Result<i32> {
 
 /// Locate `vissue-hud` for the `vissue hud` launcher. Missing means 127.
 pub fn resolve_hud_bin() -> Option<PathBuf> {
-    if let Ok(raw) = std::env::var(HUD_BIN_ENV) {
+    if let Ok(raw) = vissue_core::process_env::var(HUD_BIN_ENV) {
         let t = raw.trim();
         if !t.is_empty() {
             return Some(PathBuf::from(t));
@@ -187,10 +187,10 @@ mod tests {
     fn resolve_hud_bin_honors_override() {
         let _guard = crate::env_lock();
         let path = PathBuf::from("/tmp/custom-vissue-hud");
-        std::env::set_var(HUD_BIN_ENV, &path);
+        vissue_core::process_env::override_var(HUD_BIN_ENV, path.to_str());
         assert_eq!(resolve_hud_bin(), Some(path.clone()));
         assert!(!bin_is_present(&path));
-        std::env::remove_var(HUD_BIN_ENV);
+        vissue_core::process_env::clear_override(HUD_BIN_ENV);
         assert!(missing_bin_message().contains("cargo install vissue-hud"));
     }
 
@@ -207,7 +207,7 @@ mod tests {
         let path = dir.join("hud.sock");
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path).unwrap();
-        std::env::set_var(crate::summon::SOCKET_ENV, &path);
+        vissue_core::process_env::override_var(crate::summon::SOCKET_ENV, path.to_str());
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             loop {
@@ -238,7 +238,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(2))
             .expect("summon line");
         assert!(line.starts_with("toggle"), "{line}");
-        std::env::remove_var(crate::summon::SOCKET_ENV);
+        vissue_core::process_env::clear_override(crate::summon::SOCKET_ENV);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -254,7 +254,7 @@ mod tests {
         let path = dir.join("hud.sock");
         let _ = std::fs::remove_file(&path);
         let _listener = UnixListener::bind(&path).unwrap();
-        std::env::set_var(crate::summon::SOCKET_ENV, &path);
+        vissue_core::process_env::override_var(crate::summon::SOCKET_ENV, path.to_str());
         let code = run_owner(HudCli {
             root: Some(PathBuf::from("/tmp/vissue-hud-owner-already")),
             prefix: Some("Software".into()),
@@ -267,7 +267,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(code, 0);
-        std::env::remove_var(crate::summon::SOCKET_ENV);
+        vissue_core::process_env::clear_override(crate::summon::SOCKET_ENV);
         drop(_listener);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&dir);

@@ -95,7 +95,7 @@ pub struct Event {
 /// Whether emission is enabled. `VISSUE_EVENTS=0` disables it.
 pub fn enabled() -> bool {
     !matches!(
-        std::env::var("VISSUE_EVENTS").as_deref(),
+        crate::process_env::var("VISSUE_EVENTS").as_deref(),
         Ok("0") | Ok("false") | Ok("off")
     )
 }

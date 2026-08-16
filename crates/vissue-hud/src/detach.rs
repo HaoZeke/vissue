@@ -41,8 +41,9 @@ pub fn child_args(cli: &HudCli) -> Vec<String> {
 ///
 /// # Errors
 ///
-/// Returns an error if the HUD log cannot be opened, this executable cannot
-/// be found, or the child process cannot be spawned.
+/// Returns an error if the HUD log directory cannot be created, the log
+/// cannot be opened or cloned onto the child, this executable cannot be
+/// found, or the child process cannot be spawned.
 pub fn start_detached(cli: &HudCli) -> anyhow::Result<i32> {
     if summon::already_running() {
         return Ok(0);
@@ -144,10 +145,10 @@ mod tests {
         let path = dir.join("hud.sock");
         let _ = std::fs::remove_file(&path);
         let _listener = UnixListener::bind(&path).unwrap();
-        std::env::set_var(crate::summon::SOCKET_ENV, &path);
+        vissue_core::process_env::override_var(crate::summon::SOCKET_ENV, path.to_str());
         let code = start_detached(&base()).unwrap();
         assert_eq!(code, 0);
-        std::env::remove_var(crate::summon::SOCKET_ENV);
+        vissue_core::process_env::clear_override(crate::summon::SOCKET_ENV);
         drop(_listener);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&dir);

@@ -123,7 +123,7 @@ mod tests {
         let _ = fs::create_dir_all(&dir);
         let file = dir.join("hud.log");
         let _ = fs::remove_file(&file);
-        std::env::set_var(vissue_control::HUD_LOG_ENV, &file);
+        vissue_core::process_env::override_var(vissue_control::HUD_LOG_ENV, file.to_str());
         if let Ok(mut last) = LAST.lock() {
             last.clear();
         }
@@ -138,14 +138,17 @@ mod tests {
         assert!(text.contains(" error boom\n"));
         assert!(text.contains(" info info-line\n"));
         let _ = fs::remove_file(&file);
-        std::env::remove_var(vissue_control::HUD_LOG_ENV);
+        vissue_core::process_env::clear_override(vissue_control::HUD_LOG_ENV);
     }
 
     #[test]
     fn path_honors_override() {
         let _guard = crate::env_lock();
-        std::env::set_var(vissue_control::HUD_LOG_ENV, "/tmp/custom-vissue-hud.log");
+        vissue_core::process_env::override_var(
+            vissue_control::HUD_LOG_ENV,
+            Some("/tmp/custom-vissue-hud.log"),
+        );
         assert_eq!(path(), PathBuf::from("/tmp/custom-vissue-hud.log"));
-        std::env::remove_var(vissue_control::HUD_LOG_ENV);
+        vissue_core::process_env::clear_override(vissue_control::HUD_LOG_ENV);
     }
 }

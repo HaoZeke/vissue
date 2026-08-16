@@ -531,8 +531,9 @@ mod tests {
     #[test]
     fn default_path_ends_with_hud_sock() {
         let _guard = crate::env_lock();
-        std::env::remove_var(SOCKET_ENV);
+        vissue_core::process_env::override_var(SOCKET_ENV, None);
         let path = default_socket_path();
+        vissue_core::process_env::clear_override(SOCKET_ENV);
         assert_eq!(path.file_name().unwrap(), "hud.sock");
     }
 
@@ -607,7 +608,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("hud.sock");
         let _ = std::fs::remove_file(&path);
-        std::env::set_var(SOCKET_ENV, &path);
+        vissue_core::process_env::override_var(SOCKET_ENV, path.to_str());
         let server = install().expect("install");
         assert!(already_running());
         send_command(SummonAction::Show).expect("send");
@@ -621,7 +622,7 @@ mod tests {
         }
         assert_eq!(got, Some(SummonRequest::new(SummonAction::Show)));
         drop(server);
-        std::env::remove_var(SOCKET_ENV);
+        vissue_core::process_env::clear_override(SOCKET_ENV);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

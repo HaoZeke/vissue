@@ -374,8 +374,7 @@ impl Palette {
     ///
     /// # Errors
     ///
-    /// Returns an error if the vault cannot be parsed or the first pane cannot
-    /// be loaded.
+    /// Returns an error if the vault cannot be parsed.
     pub fn open_core(layout: Layout, agent: String) -> anyhow::Result<Self> {
         let backend = CoreBackend::open(layout, agent.clone())?;
         Self::with_backend(Box::new(backend), agent, ServeStatus::Offline)
@@ -385,7 +384,7 @@ impl Palette {
     ///
     /// # Errors
     ///
-    /// Returns an error if the first pane cannot be loaded.
+    /// Does not return `Err`. Pane load failures stay on the board message.
     pub fn with_backend(
         backend: Box<dyn BoardBackend>,
         agent: String,
@@ -713,7 +712,7 @@ impl Palette {
     ///
     /// # Errors
     ///
-    /// Returns an error if the pane cannot be reloaded after the attach attempt.
+    /// Does not return `Err`. Pane load failures stay on the board message.
     pub fn attach(
         &mut self,
         socket: &Path,
@@ -1343,7 +1342,7 @@ impl Palette {
     ///
     /// # Errors
     ///
-    /// Returns an error if the backend cannot load the pane.
+    /// Does not return `Err`. Backend pane failures stay on the board message.
     pub fn reload(&mut self) -> anyhow::Result<()> {
         if self.browsing() {
             self.reload_browser();

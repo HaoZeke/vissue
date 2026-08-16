@@ -28,7 +28,7 @@ pub fn runtime_dir() -> PathBuf {
 /// then `~/.vissue/run/control.sock`.
 pub fn default_socket_path() -> PathBuf {
     resolve_socket_path(
-        std::env::var(SOCKET_ENV).ok().as_deref(),
+        vissue_core::process_env::var(SOCKET_ENV).ok().as_deref(),
         std::env::var("XDG_RUNTIME_DIR").ok().as_deref(),
         home_dir().as_deref(),
     )
@@ -38,7 +38,7 @@ pub fn default_socket_path() -> PathBuf {
 /// to the default socket.
 pub fn control_log_path() -> PathBuf {
     resolve_named_path(
-        std::env::var(SERVE_LOG_ENV).ok().as_deref(),
+        vissue_core::process_env::var(SERVE_LOG_ENV).ok().as_deref(),
         &default_socket_path(),
         CONTROL_LOG,
     )
@@ -48,7 +48,7 @@ pub fn control_log_path() -> PathBuf {
 /// default socket.
 pub fn hud_log_path() -> PathBuf {
     resolve_named_path(
-        std::env::var(HUD_LOG_ENV).ok().as_deref(),
+        vissue_core::process_env::var(HUD_LOG_ENV).ok().as_deref(),
         &default_socket_path(),
         HUD_LOG,
     )
@@ -58,7 +58,7 @@ pub fn hud_log_path() -> PathBuf {
 /// next to the default socket.
 pub fn hud_socket_path() -> PathBuf {
     resolve_named_path(
-        std::env::var(HUD_SOCKET_ENV).ok().as_deref(),
+        vissue_core::process_env::var(HUD_SOCKET_ENV).ok().as_deref(),
         &default_socket_path(),
         HUD_SOCK,
     )

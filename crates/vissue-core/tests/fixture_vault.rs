@@ -954,7 +954,7 @@ fn a_create_and_an_update_announce_themselves_to_pollers() {
 fn event_emission_can_be_switched_off() {
     let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
     let (_dir, layout) = writable_copy();
-    std::env::set_var("VISSUE_EVENTS", "0");
+    vissue_core::process_env::override_var("VISSUE_EVENTS", Some("0"));
     let result = vissue_core::ops::create(
         &layout,
         "atlas",
@@ -964,7 +964,7 @@ fn event_emission_can_be_switched_off() {
             ..Default::default()
         },
     );
-    std::env::remove_var("VISSUE_EVENTS");
+    vissue_core::process_env::clear_override("VISSUE_EVENTS");
     result.unwrap();
 
     assert!(
@@ -999,9 +999,9 @@ fn a_claimed_issue_shows_its_holder_and_age() {
 fn claiming_stamps_the_identity_and_releasing_keeps_the_history() {
     let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
     let (_dir, layout) = writable_copy();
-    std::env::set_var("VISSUE_AGENT", "test-runner-1");
+    vissue_core::process_env::override_var("VISSUE_AGENT", Some("test-runner-1"));
     let claimed = vissue_core::ops::claim(&layout, "atlas-2c3d", false);
-    std::env::remove_var("VISSUE_AGENT");
+    vissue_core::process_env::clear_override("VISSUE_AGENT");
     claimed.unwrap();
 
     let h = store::find_by_id(&layout, "atlas-2c3d").unwrap().unwrap().0;
@@ -1047,10 +1047,10 @@ fn a_block_keeps_the_claim_but_a_reset_to_todo_gives_it_up() {
 fn a_claim_held_by_another_identity_needs_force() {
     let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
     let (_dir, layout) = writable_copy();
-    std::env::set_var("VISSUE_AGENT", "someone-else");
+    vissue_core::process_env::override_var("VISSUE_AGENT", Some("someone-else"));
     let refused = vissue_core::ops::claim(&layout, "atlas-1a2b", false);
     let forced = vissue_core::ops::claim(&layout, "atlas-1a2b", true);
-    std::env::remove_var("VISSUE_AGENT");
+    vissue_core::process_env::clear_override("VISSUE_AGENT");
 
     let err = refused.unwrap_err().to_string();
     assert!(err.contains("claimed by fixture-agent"), "{err}");
@@ -1227,9 +1227,9 @@ fn excerpt_from_suppresses_a_credential_shaped_line() {
 fn claim_as_stamps_the_passed_identity() {
     let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
     let (_dir, layout) = writable_copy();
-    std::env::set_var("VISSUE_AGENT", "env-agent");
+    vissue_core::process_env::override_var("VISSUE_AGENT", Some("env-agent"));
     let claimed = vissue_core::ops::claim_as(&layout, "atlas-2c3d", false, "passed-identity");
-    std::env::remove_var("VISSUE_AGENT");
+    vissue_core::process_env::clear_override("VISSUE_AGENT");
     claimed.unwrap();
 
     let h = store::find_by_id(&layout, "atlas-2c3d").unwrap().unwrap().0;
@@ -1241,9 +1241,9 @@ fn claim_as_stamps_the_passed_identity() {
 fn claim_conflict_is_matchable_without_parsing_display() {
     let _guard = EVENTS_ENV.lock().unwrap_or_else(|p| p.into_inner());
     let (_dir, layout) = writable_copy();
-    std::env::set_var("VISSUE_AGENT", "someone-else");
+    vissue_core::process_env::override_var("VISSUE_AGENT", Some("someone-else"));
     let refused = vissue_core::ops::claim(&layout, "atlas-1a2b", false);
-    std::env::remove_var("VISSUE_AGENT");
+    vissue_core::process_env::clear_override("VISSUE_AGENT");
 
     let err = refused.unwrap_err();
     let typed = err

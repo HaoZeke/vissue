@@ -200,7 +200,7 @@ impl VissueConfig {
 /// something stable enough to identify it across sessions, such as a model
 /// and session tag, and any string it picks is stored verbatim.
 pub fn identity(layout: &Layout) -> String {
-    if let Ok(value) = std::env::var("VISSUE_AGENT") {
+    if let Ok(value) = crate::process_env::var("VISSUE_AGENT") {
         let value = value.trim();
         if !value.is_empty() {
             return value.to_string();
@@ -293,12 +293,13 @@ mod tests {
         fs::write(dir.path().join("vissue.toml"), "agent = \"from-file\"\n").unwrap();
         let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
 
-        std::env::set_var("VISSUE_AGENT", "from-env");
+        crate::process_env::override_var("VISSUE_AGENT", Some("from-env"));
         let from_env = identity(&layout);
-        std::env::set_var("VISSUE_AGENT", "   ");
+        crate::process_env::override_var("VISSUE_AGENT", Some("   "));
         let blank_falls_through = identity(&layout);
-        std::env::remove_var("VISSUE_AGENT");
+        crate::process_env::override_var("VISSUE_AGENT", None);
         let from_file = identity(&layout);
+        crate::process_env::clear_override("VISSUE_AGENT");
 
         assert_eq!(from_env, "from-env");
         assert_eq!(
@@ -313,8 +314,9 @@ mod tests {
         let _guard = AGENT_ENV.lock().unwrap_or_else(|p| p.into_inner());
         let dir = tempfile::tempdir().unwrap();
         let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
-        std::env::remove_var("VISSUE_AGENT");
+        crate::process_env::override_var("VISSUE_AGENT", None);
         let resolved = identity(&layout);
+        crate::process_env::clear_override("VISSUE_AGENT");
         assert!(resolved.contains('@'), "{resolved}");
         assert!(!resolved.starts_with('@'), "{resolved}");
         assert!(!resolved.ends_with('@'), "{resolved}");

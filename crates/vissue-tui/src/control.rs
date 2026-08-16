@@ -39,11 +39,21 @@ pub struct ControlBackend {
 impl ControlBackend {
     /// Connect, `initialize` with a required agent, and refuse a root/prefix
     /// mismatch so mutations never hit the wrong vault.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the socket cannot be reached, `initialize` fails, or
+    /// the serve root/prefix does not match `layout`.
     pub fn connect(path: &Path, layout: &Layout, agent: &str) -> Result<Self, ControlAttachError> {
         Self::connect_as(path, layout, agent, "vissue-tui")
     }
 
     /// Same as [`Self::connect`] with an explicit `initialize.client` name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the socket cannot be reached, `initialize` fails, or
+    /// the serve root/prefix does not match `layout`.
     pub fn connect_as(
         path: &Path,
         layout: &Layout,
@@ -151,11 +161,17 @@ fn roots_match(layout: &Layout, root: &str, prefix: &str) -> bool {
 /// Why attach refused the live socket.
 #[derive(Debug)]
 pub enum ControlAttachError {
+    /// Socket, framing, or JSON-RPC failure.
     Rpc(RpcError),
+    /// Serve answered for a different vault than `layout`.
     Mismatch {
+        /// Board layout root.
         want_root: String,
+        /// Board layout prefix.
         want_prefix: String,
+        /// Root `initialize` returned.
         got_root: String,
+        /// Prefix `initialize` returned.
         got_prefix: String,
     },
 }
@@ -385,6 +401,9 @@ impl BoardBackend for ControlBackend {
         Ok(row.issue)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the control client lock is poisoned.
     fn wait(&self, last: u64, timeout_ms: u64) -> Result<u64, Error> {
         let mut client = self.client.lock().expect("control client");
         match client.wait_notification(Duration::from_millis(timeout_ms.max(1))) {
@@ -398,10 +417,16 @@ impl BoardBackend for ControlBackend {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the since lock is poisoned.
     fn last_since_revision(&self) -> Option<Option<u64>> {
         *self.last_since.lock().expect("since")
     }
 
+    /// # Panics
+    ///
+    /// Panics if the query lock is poisoned.
     fn invalidate_since(&self) {
         self.since.invalidate();
         *self.last_query.lock().expect("query") = None;

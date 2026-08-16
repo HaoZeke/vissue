@@ -16,8 +16,15 @@ use ratatui::{Frame, Terminal};
 use crate::app::App;
 use crate::keys::Pane;
 
+/// Crossterm terminal used by [`install`].
 pub type CrosstermTerm = Terminal<CrosstermBackend<Stdout>>;
 
+/// Enter raw mode and the alternate screen.
+///
+/// # Errors
+///
+/// Returns an error if the terminal cannot enter raw mode, cannot switch to
+/// the alternate screen, or cannot be wrapped as a ratatui backend.
 pub fn install() -> io::Result<CrosstermTerm> {
     enable_raw_mode()?;
     let mut out = stdout();
@@ -25,12 +32,19 @@ pub fn install() -> io::Result<CrosstermTerm> {
     Terminal::new(CrosstermBackend::new(out))
 }
 
+/// Leave raw mode and the alternate screen.
+///
+/// # Errors
+///
+/// Returns an error if the terminal cannot leave raw mode or the alternate
+/// screen.
 pub fn restore() -> io::Result<()> {
     disable_raw_mode()?;
     execute!(stdout(), LeaveAlternateScreen)?;
     Ok(())
 }
 
+/// Draw tabs, list, detail, status, and any prompt or help overlay.
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let [tabs, body, status] = Layout::vertical([
@@ -153,6 +167,10 @@ fn centered(area: Rect, pct_x: u16, pct_y: u16) -> Rect {
 }
 
 /// Render `app` on a [`TestBackend`] and return the buffer as plain text.
+///
+/// # Errors
+///
+/// Returns an error if the test terminal cannot be created or drawn.
 pub fn render_plain(app: &App, width: u16, height: u16) -> anyhow::Result<String> {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend)?;
@@ -160,6 +178,7 @@ pub fn render_plain(app: &App, width: u16, height: u16) -> anyhow::Result<String
     Ok(buffer_plain(terminal.backend()))
 }
 
+/// Flatten a test buffer to trimmed lines joined by `\n`.
 pub fn buffer_plain(backend: &TestBackend) -> String {
     let buf = backend.buffer();
     let area = buf.area();

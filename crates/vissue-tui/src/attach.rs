@@ -11,26 +11,38 @@ use crate::core_backend::CoreBackend;
 /// How the status line labels the current store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServeStatus {
+    /// Attached to a matching `vissue serve`.
     Live,
+    /// Core only: `--offline`, no socket, or spawn/connect failed.
     Offline,
+    /// Socket answered for a different root/prefix.
     Mismatch,
 }
 
+/// Returns true when the control socket already accepts connections.
 pub type ProbeFn = fn(&Path) -> bool;
+/// Spawn or reuse `vissue serve`. The `String` is a spawn failure message.
 pub type EnsureFn = fn(&ServeConfig) -> Result<vissue_serve::EnsureResult, String>;
+/// Connect a live [`BoardBackend`], or classify why attach must stay on core.
 pub type ConnectFn = fn(&Path, &Layout, &str) -> Result<Box<dyn BoardBackend>, AttachFail>;
 
 /// Hooks so `--offline` can be tested with a connector that panics.
 #[derive(Debug)]
 pub struct AttachHooks {
+    /// Whether `socket` already accepts connections.
     pub probe: ProbeFn,
+    /// Spawn serve when the socket is free.
     pub ensure: EnsureFn,
+    /// Dial the socket after probe or a successful ensure.
     pub connect: ConnectFn,
 }
 
+/// Why a live connect was refused. [`try_attach`] maps this onto [`AttachOutcome`].
 #[derive(Debug)]
 pub enum AttachFail {
+    /// Serve root/prefix does not match the board layout.
     Mismatch(String),
+    /// Socket, RPC, or platform failure.
     Other(String),
 }
 
@@ -84,12 +96,18 @@ fn default_connect(
 /// [`CoreBackend`] already.
 #[derive(Debug)]
 pub enum AttachOutcome {
+    /// Keep [`CoreBackend`]. `message` is empty on a clean `--offline`.
     Stay {
+        /// Status-line label after the attempt.
         status: ServeStatus,
+        /// Reason shown on the status line.
         message: String,
     },
+    /// Replace the board store with a live client.
     Switch {
+        /// Connected control backend.
         backend: Box<dyn BoardBackend>,
+        /// Always [`ServeStatus::Live`] on this arm.
         status: ServeStatus,
     },
 }
@@ -157,6 +175,10 @@ fn finish_connect(
 }
 
 /// First paint: core catalog, revision 0, no socket.
+///
+/// # Errors
+///
+/// Returns an error if a project file cannot be read or parsed.
 pub fn open_core(layout: Layout, agent: String) -> Result<CoreBackend, vissue_core::error::Error> {
     CoreBackend::open(layout, agent)
 }

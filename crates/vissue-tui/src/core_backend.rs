@@ -25,6 +25,11 @@ pub struct CoreBackend {
 }
 
 impl CoreBackend {
+    /// Parse the vault once and stamp `identity` on later mutations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a project file cannot be read or parsed.
     pub fn open(layout: Layout, identity: impl Into<String>) -> Result<Self, Error> {
         let recs = load_recs(&layout)?;
         let generation = events::generation(&layout);

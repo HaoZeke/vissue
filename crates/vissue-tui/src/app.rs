@@ -17,11 +17,17 @@ use crate::keys::{
 /// One displayed row. Every pane maps onto this shape so keys share a path.
 #[derive(Debug, Clone)]
 pub struct BoardRow {
+    /// Issue id shown in the first column.
     pub id: String,
+    /// Org TODO state (`TODO`, `STARTED`, ...).
     pub state: String,
+    /// Priority letter (`A`, `B`, or `C`).
     pub priority: String,
+    /// Heading title.
     pub title: String,
+    /// Project name.
     pub project: String,
+    /// Pane-specific suffix: holder, agenda date, or search snippet.
     pub extra: String,
 }
 
@@ -32,28 +38,52 @@ pub struct App {
     agent: String,
     status: ServeStatus,
     message: String,
+    /// Active list pane.
     pub pane: Pane,
+    /// Detail pane tab (show / excerpt / tree / related).
     pub detail_tab: DetailTab,
+    /// Whether keys target the row list or the detail pane.
     pub focus: Focus,
+    /// Rows for the current pane.
     pub rows: Vec<BoardRow>,
+    /// Index into [`Self::rows`].
     pub selected: usize,
+    /// Project filter, if any.
     pub project: Option<String>,
+    /// Known project names for the `p` prompt.
     pub projects: Vec<String>,
+    /// Last loaded issue detail, if any.
     pub detail: Option<IssueDetail>,
+    /// Text drawn in the detail pane.
     pub detail_body: String,
+    /// Open line prompt and its buffer.
     pub prompt: Option<(PromptKind, String)>,
+    /// Pending DONE/CANCELLED confirmation.
     pub confirm: Option<ConfirmKind>,
+    /// Help overlay is visible.
     pub help: bool,
+    /// Last id copied with `y`.
     pub clipboard: String,
     search_query: String,
 }
 
 impl App {
+    /// Open a file-backed board and load the Ready pane.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the vault cannot be parsed or the first pane cannot
+    /// be loaded.
     pub fn open_core(layout: Layout, agent: String) -> anyhow::Result<Self> {
         let backend = CoreBackend::open(layout, agent.clone())?;
         Self::with_backend(Box::new(backend), agent, ServeStatus::Offline)
     }
 
+    /// Build a board around an existing backend and load the Ready pane.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the first pane cannot be loaded.
     pub fn with_backend(
         backend: Box<dyn BoardBackend>,
         agent: String,
@@ -84,34 +114,42 @@ impl App {
         Ok(app)
     }
 
+    /// How the status line labels the current store.
     pub fn serve_status(&self) -> ServeStatus {
         self.status
     }
 
+    /// Identity used for claims and updates.
     pub fn agent(&self) -> &str {
         &self.agent
     }
 
+    /// Catalog generation from the current backend.
     pub fn generation(&self) -> u64 {
         self.backend.generation()
     }
 
+    /// Serve revision from the current backend. Core is always 0.
     pub fn revision(&self) -> u64 {
         self.backend.revision()
     }
 
+    /// Id of the selected row, if the pane is not empty.
     pub fn selected_id(&self) -> Option<&str> {
         self.rows.get(self.selected).map(|r| r.id.as_str())
     }
 
+    /// Org state of the selected row, if the pane is not empty.
     pub fn selected_state(&self) -> Option<&str> {
         self.rows.get(self.selected).map(|r| r.state.as_str())
     }
 
+    /// The store this board is talking to.
     pub fn backend(&self) -> &dyn BoardBackend {
         self.backend.as_ref()
     }
 
+    /// Swap the store and adopt its identity. Does not reload rows.
     pub fn replace_backend(&mut self, backend: Box<dyn BoardBackend>, status: ServeStatus) {
         self.backend = backend;
         self.status = status;
@@ -119,6 +157,10 @@ impl App {
     }
 
     /// Post-paint attach. `--offline` never probes the socket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pane cannot be reloaded after the attach attempt.
     pub fn attach(
         &mut self,
         socket: &std::path::Path,
@@ -140,6 +182,7 @@ impl App {
         self.reload()
     }
 
+    /// One-line `serve:` / gen / rev / agent / project / message summary.
     pub fn status_line(&self) -> String {
         let kind = match self.status {
             ServeStatus::Live => "live",
@@ -163,6 +206,11 @@ impl App {
         line
     }
 
+    /// Fetch the current pane from the backend and refresh detail.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend cannot load the pane.
     pub fn reload(&mut self) -> anyhow::Result<()> {
         let project = self.project.as_deref();
         match self.pane {
@@ -215,6 +263,7 @@ impl App {
         self.rows = page.issues.into_iter().map(row_from_issue).collect();
     }
 
+    /// Wait briefly for a catalog change and reload when the watermark moves.
     pub fn poll_updates(&mut self) {
         let last = match self.backend.live() {
             crate::backend::BackendKind::Control => self.backend.revision(),
@@ -227,6 +276,7 @@ impl App {
         }
     }
 
+    /// Dispatch one key. Repeat and press count; release is ignored.
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
         if !is_press(key) {
             return Action::Continue;
@@ -538,6 +588,7 @@ impl App {
         }
     }
 
+    /// Label and buffer for the open prompt, if any.
     pub fn prompt_line(&self) -> Option<String> {
         self.prompt.as_ref().map(|(kind, text)| {
             let label = match kind {
@@ -549,11 +600,13 @@ impl App {
         })
     }
 
+    /// Confirmation line for DONE/CANCELLED, if any.
     pub fn confirm_line(&self) -> Option<String> {
         self.confirm
             .map(|kind| format!("confirm {}? y/n", kind.state()))
     }
 
+    /// Text drawn on `?`.
     pub fn help_text(&self) -> &'static str {
         HELP
     }
@@ -654,13 +707,22 @@ fn format_related(hits: &[vissue_core::views::RelatedHit]) -> String {
 /// Options for the interactive `vissue tui` entry point.
 #[derive(Debug)]
 pub struct RunOpts {
+    /// Vault root and project prefix.
     pub layout: Layout,
+    /// Control socket to attach after first paint.
     pub socket: PathBuf,
+    /// Skip the socket and stay on [`CoreBackend`].
     pub offline: bool,
+    /// Identity stamped on claims and updates.
     pub agent: String,
 }
 
 /// First paint via core, then attach unless `--offline`, then the crossterm loop.
+///
+/// # Errors
+///
+/// Returns an error if the vault cannot be opened, the terminal cannot be
+/// installed or drawn, attach reload fails, or a terminal event cannot be read.
 pub fn run(opts: RunOpts) -> anyhow::Result<()> {
     let mut app = App::open_core(opts.layout.clone(), opts.agent.clone())?;
     let mut terminal = crate::view::install()?;

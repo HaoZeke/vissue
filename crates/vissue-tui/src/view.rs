@@ -171,7 +171,11 @@ fn centered(area: Rect, pct_x: u16, pct_y: u16) -> Rect {
 /// # Errors
 ///
 /// Returns an error if the test terminal cannot be created or drawn.
-pub fn render_plain(app: &App, width: u16, height: u16) -> anyhow::Result<String> {
+pub fn render_plain(
+    app: &App,
+    width: u16,
+    height: u16,
+) -> Result<String, vissue_core::error::Error> {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend)?;
     terminal.draw(|f| draw(f, app))?;

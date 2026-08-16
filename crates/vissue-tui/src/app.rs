@@ -74,7 +74,7 @@ impl App {
     ///
     /// Returns an error if the vault cannot be parsed or the first pane cannot
     /// be loaded.
-    pub fn open_core(layout: Layout, agent: String) -> anyhow::Result<Self> {
+    pub fn open_core(layout: Layout, agent: String) -> Result<Self, vissue_core::error::Error> {
         let backend = CoreBackend::open(layout, agent.clone())?;
         Self::with_backend(Box::new(backend), agent, ServeStatus::Offline)
     }
@@ -88,7 +88,7 @@ impl App {
         backend: Box<dyn BoardBackend>,
         agent: String,
         status: ServeStatus,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, vissue_core::error::Error> {
         let projects = backend.projects().unwrap_or_default();
         let mut app = Self {
             backend,
@@ -166,7 +166,7 @@ impl App {
         socket: &std::path::Path,
         offline: bool,
         hooks: &AttachHooks,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), vissue_core::error::Error> {
         let layout = self.backend.layout().clone();
         let agent = self.agent.clone();
         match try_attach(&layout, socket, &agent, offline, hooks) {
@@ -211,7 +211,7 @@ impl App {
     /// # Errors
     ///
     /// Returns an error if the backend cannot load the pane.
-    pub fn reload(&mut self) -> anyhow::Result<()> {
+    pub fn reload(&mut self) -> Result<(), vissue_core::error::Error> {
         let project = self.project.as_deref();
         match self.pane {
             Pane::Ready => self.apply_issue_page(self.backend.ready(project)?),
@@ -722,7 +722,7 @@ pub struct RunOpts {
 ///
 /// Returns an error if the vault cannot be opened, the terminal cannot be
 /// installed or drawn, attach reload fails, or a terminal event cannot be read.
-pub fn run(opts: RunOpts) -> anyhow::Result<()> {
+pub fn run(opts: RunOpts) -> Result<(), vissue_core::error::Error> {
     let mut app = App::open_core(opts.layout.clone(), opts.agent.clone())?;
     let mut terminal = crate::view::install()?;
     let result = (|| {

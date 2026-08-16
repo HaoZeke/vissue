@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::env::VarError;
 
 thread_local! {
-    static OVERLAY: RefCell<HashMap<String, Option<String>>> = const { RefCell::new(HashMap::new()) };
+    static OVERLAY: RefCell<HashMap<String, Option<String>>> = RefCell::new(HashMap::new());
 }
 
 /// Read `key`, honouring a test overlay if one is set on this thread.

@@ -12,6 +12,11 @@ thread_local! {
 }
 
 /// Read `key`, honouring a test overlay if one is set on this thread.
+///
+/// # Errors
+///
+/// Returns [`VarError::NotPresent`] when the overlay unsets `key` or when
+/// the real process environment has no such variable.
 pub fn var(key: &str) -> Result<String, VarError> {
     if let Some(over) = OVERLAY.with(|m| m.borrow().get(key).cloned()) {
         return over.ok_or(VarError::NotPresent);

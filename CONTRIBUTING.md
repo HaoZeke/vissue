@@ -16,9 +16,11 @@ bash tests/org_interop.sh ./target/release/vissue   # needs emacs
 ```
 
 The published `rust-version` is 1.89, and CI tests that toolchain. Clippy
-and fmt CI may run a newer stable toolchain than 1.89. `rust-version`
-moves when a dependency or language feature requires it, as a minor bump;
-this is not a latest-stable-only project.
+and fmt CI use the compiler pinned in `rust-toolchain.toml` (currently
+1.97.1). Bump that pin when taking a new clippy; do not leave the quality
+job on floating latest stable. `rust-version` moves when a dependency or
+language feature requires it, as a minor bump; this is not a
+latest-stable-only project.
 
 Before changing file rewrites, add a fixture that includes properties, body
 text, LOGBOOK entries, and CLOCK entries. Tests must show that data outside the

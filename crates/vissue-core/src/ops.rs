@@ -64,6 +64,10 @@ pub struct CreateOpts<'a> {
 
 /// Append a new TODO issue to the project's file and return the status text.
 ///
+/// The first `[[id:XXX]]` in `body` that names a heading already in the
+/// corpus becomes `:DISCOVERED_FROM:`, unless that property is already set.
+/// Prose never writes `:BLOCKED_BY:`.
+///
 /// # Errors
 ///
 /// Returns an error if the priority is not `A`/`B`/`C`, a date does not parse,
@@ -78,9 +82,14 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
     }
     let path = layout.project_issues_path(&project);
 
-    // Validating the parent scans every org file, so do it outside the lock.
+    // Parent and body [[id:]] both need the corpus id set; scan once.
+    let known_ids = if opts.parent.is_some() || opts.body.is_some() {
+        collect_org_ids(layout)?
+    } else {
+        std::collections::HashSet::new()
+    };
     if let Some(p) = opts.parent
-        && !collect_org_ids(layout)?.contains(p)
+        && !known_ids.contains(p)
     {
         return Err(anyhow!("--parent {p} does not refer to any known id").into());
     }
@@ -92,6 +101,12 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
         let mut props = BTreeMap::new();
         props.insert("ID".into(), id.clone());
         props.insert("CREATED".into(), today_inactive_bracket());
+        if !props.contains_key("DISCOVERED_FROM")
+            && let Some(body) = opts.body
+            && let Some(origin) = first_existing_id_link(body, &known_ids)
+        {
+            props.insert("DISCOVERED_FROM".into(), origin);
+        }
         if let Some(t) = opts.issue_type {
             props.insert("TYPE".into(), t.into());
         }
@@ -196,6 +211,45 @@ pub fn update(
     )
 }
 
+/// Last-seen state or generation a write must still match.
+///
+/// This is the causal context on a PUT: the caller read the heading, then
+/// writes only if nothing else closed or rewrote it.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UpdatePred<'a> {
+    /// Refuse unless the heading is still this state.
+    pub if_state: Option<&'a str>,
+    /// Refuse unless the corpus generation is still this value.
+    pub if_gen: Option<u64>,
+}
+
+/// [`update`] with a last-seen predicate.
+///
+/// # Errors
+///
+/// Same as [`update`], plus [`Error::StaleWrite`] when the predicate fails.
+pub fn update_pred(
+    layout: &Layout,
+    id: &str,
+    new_state: Option<&str>,
+    new_priority: Option<char>,
+    block_add: Option<&str>,
+    block_clear: Option<&str>,
+    pred: UpdatePred<'_>,
+) -> Result<UpdateOutcome> {
+    let identity = crate::config::identity(layout);
+    update_as_pred(
+        layout,
+        id,
+        new_state,
+        new_priority,
+        block_add,
+        block_clear,
+        &identity,
+        pred,
+    )
+}
+
 /// [`update`] with an explicit identity instead of [`crate::config::identity`].
 ///
 /// # Errors
@@ -211,10 +265,38 @@ pub fn update_as(
     block_clear: Option<&str>,
     identity: &str,
 ) -> Result<UpdateOutcome> {
+    update_as_pred(
+        layout,
+        id,
+        new_state,
+        new_priority,
+        block_add,
+        block_clear,
+        identity,
+        UpdatePred::default(),
+    )
+}
+
+/// [`update_as`] with a last-seen predicate.
+///
+/// # Errors
+///
+/// Same as [`update_as`], plus [`Error::StaleWrite`] when the predicate fails.
+#[allow(clippy::too_many_arguments)]
+pub fn update_as_pred(
+    layout: &Layout,
+    id: &str,
+    new_state: Option<&str>,
+    new_priority: Option<char>,
+    block_add: Option<&str>,
+    block_clear: Option<&str>,
+    identity: &str,
+    pred: UpdatePred<'_>,
+) -> Result<UpdateOutcome> {
     let (_h0, path, project) =
         find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
 
-    let (final_state, changed) = with_issues_lock(&path, || {
+    let (transition, changed) = with_issues_lock(&path, || {
         // Read the graph inside the lock. Built before it, the check answers
         // for a corpus a peer may already have moved on from.
         let graph = if block_add.is_some() {
@@ -229,18 +311,55 @@ pub fn update_as(
             .find(|x| x.id == id)
             .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
 
+        let original = h.state.clone();
         let mut changed = Vec::new();
+
+        if pred.if_state.is_some() || pred.if_gen.is_some() {
+            let seen = crate::events::generation(layout);
+            if let Some(want) = pred.if_state {
+                if !TODO_KEYWORDS.contains(&want) {
+                    return Err(
+                        anyhow!("invalid --if-state {want:?}; allowed: {TODO_KEYWORDS:?}").into(),
+                    );
+                }
+                if h.state != want {
+                    return Err(Error::StaleWrite {
+                        id: id.to_string(),
+                        expected_state: Some(want.to_string()),
+                        actual_state: h.state.clone(),
+                        expected_gen: pred.if_gen,
+                        actual_gen: Some(seen),
+                    });
+                }
+            }
+            if let Some(want_gen) = pred.if_gen
+                && seen != want_gen
+            {
+                return Err(Error::StaleWrite {
+                    id: id.to_string(),
+                    expected_state: pred.if_state.map(str::to_string),
+                    actual_state: h.state.clone(),
+                    expected_gen: Some(want_gen),
+                    actual_gen: Some(seen),
+                });
+            }
+        }
 
         if let Some(s) = new_state {
             if !TODO_KEYWORDS.contains(&s) {
                 return Err(anyhow!("invalid state {s:?}; allowed: {TODO_KEYWORDS:?}").into());
             }
             if h.state != s {
-                let from = h.state.clone();
-                h.record_state_change(s);
-                changed.push(format!("state {from} -> {s}"));
-                for note in settle_claim(h, &from, s, identity) {
-                    changed.push(note);
+                if is_terminal(&h.state) && is_terminal(s) {
+                    record_sibling_terminal(h, s);
+                    changed.push(format!("sibling terminal {s} (held {})", h.state));
+                } else {
+                    let from = h.state.clone();
+                    h.record_state_change(s);
+                    changed.push(format!("state {from} -> {s}"));
+                    for note in settle_claim(h, &from, s, identity) {
+                        changed.push(note);
+                    }
                 }
             }
         }
@@ -300,7 +419,8 @@ pub fn update_as(
 
         let final_state = h.state.clone();
         doc.write()?;
-        Ok((Some(final_state), changed))
+        let transition = (original != final_state).then_some((original, final_state));
+        Ok((transition, changed))
     })?;
 
     if changed.is_empty() {
@@ -310,8 +430,15 @@ pub fn update_as(
         });
     }
 
+    if let Some((from, to)) = &transition {
+        let _ = crate::events::emit_state_change(layout, &project, id, from, to);
+    }
+
     let mut hints = Vec::new();
-    if matches!(final_state.as_deref(), Some("DONE") | Some("CANCELLED")) {
+    if matches!(
+        transition.as_ref().map(|(_, to)| to.as_str()),
+        Some("DONE") | Some("CANCELLED")
+    ) {
         for (other_project, other) in load_all(layout)? {
             if !other.blocked_by().iter().any(|b| b == id) {
                 continue;
@@ -335,6 +462,50 @@ pub fn update_as(
 /// waiting on something else. Leaving for TODO, DONE, or CANCELLED gives it up.
 fn keeps_claim(state: &str) -> bool {
     matches!(state, "STARTED" | "BLOCKED")
+}
+
+fn is_terminal(state: &str) -> bool {
+    matches!(state, "DONE" | "CANCELLED")
+}
+
+fn record_sibling_terminal(h: &mut IssueHeading, attempted: &str) {
+    h.properties
+        .insert("SIBLING_TERMINAL".into(), attempted.to_string());
+}
+
+/// Pick one terminal after a sibling close. Clears `:SIBLING_TERMINAL:`.
+///
+/// # Errors
+///
+/// Returns an error if `id` is missing, `state` is not DONE or CANCELLED, or
+/// the file cannot be rewritten.
+pub fn resolve_terminal(layout: &Layout, id: &str, state: &str) -> Result<String> {
+    if !is_terminal(state) {
+        return Err(anyhow!("resolve state must be DONE or CANCELLED, got {state:?}").into());
+    }
+    let identity = crate::config::identity(layout);
+    let (_h0, path, project) =
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+    let from = with_issues_lock(&path, || {
+        let mut doc = IssueDoc::parse_file(&project, &path)?;
+        let h = doc
+            .headings
+            .iter_mut()
+            .find(|x| x.id == id)
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+        let from = h.state.clone();
+        if from != state {
+            h.record_state_change(state);
+            settle_claim(h, &from, state, &identity);
+        }
+        h.properties.remove("SIBLING_TERMINAL");
+        doc.write()?;
+        Ok(from)
+    })?;
+    if from != state {
+        let _ = crate::events::emit_state_change(layout, &project, id, &from, state);
+    }
+    Ok(format!("resolved {id} -> {state}\n"))
 }
 
 /// Take or give up the claim as the state moves.
@@ -406,10 +577,15 @@ pub fn claim_as(layout: &Layout, id: &str, force: bool, identity: &str) -> Resul
             }
             if holder != identity {
                 let previous = holder.to_string();
+                let from = h.state.clone();
                 h.release_claim();
                 h.set_claim(identity);
                 h.record_state_change("STARTED");
                 doc.write()?;
+                if from != "STARTED" {
+                    let _ =
+                        crate::events::emit_state_change(layout, &project, id, &from, "STARTED");
+                }
                 return Ok(format!("claimed {id} (taken over from {previous})\n"));
             }
         }
@@ -420,6 +596,9 @@ pub fn claim_as(layout: &Layout, id: &str, force: bool, identity: &str) -> Resul
             h.set_claim(identity);
         }
         doc.write()?;
+        if was != "STARTED" {
+            let _ = crate::events::emit_state_change(layout, &project, id, &was, "STARTED");
+        }
         if was == "STARTED" {
             Ok(format!("claimed {id} by {identity}\n"))
         } else {
@@ -684,6 +863,215 @@ pub fn refile(layout: &Layout, id: &str, to_project: &str) -> Result<String> {
         Ok(())
     })?;
     Ok(format!("{id}: {src_project} -> {to_project}\n"))
+}
+
+/// Optional fields on [`reject`].
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RejectOpts<'a> {
+    /// Existing destination id. When set, that heading is the successor.
+    pub to: Option<&'a str>,
+    /// Project to create the destination in when [`Self::to`] is absent.
+    pub project: Option<&'a str>,
+    /// Title of a created destination. The source title is used when omitted.
+    pub title: Option<&'a str>,
+    /// Prose appended to the cancelled source.
+    pub reason: Option<&'a str>,
+}
+
+/// Cancel `src` and point it at a successor in one graph edit.
+///
+/// Writes `src` to CANCELLED, sets `:PIVOTED_TO:` to the destination, and
+/// settles any claim on `src`. A created destination, or an existing one
+/// whose `:DISCOVERED_FROM:` is empty, records `src` as its origin. A
+/// non-empty `:DISCOVERED_FROM:` is left alone.
+///
+/// # Errors
+///
+/// Returns an error if `src` is not in the corpus, `--to` names no heading,
+/// neither a destination nor a create project is given, or a file cannot be
+/// rewritten.
+pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String> {
+    let identity = crate::config::identity(layout);
+    let (src0, src_path, src_project) =
+        find_by_id(layout, src)?.ok_or_else(|| Error::IssueNotFound {
+            id: src.to_string(),
+        })?;
+
+    let existing_dst = if let Some(to) = opts.to {
+        if to == src {
+            return Err(anyhow!("reject destination cannot be the source {src}").into());
+        }
+        Some(find_by_id(layout, to)?.ok_or_else(|| Error::IssueNotFound { id: to.to_string() })?)
+    } else {
+        None
+    };
+
+    let creating = existing_dst.is_none();
+    if creating && opts.project.is_none() {
+        return Err(anyhow!("reject needs --to DST or --project to create a successor").into());
+    }
+
+    let dst_project = if let Some((_, _, ref project)) = existing_dst {
+        project.clone()
+    } else {
+        resolve_existing_project_case(layout, opts.project.unwrap_or(&src_project))?
+    };
+    let dst_path = layout.project_issues_path(&dst_project);
+    let dst_title = opts.title.unwrap_or(src0.title.as_str());
+    let cfg = VissueConfig::load(layout)?;
+
+    let (dst_id, old_state, new_state) = with_issues_locks(&[&src_path, &dst_path], || {
+        if src_path == dst_path {
+            let mut doc = IssueDoc::parse_file(&src_project, &src_path)?;
+            let dst_id = if creating {
+                push_successor(&mut doc, &dst_project, dst_title, src, &cfg)?
+            } else {
+                let to = reject_to(opts)?;
+                set_discovered_from_if_empty(&mut doc, to, src)?;
+                to.to_string()
+            };
+            let (old_state, new_state) =
+                cancel_and_pivot(&mut doc, src, &dst_id, opts.reason, &identity)?;
+            doc.write()?;
+            Ok((dst_id, old_state, new_state))
+        } else {
+            let mut src_doc = IssueDoc::parse_file(&src_project, &src_path)?;
+            let mut dst_doc = IssueDoc::parse_file(&dst_project, &dst_path)?;
+            let dst_id = if creating {
+                push_successor(&mut dst_doc, &dst_project, dst_title, src, &cfg)?
+            } else {
+                let to = reject_to(opts)?;
+                set_discovered_from_if_empty(&mut dst_doc, to, src)?;
+                to.to_string()
+            };
+            let (old_state, new_state) =
+                cancel_and_pivot(&mut src_doc, src, &dst_id, opts.reason, &identity)?;
+            dst_doc.write()?;
+            src_doc.write()?;
+            Ok((dst_id, old_state, new_state))
+        }
+    })?;
+
+    if old_state != new_state {
+        let _ = crate::events::emit_state_change(layout, &src_project, src, &old_state, &new_state);
+    }
+    Ok(format!("rejected {src} -> {dst_id}\n"))
+}
+
+fn reject_to(opts: RejectOpts<'_>) -> Result<&str> {
+    opts.to
+        .ok_or_else(|| anyhow!("reject destination missing after --to was required").into())
+}
+
+fn push_successor(
+    doc: &mut IssueDoc,
+    project: &str,
+    title: &str,
+    src: &str,
+    cfg: &VissueConfig,
+) -> Result<String> {
+    let id = generate_id(project, &doc.known_ids(), cfg.issues.id_length)?;
+    let mut props = BTreeMap::new();
+    props.insert("ID".into(), id.clone());
+    props.insert("CREATED".into(), today_inactive_bracket());
+    props.insert("DISCOVERED_FROM".into(), src.to_string());
+    doc.headings.push(IssueHeading {
+        id: id.clone(),
+        title: title.to_string(),
+        state: "TODO".into(),
+        priority: cfg.issues.default_priority,
+        properties: props,
+        org_tags: Vec::new(),
+        property_order: Vec::new(),
+        body: String::new(),
+        logbook: Vec::new(),
+        line_start: 0,
+        line_end: 0,
+    });
+    Ok(id)
+}
+
+fn set_discovered_from_if_empty(doc: &mut IssueDoc, id: &str, src: &str) -> Result<()> {
+    let h = doc
+        .headings
+        .iter_mut()
+        .find(|h| h.id == id)
+        .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+    let empty = h
+        .properties
+        .get("DISCOVERED_FROM")
+        .is_none_or(|s| s.trim().is_empty());
+    if empty {
+        h.properties
+            .insert("DISCOVERED_FROM".into(), src.to_string());
+    }
+    Ok(())
+}
+
+fn cancel_and_pivot(
+    doc: &mut IssueDoc,
+    src: &str,
+    dst: &str,
+    reason: Option<&str>,
+    identity: &str,
+) -> Result<(String, String)> {
+    let h = doc
+        .headings
+        .iter_mut()
+        .find(|h| h.id == src)
+        .ok_or_else(|| Error::IssueNotFound {
+            id: src.to_string(),
+        })?;
+    let old_state = h.state.clone();
+    if is_terminal(&old_state) && old_state != "CANCELLED" {
+        record_sibling_terminal(h, "CANCELLED");
+    } else if old_state != "CANCELLED" {
+        h.record_state_change("CANCELLED");
+        settle_claim(h, &old_state, "CANCELLED", identity);
+    }
+    h.properties.insert("PIVOTED_TO".into(), dst.to_string());
+    if let Some(reason) = reason {
+        append_reason(h, reason, identity);
+    }
+    Ok((old_state, h.state.clone()))
+}
+
+fn append_reason(h: &mut IssueHeading, text: &str, identity: &str) {
+    let text = text.trim_end();
+    if text.trim().is_empty() {
+        return;
+    }
+    let stamp = format!("{} {identity}", today_inactive_bracket());
+    if !h.body.trim().is_empty() {
+        h.body = h.body.trim_end().to_string();
+        h.body.push_str("\n\n");
+    } else {
+        h.body.clear();
+    }
+    h.body.push_str(&stamp);
+    h.body.push('\n');
+    h.body.push_str(text);
+    h.body.push('\n');
+}
+
+/// First `[[id:XXX]]` (optionally `[[id:XXX][label]]`) whose id is in `known`.
+fn first_existing_id_link(body: &str, known: &std::collections::HashSet<String>) -> Option<String> {
+    let mut rest = body;
+    while let Some(start) = rest.find("[[") {
+        let after_start = &rest[start + 2..];
+        let end = after_start.find("]]")?;
+        let raw = &after_start[..end];
+        let target = raw.split_once("][").map_or(raw, |(target, _)| target);
+        let target = target.trim();
+        if let Some(id) = target.strip_prefix("id:") {
+            let id = id.trim();
+            if known.contains(id) {
+                return Some(id.to_string());
+            }
+        }
+        rest = &after_start[end + 2..];
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1083,5 +1471,378 @@ mod tests {
         assert_eq!(again, "folded 0 (nothing unstamped)\n");
         let doc2 = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
         assert_eq!(doc2.headings.len(), doc.headings.len());
+    }
+
+    #[test]
+    fn reject_to_an_existing_issue_cancels_and_wires_the_pair() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "old approach", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "new approach", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let src = doc.headings[0].id.clone();
+        let dst = doc.headings[1].id.clone();
+
+        let out = reject(
+            &layout,
+            &src,
+            RejectOpts {
+                to: Some(&dst),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(out.contains(&src) && out.contains(&dst), "{out}");
+
+        let src_h = issue_at(&layout, "sample", &src);
+        assert_eq!(src_h.state, "CANCELLED");
+        assert_eq!(
+            src_h.properties.get("PIVOTED_TO").map(String::as_str),
+            Some(dst.as_str())
+        );
+        let dst_h = issue_at(&layout, "sample", &dst);
+        assert_eq!(
+            dst_h.properties.get("DISCOVERED_FROM").map(String::as_str),
+            Some(src.as_str())
+        );
+    }
+
+    #[test]
+    fn reject_creates_the_destination_in_another_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "old approach", CreateOpts::default()).unwrap();
+        let src = only_id(&layout, "sample");
+
+        let out = reject(
+            &layout,
+            &src,
+            RejectOpts {
+                project: Some("other"),
+                title: Some("new approach"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let dst_doc = IssueDoc::parse_file("other", &layout.project_issues_path("other")).unwrap();
+        assert_eq!(dst_doc.headings.len(), 1);
+        let dst = &dst_doc.headings[0];
+        assert_eq!(dst.title, "new approach");
+        assert_eq!(
+            dst.properties.get("DISCOVERED_FROM").map(String::as_str),
+            Some(src.as_str())
+        );
+        assert!(out.contains(&src) && out.contains(&dst.id), "{out}");
+
+        let src_h = issue_at(&layout, "sample", &src);
+        assert_eq!(src_h.state, "CANCELLED");
+        assert_eq!(
+            src_h.properties.get("PIVOTED_TO").map(String::as_str),
+            Some(dst.id.as_str())
+        );
+    }
+
+    #[test]
+    fn reject_refuses_an_unknown_source_or_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "only", CreateOpts::default()).unwrap();
+        let src = only_id(&layout, "sample");
+
+        let missing_src = reject(
+            &layout,
+            "sample-zzzz",
+            RejectOpts {
+                to: Some(&src),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(missing_src, Error::IssueNotFound { .. }),
+            "{missing_src}"
+        );
+
+        let missing_dst = reject(
+            &layout,
+            &src,
+            RejectOpts {
+                to: Some("sample-zzzz"),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(missing_dst, Error::IssueNotFound { .. }),
+            "{missing_dst}"
+        );
+    }
+
+    #[test]
+    fn reject_does_not_overwrite_a_nonempty_discovered_from() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "origin", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "old approach", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "already sourced", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let origin = doc.headings[0].id.clone();
+        let src = doc.headings[1].id.clone();
+        let dst = doc.headings[2].id.clone();
+
+        let path = layout.project_issues_path("sample");
+        let mut doc = IssueDoc::parse_file("sample", &path).unwrap();
+        doc.headings
+            .iter_mut()
+            .find(|h| h.id == dst)
+            .unwrap()
+            .properties
+            .insert("DISCOVERED_FROM".into(), origin.clone());
+        doc.write().unwrap();
+
+        reject(
+            &layout,
+            &src,
+            RejectOpts {
+                to: Some(&dst),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let dst_h = issue_at(&layout, "sample", &dst);
+        assert_eq!(
+            dst_h.properties.get("DISCOVERED_FROM").map(String::as_str),
+            Some(origin.as_str()),
+            "a filled DISCOVERED_FROM stays put"
+        );
+    }
+
+    #[test]
+    fn create_sets_discovered_from_from_the_first_known_id_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "source", CreateOpts::default()).unwrap();
+        let known = only_id(&layout, "sample");
+        create(
+            &layout,
+            "sample",
+            "fell out of it",
+            CreateOpts {
+                body: Some(&format!("See [[id:{known}]] for the parent finding.")),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let child = doc
+            .headings
+            .iter()
+            .find(|h| h.title == "fell out of it")
+            .unwrap();
+        assert_eq!(
+            child.properties.get("DISCOVERED_FROM").map(String::as_str),
+            Some(known.as_str())
+        );
+    }
+
+    #[test]
+    fn create_ignores_an_id_link_that_is_not_in_the_corpus() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(
+            &layout,
+            "sample",
+            "orphan mention",
+            CreateOpts {
+                body: Some("See [[id:sample-zzzz]] which does not exist."),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let h = issue_at(&layout, "sample", &only_id(&layout, "sample"));
+        assert!(
+            !h.properties.contains_key("DISCOVERED_FROM"),
+            "unknown [[id:]] must not mint DISCOVERED_FROM: {h:?}"
+        );
+        assert!(
+            !h.properties.contains_key("BLOCKED_BY"),
+            "prose must not mint BLOCKED_BY: {h:?}"
+        );
+    }
+
+    #[test]
+    fn related_after_reject_names_the_successor_without_a_body_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "old approach", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "new approach", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let src = doc.headings[0].id.clone();
+        let dst = doc.headings[1].id.clone();
+        reject(
+            &layout,
+            &src,
+            RejectOpts {
+                to: Some(&dst),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            !issue_at(&layout, "sample", &src).body.contains(&dst),
+            "the pair is wired by PIVOTED_TO, not prose"
+        );
+        let from_src = crate::related::related(&layout, &src, 1, 10, "text").unwrap();
+        assert!(from_src.contains(&dst), "{from_src}");
+        assert!(from_src.contains("pivoted_to"), "{from_src}");
+
+        let from_dst = crate::related::related(&layout, &dst, 1, 10, "text").unwrap();
+        assert!(from_dst.contains(&src), "{from_dst}");
+        assert!(from_dst.contains("successor_of"), "{from_dst}");
+
+        let waiting = crate::report::backlinks(&layout, &dst).unwrap();
+        assert!(waiting.contains(&src), "{waiting}");
+    }
+
+    #[test]
+    fn update_to_cancelled_emits_state_change_with_the_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "first", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        let before = crate::events::generation(&layout);
+        update(&layout, &id, Some("CANCELLED"), None, None, None).unwrap();
+        let events = crate::events::since(&layout, before, 50).unwrap();
+        assert!(
+            events.iter().any(|e| {
+                e.kind == "state_change"
+                    && e.id.as_deref() == Some(id.as_str())
+                    && e.detail.as_deref() == Some("TODO->CANCELLED")
+            }),
+            "{events:?}"
+        );
+    }
+
+    #[test]
+    fn a_stale_done_after_reject_is_refused_and_the_source_stays_cancelled() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "old plan", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "rewrite", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let src = doc.headings[0].id.clone();
+        let dst = doc.headings[1].id.clone();
+        reject(
+            &layout,
+            &src,
+            RejectOpts {
+                to: Some(&dst),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let err = update_pred(
+            &layout,
+            &src,
+            Some("DONE"),
+            None,
+            None,
+            None,
+            UpdatePred {
+                if_state: Some("STARTED"),
+                if_gen: None,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::StaleWrite {
+                    ref actual_state,
+                    ref expected_state,
+                    ..
+                } if actual_state == "CANCELLED" && expected_state.as_deref() == Some("STARTED")
+            ),
+            "{err:?}"
+        );
+        assert_eq!(issue_at(&layout, "sample", &src).state, "CANCELLED");
+    }
+
+    #[test]
+    fn if_gen_refuses_when_the_corpus_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "first", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        let seen = crate::events::generation(&layout);
+        update(&layout, &id, Some("STARTED"), None, None, None).unwrap();
+        let err = update_pred(
+            &layout,
+            &id,
+            Some("DONE"),
+            None,
+            None,
+            None,
+            UpdatePred {
+                if_state: None,
+                if_gen: Some(seen),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::StaleWrite { .. }), "{err:?}");
+        assert_eq!(issue_at(&layout, "sample", &id).state, "STARTED");
+    }
+
+    #[test]
+    fn a_second_terminal_does_not_drop_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "first", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        update(&layout, &id, Some("DONE"), None, None, None).unwrap();
+        update(&layout, &id, Some("CANCELLED"), None, None, None).unwrap();
+        let h = issue_at(&layout, "sample", &id);
+        assert_eq!(h.state, "DONE", "first terminal must stay");
+        assert_eq!(
+            h.properties.get("SIBLING_TERMINAL").map(String::as_str),
+            Some("CANCELLED")
+        );
+
+        resolve_terminal(&layout, &id, "CANCELLED").unwrap();
+        let h = issue_at(&layout, "sample", &id);
+        assert_eq!(h.state, "CANCELLED");
+        assert!(!h.properties.contains_key("SIBLING_TERMINAL"));
+    }
+
+    #[test]
+    fn check_warns_on_reject_prose_done_and_a_mention_without_an_edge() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "shipped", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "other", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let shipped = doc.headings[0].id.clone();
+        let other = doc.headings[1].id.clone();
+        update(&layout, &shipped, Some("DONE"), None, None, None).unwrap();
+        append_body(&layout, &shipped, "rejected in the append, bounced").unwrap();
+        append_body(&layout, &other, &format!("see [[id:{shipped}]]")).unwrap();
+
+        let report = crate::report::check(&layout).unwrap();
+        assert!(
+            report.text.contains(&shipped)
+                && report.text.contains("DONE but the body reads as a reject"),
+            "{}",
+            report.text
+        );
+        assert!(
+            report.text.contains(&other)
+                && report.text.contains("no DISCOVERED_FROM or PIVOTED_TO"),
+            "{}",
+            report.text
+        );
+        assert!(report.warnings >= 2, "{}", report.text);
     }
 }

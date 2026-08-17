@@ -275,6 +275,38 @@ pub fn error_from_core(err: &CoreError) -> JsonRpcError {
             message: err.to_string(),
             data: Some(json!({ "code": "invalid_state", "id": id, "state": state })),
         },
+        CoreError::StaleWrite {
+            id,
+            expected_state,
+            actual_state,
+            expected_gen,
+            actual_gen,
+        } => JsonRpcError {
+            code: INVALID_STATE,
+            message: err.to_string(),
+            data: Some(json!({
+                "code": "stale",
+                "id": id,
+                "expected_state": expected_state,
+                "actual_state": actual_state,
+                "expected_gen": expected_gen,
+                "actual_gen": actual_gen,
+            })),
+        },
+        CoreError::TerminalConflict {
+            id,
+            held,
+            attempted,
+        } => JsonRpcError {
+            code: CONFLICT,
+            message: err.to_string(),
+            data: Some(json!({
+                "code": "terminal_conflict",
+                "id": id,
+                "held": held,
+                "attempted": attempted,
+            })),
+        },
         CoreError::Other(_) => internal_error(err.to_string()),
     }
 }
@@ -747,6 +779,12 @@ pub struct UpdateParams {
     /// Remove this blocker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unblock: Option<String>,
+    /// Refuse unless the heading is still this state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub if_state: Option<String>,
+    /// Refuse unless the corpus generation is still this value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub if_gen: Option<u64>,
     /// Override the connection agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
@@ -1402,6 +1440,8 @@ mod tests {
             priority: None,
             block: None,
             unblock: None,
+            if_state: None,
+            if_gen: None,
             agent: None,
         })
         .to_params();

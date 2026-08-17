@@ -869,6 +869,25 @@ pub fn roadmap(layout: &Layout, project_filter: Option<&str>) -> Result<String> 
     Ok(out)
 }
 
+fn looks_like_reject_prose(body: &str) -> bool {
+    let lower = body.to_ascii_lowercase();
+    lower.contains("rejected") || lower.contains("vissue reject")
+}
+
+fn edge_connects(all: &[(String, IssueHeading)], a: &str, b: &str) -> bool {
+    all.iter().any(|(_, h)| {
+        if h.id == a {
+            h.properties.get("DISCOVERED_FROM").map(String::as_str) == Some(b)
+                || h.properties.get("PIVOTED_TO").map(String::as_str) == Some(b)
+        } else if h.id == b {
+            h.properties.get("DISCOVERED_FROM").map(String::as_str) == Some(a)
+                || h.properties.get("PIVOTED_TO").map(String::as_str) == Some(a)
+        } else {
+            false
+        }
+    })
+}
+
 /// Outcome of [`check`]: the findings, and how many were errors.
 #[derive(Debug, Clone)]
 pub struct CheckReport {
@@ -971,6 +990,43 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             )?;
             warnings += 1;
         }
+        if h.state == "DONE" && looks_like_reject_prose(&h.body) {
+            writeln!(
+                out,
+                "[warn] {} (in {}) is DONE but the body reads as a reject",
+                h.id, project
+            )?;
+            warnings += 1;
+        }
+        if h.properties.contains_key("SIBLING_TERMINAL") {
+            writeln!(
+                out,
+                "[warn] {} (in {}) holds {} and sibling {}",
+                h.id,
+                project,
+                h.state,
+                h.properties
+                    .get("SIBLING_TERMINAL")
+                    .map(String::as_str)
+                    .unwrap_or("?")
+            )?;
+            warnings += 1;
+        }
+    }
+
+    let known: HashSet<&str> = all.iter().map(|(_, h)| h.id.as_str()).collect();
+    for (project, h) in &all {
+        for linked in crate::related::org_link_targets(&h.body, &known) {
+            if edge_connects(&all, &h.id, &linked) {
+                continue;
+            }
+            writeln!(
+                out,
+                "[warn] {} (in {}) mentions [[id:{}]] with no DISCOVERED_FROM or PIVOTED_TO either way",
+                h.id, project, linked
+            )?;
+            warnings += 1;
+        }
     }
 
     // A :PARENT: loop passes every edge check, because each id resolves, yet
@@ -1030,7 +1086,8 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
 }
 
 /// Every issue referring to `target_id` through a blocker edge, a parent link,
-/// a discovered-from link, or a body mention. The relation is named on the row.
+/// a discovered-from or pivoted-to property, or a body mention. The relation
+/// is named on the row.
 ///
 /// # Errors
 ///
@@ -1053,6 +1110,10 @@ pub fn backlinks(layout: &Layout, target_id: &str) -> Result<String> {
         }
         if h.properties.get("DISCOVERED_FROM").map(|s| s.as_str()) == Some(target_id) {
             let _ = writeln!(out, "{:<22} (discovered-from) ({})", h.id, project);
+            hit = true;
+        }
+        if h.properties.get("PIVOTED_TO").map(|s| s.as_str()) == Some(target_id) {
+            let _ = writeln!(out, "{:<22} (pivoted-to) ({})", h.id, project);
             hit = true;
         }
         if !hit && h.body.contains(target_id) {

@@ -184,7 +184,8 @@ impl<'a> CatalogService<'a> {
         walk_from(self.issues, id, depth, WalkKind::Impact)
     }
 
-    /// Issues that refer to `id` through an edge, a parent, or a body mention.
+    /// Issues that refer to `id` through an edge, a parent, a discovered-from
+    /// or pivoted-to property, or a body mention.
     ///
     /// # Errors
     ///
@@ -799,7 +800,8 @@ fn walk_from(issues: &[IssueRec], id: &str, depth: usize, kind: WalkKind) -> Res
         .collect())
 }
 
-/// Issues that refer to `target_id` through an edge, a parent, or a body mention.
+/// Issues that refer to `target_id` through an edge, a parent, a
+/// discovered-from or pivoted-to property, or a body mention.
 ///
 /// # Errors
 ///
@@ -827,6 +829,10 @@ pub fn backlinks_from(issues: &[IssueRec], target_id: &str) -> Result<Vec<WalkHi
             == Some(target_id)
         {
             out.push(walk_hit(rec, "discovered-from"));
+            hit = true;
+        }
+        if rec.heading.properties.get("PIVOTED_TO").map(String::as_str) == Some(target_id) {
+            out.push(walk_hit(rec, "pivoted-to"));
             hit = true;
         }
         if !hit && rec.heading.body.contains(target_id) {

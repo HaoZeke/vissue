@@ -36,6 +36,28 @@ pub enum Error {
         /// The heading state at the time of the refusal.
         state: String,
     },
+    /// A write named a last-seen state or generation that no longer holds.
+    StaleWrite {
+        /// The issue that was refused.
+        id: String,
+        /// State the caller required, when `--if-state` was set.
+        expected_state: Option<String>,
+        /// Heading state at the refusal.
+        actual_state: String,
+        /// Generation the caller required, when `--if-gen` was set.
+        expected_gen: Option<u64>,
+        /// Corpus generation at the refusal.
+        actual_gen: Option<u64>,
+    },
+    /// A second terminal disagrees with the one already on the heading.
+    TerminalConflict {
+        /// The issue that already has a terminal state.
+        id: String,
+        /// The terminal already written.
+        held: String,
+        /// The terminal the caller asked for.
+        attempted: String,
+    },
     /// Any other failure, usually I/O or a parse problem.
     Other(anyhow::Error),
 }
@@ -65,6 +87,36 @@ impl fmt::Display for Error {
             Error::InvalidState { id, state } => {
                 write!(f, "{id} is already {state}; cannot claim")
             }
+            Error::StaleWrite {
+                id,
+                expected_state,
+                actual_state,
+                expected_gen,
+                actual_gen,
+            } => match (expected_state, expected_gen) {
+                (Some(want), Some(want_gen)) => write!(
+                    f,
+                    "{id} is {actual_state} at generation {}, not {want} at {want_gen}; write refused",
+                    actual_gen.map_or_else(|| "?".into(), |g| g.to_string())
+                ),
+                (Some(want), None) => {
+                    write!(f, "{id} is {actual_state}, not {want}; write refused")
+                }
+                (None, Some(want_gen)) => write!(
+                    f,
+                    "{id} generation is {}, not {want_gen}; write refused",
+                    actual_gen.map_or_else(|| "?".into(), |g| g.to_string())
+                ),
+                (None, None) => write!(f, "{id} write refused: stale"),
+            },
+            Error::TerminalConflict {
+                id,
+                held,
+                attempted,
+            } => write!(
+                f,
+                "{id} already closed as {held}; {attempted} kept as a sibling"
+            ),
             Error::Other(err) => write!(f, "{err}"),
         }
     }

@@ -16,7 +16,7 @@
 
 use anyhow::Context;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -237,6 +237,30 @@ pub fn emit_issues_write(dir: &Path, project: &str, path: &Path) -> Result<u64> 
     )
 }
 
+/// kind=state_change, id=Some(id), detail=Some("FROM->TO"), project set.
+/// NOT debounced (unlike issues_write).
+///
+/// # Errors
+///
+/// Returns an error if the event directory cannot be created, locked, or
+/// written.
+pub fn emit_state_change(
+    layout: &Layout,
+    project: &str,
+    id: &str,
+    from: &str,
+    to: &str,
+) -> Result<u64> {
+    emit_in(
+        &events_dir(layout),
+        "state_change",
+        Some(project),
+        Some(id),
+        None,
+        Some(&format!("{from}->{to}")),
+    )
+}
+
 /// Events with a sequence above `since_seq`, most recent last.
 ///
 /// # Errors
@@ -398,6 +422,81 @@ pub fn wait_generation(layout: &Layout, last: u64, poll_ms: u64, timeout_ms: u64
     }
 }
 
+/// Outcome of [`wait_until_terminal`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerminalWait {
+    /// The issue reached DONE.
+    Done {
+        /// Generation at the moment the terminal state was observed.
+        generation: u64,
+    },
+    /// The issue reached CANCELLED.
+    Cancelled {
+        /// Generation at the moment the terminal state was observed.
+        generation: u64,
+    },
+    /// The timeout expired while the issue was still non-terminal.
+    Timeout {
+        /// Generation at the moment the timeout expired.
+        generation: u64,
+        /// Heading state when the wait gave up.
+        state: String,
+    },
+}
+
+/// Poll the issue state. Re-read on generation change or poll interval.
+/// Missing id is an error (IssueNotFound).
+///
+/// # Errors
+///
+/// Returns [`Error::IssueNotFound`] if `id` is not in the catalog, or an
+/// error if a project file cannot be read or parsed.
+pub fn wait_until_terminal(
+    layout: &Layout,
+    id: &str,
+    poll_ms: u64,
+    timeout_ms: u64,
+) -> Result<TerminalWait> {
+    let dir = events_dir(layout);
+    let start = std::time::Instant::now();
+    let mut last_gen = generation_in(&dir);
+    loop {
+        let heading = crate::store::find_by_id(layout, id)?
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?
+            .0;
+        let generation = generation_in(&dir);
+        match heading.state.as_str() {
+            "DONE" => return Ok(TerminalWait::Done { generation }),
+            "CANCELLED" => return Ok(TerminalWait::Cancelled { generation }),
+            _ => {}
+        }
+        if start.elapsed().as_millis() as u64 >= timeout_ms {
+            return Ok(TerminalWait::Timeout {
+                generation,
+                state: heading.state,
+            });
+        }
+        // Wake on a generation bump or when the poll interval elapses.
+        let poll = poll_ms.max(50);
+        let slice = 50_u64.min(poll);
+        let wake = std::time::Instant::now();
+        loop {
+            let now_gen = generation_in(&dir);
+            if now_gen != last_gen {
+                last_gen = now_gen;
+                break;
+            }
+            if wake.elapsed().as_millis() as u64 >= poll {
+                break;
+            }
+            if start.elapsed().as_millis() as u64 >= timeout_ms {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(slice));
+        }
+    }
+}
+
 /// The last `n` events in the log.
 ///
 /// Counted from the end of the log rather than back from the generation: a
@@ -463,6 +562,7 @@ pub fn ensure_gitignore_hint(dir: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::config::DEFAULT_PREFIX;
+    use crate::model::TODO_HEADER;
 
     #[test]
     fn a_sequence_advances_and_reads_back() {
@@ -579,5 +679,80 @@ mod tests {
         let g = generation(&layout);
         let waited = wait_generation(&layout, g + 100, 50, 120).unwrap();
         assert!(waited <= g + 100, "timed out without advancing");
+    }
+
+    fn layout_with_issue(state: &str, id: &str) -> (tempfile::TempDir, Layout) {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        let path = layout.project_issues_path("sample");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            format!(
+                "#+TITLE: sample issues\n{TODO_HEADER}\n\n* {state} [#B] wait target\n:PROPERTIES:\n:ID:         {id}\n:END:\n"
+            ),
+        )
+        .unwrap();
+        (dir, layout)
+    }
+
+    #[test]
+    fn emit_state_change_writes_kind_id_and_detail() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        let seq = emit_state_change(&layout, "sample", "sample-aaaa", "TODO", "CANCELLED").unwrap();
+        let events = since(&layout, 0, 10).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].seq, seq);
+        assert_eq!(events[0].kind, "state_change");
+        assert_eq!(events[0].id.as_deref(), Some("sample-aaaa"));
+        assert_eq!(events[0].project.as_deref(), Some("sample"));
+        assert_eq!(events[0].detail.as_deref(), Some("TODO->CANCELLED"));
+    }
+
+    #[test]
+    fn two_rapid_state_changes_both_appear_in_the_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        emit_state_change(&layout, "sample", "sample-aaaa", "TODO", "STARTED").unwrap();
+        emit_state_change(&layout, "sample", "sample-aaaa", "STARTED", "DONE").unwrap();
+        let events = since(&layout, 0, 10).unwrap();
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert_eq!(events[0].kind, "state_change");
+        assert_eq!(events[1].kind, "state_change");
+        assert_eq!(events[0].detail.as_deref(), Some("TODO->STARTED"));
+        assert_eq!(events[1].detail.as_deref(), Some("STARTED->DONE"));
+        assert_eq!(events[0].id.as_deref(), Some("sample-aaaa"));
+        assert_eq!(events[1].id.as_deref(), Some("sample-aaaa"));
+    }
+
+    #[test]
+    fn wait_until_terminal_returns_done_immediately() {
+        let (_dir, layout) = layout_with_issue("DONE", "sample-done");
+        let waited = wait_until_terminal(&layout, "sample-done", 50, 120).unwrap();
+        match waited {
+            TerminalWait::Done { .. } => {}
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wait_until_terminal_returns_cancelled() {
+        let (_dir, layout) = layout_with_issue("CANCELLED", "sample-canc");
+        let waited = wait_until_terminal(&layout, "sample-canc", 50, 120).unwrap();
+        match waited {
+            TerminalWait::Cancelled { .. } => {}
+            other => panic!("expected Cancelled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wait_until_terminal_times_out_on_started() {
+        let (_dir, layout) = layout_with_issue("STARTED", "sample-work");
+        let waited = wait_until_terminal(&layout, "sample-work", 50, 120).unwrap();
+        match waited {
+            TerminalWait::Timeout { state, .. } => assert_eq!(state, "STARTED"),
+            other => panic!("expected Timeout, got {other:?}"),
+        }
     }
 }

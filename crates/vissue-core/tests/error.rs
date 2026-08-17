@@ -38,6 +38,18 @@ fn each_variant_says_what_went_wrong() {
         .to_string(),
         "atlas-4g5h is already DONE; cannot claim"
     );
+
+    assert_eq!(
+        Error::StaleWrite {
+            id: "atlas-1a2b".into(),
+            expected_state: Some("STARTED".into()),
+            actual_state: "CANCELLED".into(),
+            expected_gen: None,
+            actual_gen: None,
+        }
+        .to_string(),
+        "atlas-1a2b is CANCELLED, not STARTED; write refused"
+    );
 }
 
 #[test]

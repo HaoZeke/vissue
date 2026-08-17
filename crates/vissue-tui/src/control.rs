@@ -390,6 +390,8 @@ impl BoardBackend for ControlBackend {
             priority: req.priority.map(|c| c.to_string()),
             block: req.block,
             unblock: req.unblock,
+            if_state: req.if_state,
+            if_gen: req.if_gen,
             agent: None,
         }))?;
         Ok(self.apply_mut(decode(value)?))

@@ -1103,6 +1103,7 @@ impl Palette {
         match self.backend.update(UpdateReq {
             id,
             state: Some(state.to_string()),
+            if_state: self.selected_item().map(|i| i.state.clone()),
             ..UpdateReq::default()
         }) {
             Ok(result) => {
@@ -1203,6 +1204,7 @@ impl Palette {
         match self.backend.update(UpdateReq {
             id: id.to_string(),
             state: Some(next.to_string()),
+            if_state: Some(current),
             ..UpdateReq::default()
         }) {
             Ok(result) => {

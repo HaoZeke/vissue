@@ -301,6 +301,8 @@ fn the_client_recovers_the_error_the_server_meant() {
         priority: None,
         block: Some(id.clone()),
         unblock: None,
+        if_state: None,
+        if_gen: None,
     }) {
         Err(Error::BlockerCycle { blocker, issue }) => {
             assert_eq!(blocker, id, "{blocker} {issue}");
@@ -324,6 +326,8 @@ fn the_client_recovers_the_error_the_server_meant() {
             priority: None,
             block: None,
             unblock: None,
+            if_state: None,
+            if_gen: None,
         })
         .expect("close it");
     match rival.claim(&other_id, false) {

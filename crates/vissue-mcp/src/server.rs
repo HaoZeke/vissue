@@ -7,7 +7,7 @@ use rmcp::{
 
 use vissue_core::config::Layout;
 use vissue_core::mirror::{self, Format};
-use vissue_core::ops::{self, CreateOpts};
+use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
 use vissue_core::store;
 use vissue_core::{agent, events, report};
 
@@ -110,18 +110,53 @@ impl VissueServer {
         ))
     }
 
+    #[tool(
+        description = "Reject an issue by redirecting it to an existing destination (`to`) or a newly created replacement (`project` + `title`)."
+    )]
+    async fn vissue_reject(
+        &self,
+        Parameters(args): Parameters<RejectArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(ops::reject(
+            &self.layout,
+            &args.issue_id,
+            RejectOpts {
+                to: args.to.as_deref(),
+                project: args.project.as_deref(),
+                title: args.title.as_deref(),
+                reason: args.reason.as_deref(),
+            },
+        ))
+    }
+
+    #[tool(description = "Pick one terminal after a sibling close (DONE or CANCELLED).")]
+    async fn vissue_resolve(
+        &self,
+        Parameters(args): Parameters<ResolveArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(ops::resolve_terminal(
+            &self.layout,
+            &args.issue_id,
+            &args.state,
+        ))
+    }
+
     #[tool(description = "Update an issue's state, priority, or blocker edges.")]
     async fn vissue_update(
         &self,
         Parameters(args): Parameters<UpdateArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let outcome = ops::update(
+        let outcome = ops::update_pred(
             &self.layout,
             &args.issue_id,
             args.state.as_deref(),
             priority_char(args.priority.as_ref()),
             args.block.as_deref(),
             args.unblock.as_deref(),
+            UpdatePred {
+                if_state: args.if_state.as_deref(),
+                if_gen: args.if_gen,
+            },
         );
         text(outcome.map(|o| {
             let mut s = o.report;
@@ -457,11 +492,40 @@ impl VissueServer {
         text(ops::refile(&self.layout, &args.issue_id, &args.to))
     }
 
-    #[tool(description = "Block until the generation counter passes last. Returns the generation.")]
+    #[tool(
+        description = "Block until the generation counter passes last, or until an issue is DONE or CANCELLED when until_terminal and id are set."
+    )]
     async fn vissue_wait(
         &self,
         Parameters(args): Parameters<WaitArgs>,
     ) -> Result<CallToolResult, McpError> {
+        if args.until_terminal.unwrap_or(false) {
+            let Some(id) = args.id.as_deref() else {
+                return Err(McpError::invalid_params(
+                    "--until-terminal requires id",
+                    None,
+                ));
+            };
+            return text(
+                events::wait_until_terminal(
+                    &self.layout,
+                    id,
+                    args.poll_ms.unwrap_or(200),
+                    args.timeout_ms.unwrap_or(10_000),
+                )
+                .map(|outcome| match outcome {
+                    events::TerminalWait::Done { generation } => {
+                        format!("DONE {generation}\n")
+                    }
+                    events::TerminalWait::Cancelled { generation } => {
+                        format!("CANCELLED {generation}\n")
+                    }
+                    events::TerminalWait::Timeout { generation, state } => {
+                        format!("TIMEOUT {state} {generation}\n")
+                    }
+                }),
+            );
+        }
         let last = args.last.unwrap_or(0);
         text(
             events::wait_generation(
@@ -620,6 +684,8 @@ mod tests {
                 priority: Some("C".into()),
                 block: None,
                 unblock: None,
+                if_state: None,
+                if_gen: None,
             }))
             .await
             .unwrap();
@@ -947,8 +1013,24 @@ mod tests {
             !server
                 .vissue_wait(Parameters(WaitArgs {
                     last: Some(0),
+                    id: None,
+                    until_terminal: None,
                     poll_ms: Some(10),
                     timeout_ms: Some(30),
+                }))
+                .await
+                .unwrap()
+                .is_error
+                .unwrap_or(false)
+        );
+        assert!(
+            !server
+                .vissue_wait(Parameters(WaitArgs {
+                    last: None,
+                    id: Some("atlas-4g5h".into()),
+                    until_terminal: Some(true),
+                    poll_ms: Some(10),
+                    timeout_ms: Some(200),
                 }))
                 .await
                 .unwrap()

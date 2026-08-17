@@ -1522,15 +1522,19 @@ fn update_if_gen_and_resolve_keep_the_first_terminal() {
         &seen.to_string(),
     ]);
     assert!(!stale.status.success(), "{}", stdout(&stale));
-    assert!(own(&["update", &id, "--state", "CANCELLED"])
-        .status
-        .success());
+    assert!(
+        own(&["update", &id, "--state", "CANCELLED"])
+            .status
+            .success()
+    );
     let shown = stdout(&own(&["show", "--org", &id]));
     assert!(shown.contains("DONE"), "{shown}");
     assert!(shown.contains("SIBLING_TERMINAL"), "{shown}");
-    assert!(own(&["resolve", &id, "--state", "CANCELLED"])
-        .status
-        .success());
+    assert!(
+        own(&["resolve", &id, "--state", "CANCELLED"])
+            .status
+            .success()
+    );
     let shown = stdout(&own(&["show", "--org", &id]));
     assert!(shown.contains("CANCELLED"), "{shown}");
     assert!(!shown.contains("SIBLING_TERMINAL"), "{shown}");

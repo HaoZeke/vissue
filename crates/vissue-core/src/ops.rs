@@ -1826,12 +1826,14 @@ mod tests {
 
         let report = crate::report::check(&layout).unwrap();
         assert!(
-            report.text.contains(&shipped) && report.text.contains("DONE but the body reads as a reject"),
+            report.text.contains(&shipped)
+                && report.text.contains("DONE but the body reads as a reject"),
             "{}",
             report.text
         );
         assert!(
-            report.text.contains(&other) && report.text.contains("no DISCOVERED_FROM or PIVOTED_TO"),
+            report.text.contains(&other)
+                && report.text.contains("no DISCOVERED_FROM or PIVOTED_TO"),
             "{}",
             report.text
         );

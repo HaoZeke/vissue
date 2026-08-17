@@ -958,7 +958,7 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
     Ok(format!("rejected {src} -> {dst_id}\n"))
 }
 
-fn reject_to<'a>(opts: &RejectOpts<'a>) -> Result<&'a str> {
+fn reject_to(opts: RejectOpts<'_>) -> Result<&str> {
     opts.to
         .ok_or_else(|| anyhow!("reject destination missing after --to was required").into())
 }

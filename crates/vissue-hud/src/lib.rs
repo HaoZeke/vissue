@@ -11,6 +11,7 @@ pub mod fuzzy;
 pub mod keys;
 pub mod log;
 pub mod palette;
+pub(crate) mod place;
 pub mod summon;
 pub mod theme;
 pub mod wire;

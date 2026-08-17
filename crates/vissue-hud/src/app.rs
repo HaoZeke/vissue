@@ -6,7 +6,7 @@ use std::time::Duration;
 use iced::event::{self, Event};
 use iced::keyboard::{self, Key, key::Named};
 use iced::window::{self, Mode};
-use iced::{Element, Font, Pixels, Size, Subscription, Task, time};
+use iced::{Element, Font, Pixels, Subscription, Task, time};
 
 use vissue_core::config::Layout;
 
@@ -86,6 +86,9 @@ pub struct HudApp {
     /// Overlay state the view reads.
     pub palette: Palette,
     window_id: Option<window::Id>,
+    /// Remaining Sway IPC attempts after a show. Zero when placed or
+    /// Sway is absent.
+    place_tries: u8,
 }
 
 impl HudApp {
@@ -93,6 +96,7 @@ impl HudApp {
         Self {
             palette,
             window_id: None,
+            place_tries: 0,
         }
     }
 
@@ -104,6 +108,7 @@ impl HudApp {
             }
             Message::Tick => {
                 self.palette.poll_updates();
+                self.try_place();
                 if let Some(req) = summon::try_recv() {
                     let was = self.palette.visible();
                     self.palette.apply_summon(&req);
@@ -200,14 +205,20 @@ impl HudApp {
         }
     }
 
-    fn sync_window(&self) -> Task<Message> {
+    fn sync_window(&mut self) -> Task<Message> {
         let visible = self.palette.visible();
+        if visible {
+            self.place_tries = 20;
+        } else {
+            self.place_tries = 0;
+        }
         let mode = if visible {
             Mode::Windowed
         } else {
             Mode::Hidden
         };
         if let Some(id) = self.window_id {
+            self.try_place();
             return window::set_mode(id, mode);
         }
         window::latest().then(move |id| match id {
@@ -218,25 +229,26 @@ impl HudApp {
             None => Task::none(),
         })
     }
+
+    fn try_place(&mut self) {
+        if self.place_tries == 0 {
+            return;
+        }
+        if crate::place::place_overlay() || !crate::place::sway_available() {
+            self.place_tries = 0;
+        } else {
+            self.place_tries = self.place_tries.saturating_sub(1);
+        }
+    }
 }
 
-/// Decorated task column. Survives a narrow Sway tile; no compositor rules.
+/// Undecorated always-on-top overlay. Sway is told to float it over IPC.
 pub fn board_window() -> window::Settings {
-    let mut settings = window::Settings {
-        size: Size::new(HUD_W, HUD_H),
-        position: window::Position::Centered,
-        resizable: true,
-        decorations: true,
-        level: window::Level::Normal,
-        exit_on_close_request: false,
-        min_size: Some(Size::new(360.0, 420.0)),
-        ..Default::default()
-    };
-    #[cfg(target_os = "linux")]
-    {
-        settings.platform_specific.application_id = String::from("vissue");
-    }
-    settings
+    let boot = icedtea::app::Boot::new("vissue", crate::place::OVERLAY_APP_ID)
+        .overlay()
+        .size(HUD_W, HUD_H)
+        .min_size(360.0, 420.0);
+    icedtea::app::bootstrap(&boot).window
 }
 
 /// First paint via core, attach unless `--offline`, then the iced loop.

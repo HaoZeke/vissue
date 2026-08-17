@@ -53,6 +53,18 @@ pub struct UpdateArgs {
     pub block: Option<String>,
     /// Remove a blocker edge.
     pub unblock: Option<String>,
+    /// Refuse unless the heading is still this state.
+    pub if_state: Option<String>,
+    /// Refuse unless the corpus generation is still this value.
+    pub if_gen: Option<u64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ResolveArgs {
+    /// Issue id.
+    pub issue_id: String,
+    /// Terminal to keep: DONE or CANCELLED.
+    pub state: String,
 }
 
 #[derive(Deserialize, JsonSchema)]

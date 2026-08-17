@@ -7,7 +7,7 @@ use rmcp::{
 
 use vissue_core::config::Layout;
 use vissue_core::mirror::{self, Format};
-use vissue_core::ops::{self, CreateOpts, RejectOpts};
+use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
 use vissue_core::store;
 use vissue_core::{agent, events, report};
 
@@ -129,18 +129,34 @@ impl VissueServer {
         ))
     }
 
+    #[tool(description = "Pick one terminal after a sibling close (DONE or CANCELLED).")]
+    async fn vissue_resolve(
+        &self,
+        Parameters(args): Parameters<ResolveArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(ops::resolve_terminal(
+            &self.layout,
+            &args.issue_id,
+            &args.state,
+        ))
+    }
+
     #[tool(description = "Update an issue's state, priority, or blocker edges.")]
     async fn vissue_update(
         &self,
         Parameters(args): Parameters<UpdateArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let outcome = ops::update(
+        let outcome = ops::update_pred(
             &self.layout,
             &args.issue_id,
             args.state.as_deref(),
             priority_char(args.priority.as_ref()),
             args.block.as_deref(),
             args.unblock.as_deref(),
+            UpdatePred {
+                if_state: args.if_state.as_deref(),
+                if_gen: args.if_gen,
+            },
         );
         text(outcome.map(|o| {
             let mut s = o.report;
@@ -668,6 +684,8 @@ mod tests {
                 priority: Some("C".into()),
                 block: None,
                 unblock: None,
+                if_state: None,
+                if_gen: None,
             }))
             .await
             .unwrap();

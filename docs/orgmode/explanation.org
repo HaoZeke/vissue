@@ -110,7 +110,7 @@ $$
 
 where $e$ counts the explicit relations that hold between the two
 (=blocked_by=, =blocks=, =parent=, =child=, =discovered_from=, =source_of=,
-=org_link=), $d$ is the hop distance in the undirected graph of those same
+=pivoted_to=, =successor_of=, =org_link=), $d$ is the hop distance in the undirected graph of those same
 declared edges, $T$ is the tag set, $p$ the project, $W$ the term set of the
 title, body, type and tags, and
 

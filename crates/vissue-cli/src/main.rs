@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 use vissue_core::config::Layout;
 use vissue_core::mirror::{self, Format};
-use vissue_core::ops::{self, CreateOpts, RejectOpts};
+use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
 use vissue_core::store;
 use vissue_core::{agent, events, report};
 
@@ -157,6 +157,18 @@ enum Command {
         /// Remove a blocker edge
         #[arg(long)]
         unblock: Option<String>,
+        /// Refuse unless the heading is still this state
+        #[arg(long)]
+        if_state: Option<String>,
+        /// Refuse unless the corpus generation is still this value
+        #[arg(long)]
+        if_gen: Option<u64>,
+    },
+    /// Pick one terminal after a sibling close.
+    Resolve {
+        id: String,
+        #[arg(short, long)]
+        state: String,
     },
     /// Reject an issue, redirecting to an existing destination or a new replacement.
     Reject {
@@ -638,20 +650,27 @@ fn run() -> Result<()> {
             priority,
             block,
             unblock,
+            if_state,
+            if_gen,
         } => {
-            let outcome = ops::update(
+            let outcome = ops::update_pred(
                 &layout,
                 &id,
                 state.as_deref(),
                 priority,
                 block.as_deref(),
                 unblock.as_deref(),
+                UpdatePred {
+                    if_state: if_state.as_deref(),
+                    if_gen,
+                },
             )?;
             emit!("{}", outcome.report);
             for hint in outcome.hints {
                 eprintln!("[hint] {hint}");
             }
         }
+        Command::Resolve { id, state } => emit!("{}", ops::resolve_terminal(&layout, &id, &state)?),
         Command::Reject {
             id,
             to,

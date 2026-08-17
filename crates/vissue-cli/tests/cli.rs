@@ -1465,3 +1465,32 @@ fn reject_without_a_destination_fails() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("--to") || err.contains("--project"), "{err}");
 }
+
+#[test]
+fn update_if_state_refuses_a_stale_done_after_reject() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let root = dir.path().to_str().unwrap();
+    let own = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", root];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    let src = stdout(&own(&["create", "-p", "atlas", "--quiet", "old"]))
+        .trim()
+        .to_string();
+    let dst = stdout(&own(&["create", "-p", "atlas", "--quiet", "new"]))
+        .trim()
+        .to_string();
+    assert!(own(&["reject", &src, "--to", &dst]).status.success());
+    let stale = own(&["update", &src, "--state", "DONE", "--if-state", "STARTED"]);
+    assert!(!stale.status.success(), "{}", stdout(&stale));
+    let err = String::from_utf8_lossy(&stale.stderr);
+    assert!(err.contains("CANCELLED"), "{err}");
+    let shown = stdout(&own(&["show", "--org", &src]));
+    assert!(shown.contains("CANCELLED"), "{shown}");
+    assert!(!shown.contains("* DONE"), "{shown}");
+}

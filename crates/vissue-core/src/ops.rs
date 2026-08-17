@@ -211,6 +211,45 @@ pub fn update(
     )
 }
 
+/// Last-seen state or generation a write must still match.
+///
+/// This is the causal context on a PUT: the caller read the heading, then
+/// writes only if nothing else closed or rewrote it.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UpdatePred<'a> {
+    /// Refuse unless the heading is still this state.
+    pub if_state: Option<&'a str>,
+    /// Refuse unless the corpus generation is still this value.
+    pub if_gen: Option<u64>,
+}
+
+/// [`update`] with a last-seen predicate.
+///
+/// # Errors
+///
+/// Same as [`update`], plus [`Error::StaleWrite`] when the predicate fails.
+pub fn update_pred(
+    layout: &Layout,
+    id: &str,
+    new_state: Option<&str>,
+    new_priority: Option<char>,
+    block_add: Option<&str>,
+    block_clear: Option<&str>,
+    pred: UpdatePred<'_>,
+) -> Result<UpdateOutcome> {
+    let identity = crate::config::identity(layout);
+    update_as_pred(
+        layout,
+        id,
+        new_state,
+        new_priority,
+        block_add,
+        block_clear,
+        &identity,
+        pred,
+    )
+}
+
 /// [`update`] with an explicit identity instead of [`crate::config::identity`].
 ///
 /// # Errors
@@ -225,6 +264,33 @@ pub fn update_as(
     block_add: Option<&str>,
     block_clear: Option<&str>,
     identity: &str,
+) -> Result<UpdateOutcome> {
+    update_as_pred(
+        layout,
+        id,
+        new_state,
+        new_priority,
+        block_add,
+        block_clear,
+        identity,
+        UpdatePred::default(),
+    )
+}
+
+/// [`update_as`] with a last-seen predicate.
+///
+/// # Errors
+///
+/// Same as [`update_as`], plus [`Error::StaleWrite`] when the predicate fails.
+pub fn update_as_pred(
+    layout: &Layout,
+    id: &str,
+    new_state: Option<&str>,
+    new_priority: Option<char>,
+    block_add: Option<&str>,
+    block_clear: Option<&str>,
+    identity: &str,
+    pred: UpdatePred<'_>,
 ) -> Result<UpdateOutcome> {
     let (_h0, path, project) =
         find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
@@ -247,16 +313,52 @@ pub fn update_as(
         let original = h.state.clone();
         let mut changed = Vec::new();
 
+        if pred.if_state.is_some() || pred.if_gen.is_some() {
+            let seen = crate::events::generation(layout);
+            if let Some(want) = pred.if_state {
+                if !TODO_KEYWORDS.contains(&want) {
+                    return Err(
+                        anyhow!("invalid --if-state {want:?}; allowed: {TODO_KEYWORDS:?}").into(),
+                    );
+                }
+                if h.state != want {
+                    return Err(Error::StaleWrite {
+                        id: id.to_string(),
+                        expected_state: Some(want.to_string()),
+                        actual_state: h.state.clone(),
+                        expected_gen: pred.if_gen,
+                        actual_gen: Some(seen),
+                    });
+                }
+            }
+            if let Some(want_gen) = pred.if_gen
+                && seen != want_gen
+            {
+                return Err(Error::StaleWrite {
+                    id: id.to_string(),
+                    expected_state: pred.if_state.map(str::to_string),
+                    actual_state: h.state.clone(),
+                    expected_gen: Some(want_gen),
+                    actual_gen: Some(seen),
+                });
+            }
+        }
+
         if let Some(s) = new_state {
             if !TODO_KEYWORDS.contains(&s) {
                 return Err(anyhow!("invalid state {s:?}; allowed: {TODO_KEYWORDS:?}").into());
             }
             if h.state != s {
-                let from = h.state.clone();
-                h.record_state_change(s);
-                changed.push(format!("state {from} -> {s}"));
-                for note in settle_claim(h, &from, s, identity) {
-                    changed.push(note);
+                if is_terminal(&h.state) && is_terminal(s) {
+                    record_sibling_terminal(h, s);
+                    changed.push(format!("sibling terminal {s} (held {})", h.state));
+                } else {
+                    let from = h.state.clone();
+                    h.record_state_change(s);
+                    changed.push(format!("state {from} -> {s}"));
+                    for note in settle_claim(h, &from, s, identity) {
+                        changed.push(note);
+                    }
                 }
             }
         }
@@ -359,6 +461,50 @@ pub fn update_as(
 /// waiting on something else. Leaving for TODO, DONE, or CANCELLED gives it up.
 fn keeps_claim(state: &str) -> bool {
     matches!(state, "STARTED" | "BLOCKED")
+}
+
+fn is_terminal(state: &str) -> bool {
+    matches!(state, "DONE" | "CANCELLED")
+}
+
+fn record_sibling_terminal(h: &mut IssueHeading, attempted: &str) {
+    h.properties
+        .insert("SIBLING_TERMINAL".into(), attempted.to_string());
+}
+
+/// Pick one terminal after a sibling close. Clears `:SIBLING_TERMINAL:`.
+///
+/// # Errors
+///
+/// Returns an error if `id` is missing, `state` is not DONE or CANCELLED, or
+/// the file cannot be rewritten.
+pub fn resolve_terminal(layout: &Layout, id: &str, state: &str) -> Result<String> {
+    if !is_terminal(state) {
+        return Err(anyhow!("resolve state must be DONE or CANCELLED, got {state:?}").into());
+    }
+    let identity = crate::config::identity(layout);
+    let (_h0, path, project) =
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+    let from = with_issues_lock(&path, || {
+        let mut doc = IssueDoc::parse_file(&project, &path)?;
+        let h = doc
+            .headings
+            .iter_mut()
+            .find(|x| x.id == id)
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+        let from = h.state.clone();
+        if from != state {
+            h.record_state_change(state);
+            settle_claim(h, &from, state, &identity);
+        }
+        h.properties.remove("SIBLING_TERMINAL");
+        doc.write()?;
+        Ok(from)
+    })?;
+    if from != state {
+        let _ = crate::events::emit_state_change(layout, &project, id, &from, state);
+    }
+    Ok(format!("resolved {id} -> {state}\n"))
 }
 
 /// Take or give up the claim as the state moves.
@@ -773,7 +919,7 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
     let dst_title = opts.title.unwrap_or(src0.title.as_str());
     let cfg = VissueConfig::load(layout)?;
 
-    let (dst_id, old_state) = with_issues_locks(&[&src_path, &dst_path], || {
+    let (dst_id, old_state, new_state) = with_issues_locks(&[&src_path, &dst_path], || {
         if src_path == dst_path {
             let mut doc = IssueDoc::parse_file(&src_project, &src_path)?;
             let dst_id = if creating {
@@ -783,9 +929,10 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
                 set_discovered_from_if_empty(&mut doc, to, src)?;
                 to.to_string()
             };
-            let old_state = cancel_and_pivot(&mut doc, src, &dst_id, opts.reason, &identity)?;
+            let (old_state, new_state) =
+                cancel_and_pivot(&mut doc, src, &dst_id, opts.reason, &identity)?;
             doc.write()?;
-            Ok((dst_id, old_state))
+            Ok((dst_id, old_state, new_state))
         } else {
             let mut src_doc = IssueDoc::parse_file(&src_project, &src_path)?;
             let mut dst_doc = IssueDoc::parse_file(&dst_project, &dst_path)?;
@@ -796,14 +943,17 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
                 set_discovered_from_if_empty(&mut dst_doc, to, src)?;
                 to.to_string()
             };
-            let old_state = cancel_and_pivot(&mut src_doc, src, &dst_id, opts.reason, &identity)?;
+            let (old_state, new_state) =
+                cancel_and_pivot(&mut src_doc, src, &dst_id, opts.reason, &identity)?;
             dst_doc.write()?;
             src_doc.write()?;
-            Ok((dst_id, old_state))
+            Ok((dst_id, old_state, new_state))
         }
     })?;
 
-    let _ = crate::events::emit_state_change(layout, &src_project, src, &old_state, "CANCELLED");
+    if old_state != new_state {
+        let _ = crate::events::emit_state_change(layout, &src_project, src, &old_state, &new_state);
+    }
     Ok(format!("rejected {src} -> {dst_id}\n"))
 }
 
@@ -858,7 +1008,7 @@ fn cancel_and_pivot(
     dst: &str,
     reason: Option<&str>,
     identity: &str,
-) -> Result<String> {
+) -> Result<(String, String)> {
     let h = doc
         .headings
         .iter_mut()
@@ -867,13 +1017,17 @@ fn cancel_and_pivot(
             id: src.to_string(),
         })?;
     let old_state = h.state.clone();
-    h.record_state_change("CANCELLED");
+    if is_terminal(&old_state) && old_state != "CANCELLED" {
+        record_sibling_terminal(h, "CANCELLED");
+    } else if old_state != "CANCELLED" {
+        h.record_state_change("CANCELLED");
+        settle_claim(h, &old_state, "CANCELLED", identity);
+    }
     h.properties.insert("PIVOTED_TO".into(), dst.to_string());
-    settle_claim(h, &old_state, "CANCELLED", identity);
     if let Some(reason) = reason {
         append_reason(h, reason, identity);
     }
-    Ok(old_state)
+    Ok((old_state, h.state.clone()))
 }
 
 fn append_reason(h: &mut IssueHeading, text: &str, identity: &str) {
@@ -1563,5 +1717,124 @@ mod tests {
             }),
             "{events:?}"
         );
+    }
+
+    #[test]
+    fn a_stale_done_after_reject_is_refused_and_the_source_stays_cancelled() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "old plan", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "rewrite", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let src = doc.headings[0].id.clone();
+        let dst = doc.headings[1].id.clone();
+        reject(
+            &layout,
+            &src,
+            RejectOpts {
+                to: Some(&dst),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let err = update_pred(
+            &layout,
+            &src,
+            Some("DONE"),
+            None,
+            None,
+            None,
+            UpdatePred {
+                if_state: Some("STARTED"),
+                if_gen: None,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::StaleWrite {
+                    ref actual_state,
+                    ref expected_state,
+                    ..
+                } if actual_state == "CANCELLED" && expected_state.as_deref() == Some("STARTED")
+            ),
+            "{err:?}"
+        );
+        assert_eq!(issue_at(&layout, "sample", &src).state, "CANCELLED");
+    }
+
+    #[test]
+    fn if_gen_refuses_when_the_corpus_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "first", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        let seen = crate::events::generation(&layout);
+        update(&layout, &id, Some("STARTED"), None, None, None).unwrap();
+        let err = update_pred(
+            &layout,
+            &id,
+            Some("DONE"),
+            None,
+            None,
+            None,
+            UpdatePred {
+                if_state: None,
+                if_gen: Some(seen),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::StaleWrite { .. }), "{err:?}");
+        assert_eq!(issue_at(&layout, "sample", &id).state, "STARTED");
+    }
+
+    #[test]
+    fn a_second_terminal_does_not_drop_the_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "first", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        update(&layout, &id, Some("DONE"), None, None, None).unwrap();
+        update(&layout, &id, Some("CANCELLED"), None, None, None).unwrap();
+        let h = issue_at(&layout, "sample", &id);
+        assert_eq!(h.state, "DONE", "first terminal must stay");
+        assert_eq!(
+            h.properties.get("SIBLING_TERMINAL").map(String::as_str),
+            Some("CANCELLED")
+        );
+
+        resolve_terminal(&layout, &id, "CANCELLED").unwrap();
+        let h = issue_at(&layout, "sample", &id);
+        assert_eq!(h.state, "CANCELLED");
+        assert!(!h.properties.contains_key("SIBLING_TERMINAL"));
+    }
+
+    #[test]
+    fn check_warns_on_reject_prose_done_and_a_mention_without_an_edge() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "shipped", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "other", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let shipped = doc.headings[0].id.clone();
+        let other = doc.headings[1].id.clone();
+        update(&layout, &shipped, Some("DONE"), None, None, None).unwrap();
+        append_body(&layout, &shipped, "rejected in the append, bounced").unwrap();
+        append_body(&layout, &other, &format!("see [[id:{shipped}]]")).unwrap();
+
+        let report = crate::report::check(&layout).unwrap();
+        assert!(
+            report.text.contains(&shipped) && report.text.contains("DONE but the body reads as a reject"),
+            "{}",
+            report.text
+        );
+        assert!(
+            report.text.contains(&other) && report.text.contains("no DISCOVERED_FROM or PIVOTED_TO"),
+            "{}",
+            report.text
+        );
+        assert!(report.warnings >= 2, "{}", report.text);
     }
 }

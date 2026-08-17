@@ -60,6 +60,35 @@ $ vissue reject parser-1a2b --to parser-9k0m --reason "duplicate of the rewrite"
 $ vissue reject parser-1a2b --project parser "Rewrite the manifest parser" --reason "superseded"
 #+end_src
 
+A write that still believes the heading is open must name what it read:
+
+#+begin_src console
+$ vissue update parser-1a2b --state DONE --if-state STARTED
+$ vissue update parser-1a2b --state DONE --if-gen 3167
+#+end_src
+
+If a reject landed first, =--if-state STARTED= refuses and the source stays
+=CANCELLED=. Two disagreeing closes do not last-write-wins: the first
+terminal stays, the second is =:SIBLING_TERMINAL:=, and =resolve= picks one.
+
+#+begin_src console
+$ vissue resolve parser-1a2b --state CANCELLED
+#+end_src
+
+=check= warns when a =DONE= body reads as a reject, when a body =[[id:]]=
+has no =DISCOVERED_FROM= or =PIVOTED_TO= either way, and when a sibling
+terminal is unresolved.
+
+* What merges and what conflicts
+
+The file is not a CRDT. Fields that are sets can be unioned if two
+replicas are joined by hand. Fields that are a single value cannot.
+
+| Field | On a merge |
+|-------+------------|
+| logbook, =append= body, tags, =BLOCKED_BY= | Union. Duplicates drop. |
+| =state=, claim, =PIVOTED_TO=, =SIBLING_TERMINAL= | Conflict. Use =reject=, =resolve=, or =update --if-state=. |
+
 * Record what was done
 
 =append= adds a dated, attributed report to the issue's body.

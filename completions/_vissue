@@ -97,6 +97,19 @@ _arguments "${_arguments_options[@]}" : \
 '--priority=[]:PRIORITY:_default' \
 '--block=[Add a blocker edge]:BLOCK:_default' \
 '--unblock=[Remove a blocker edge]:UNBLOCK:_default' \
+'--if-state=[Refuse unless the heading is still this state]:IF_STATE:_default' \
+'--if-gen=[Refuse unless the corpus generation is still this value]:IF_GEN:_default' \
+'--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
+'--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'-h[Print help]' \
+'--help[Print help]' \
+':id:_default' \
+&& ret=0
+;;
+(resolve)
+_arguments "${_arguments_options[@]}" : \
+'-s+[]:STATE:_default' \
+'--state=[]:STATE:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '-h[Print help]' \
@@ -649,6 +662,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(resolve)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (reject)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -858,6 +875,7 @@ _vissue_commands() {
 'list:List issues, sorted by priority then state then id' \
 'show:Show one issue\: metadata, then the body' \
 'update:Update state, priority, or blocker edges' \
+'resolve:Pick one terminal after a sibling close' \
 'reject:Reject an issue, redirecting to an existing destination or a new replacement' \
 'ready:Actionable issues\: TODO or STARTED with no open blocker' \
 'claim:Take an issue\: move it to STARTED and stamp the claim' \
@@ -1006,6 +1024,7 @@ _vissue__subcmd__help_commands() {
 'list:List issues, sorted by priority then state then id' \
 'show:Show one issue\: metadata, then the body' \
 'update:Update state, priority, or blocker edges' \
+'resolve:Pick one terminal after a sibling close' \
 'reject:Reject an issue, redirecting to an existing destination or a new replacement' \
 'ready:Actionable issues\: TODO or STARTED with no open blocker' \
 'claim:Take an issue\: move it to STARTED and stamp the claim' \
@@ -1231,6 +1250,11 @@ _vissue__subcmd__help__subcmd__related_commands() {
     local commands; commands=()
     _describe -t commands 'vissue help related commands' commands "$@"
 }
+(( $+functions[_vissue__subcmd__help__subcmd__resolve_commands] )) ||
+_vissue__subcmd__help__subcmd__resolve_commands() {
+    local commands; commands=()
+    _describe -t commands 'vissue help resolve commands' commands "$@"
+}
 (( $+functions[_vissue__subcmd__help__subcmd__roadmap_commands] )) ||
 _vissue__subcmd__help__subcmd__roadmap_commands() {
     local commands; commands=()
@@ -1384,6 +1408,11 @@ _vissue__subcmd__reject_commands() {
 _vissue__subcmd__related_commands() {
     local commands; commands=()
     _describe -t commands 'vissue related commands' commands "$@"
+}
+(( $+functions[_vissue__subcmd__resolve_commands] )) ||
+_vissue__subcmd__resolve_commands() {
+    local commands; commands=()
+    _describe -t commands 'vissue resolve commands' commands "$@"
 }
 (( $+functions[_vissue__subcmd__roadmap_commands] )) ||
 _vissue__subcmd__roadmap_commands() {

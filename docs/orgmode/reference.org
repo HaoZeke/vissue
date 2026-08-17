@@ -7,7 +7,7 @@
 |---------------------------------------------------------------------------+--------------------------------------------------------------------------|
 | =create=, =q=                                                             | Add an issue; =q= prints only the new id                                 |
 | =list=, =show=                                                            | Rows of issues; one issue's metadata and body (=--org= for the raw heading) |
-| =update=, =claim=, =refile=, =reject=                                     | Change state, priority, or blockers; take an issue; move it; redirect a rejected issue |
+| =update=, =claim=, =refile=, =reject=, =resolve=                          | Change state, priority, or blockers; take an issue; move it; redirect; pick a sibling terminal |
 | =note=                                                                    | Add a dated logbook entry; state and claim untouched                     |
 | =append=                                                                  | Record a dated report under the heading, from =--text=, =--file=, or stdin |
 | =body-excerpt=                                                            | A capped preview of an issue's file range; =show --org= for the whole heading |
@@ -179,7 +179,7 @@ Read one issue or many: =vissue_list=, =vissue_ready=, =vissue_show=,
 =vissue_body_excerpt=, =vissue_org=, =vissue_export=.
 
 Change one: =vissue_create=, =vissue_update=, =vissue_claim=, =vissue_note=,
-=vissue_append=, =vissue_refile=, =vissue_fold=, =vissue_reject=.
+=vissue_append=, =vissue_refile=, =vissue_fold=, =vissue_reject=, =vissue_resolve=.
 
 Follow the graph: =vissue_tree=, =vissue_graph=, =vissue_children=,
 =vissue_ancestors=, =vissue_impact=, =vissue_backlinks=,

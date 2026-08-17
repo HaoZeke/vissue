@@ -63,6 +63,7 @@ fn issue_terms(project: &str, issue: &IssueHeading) -> IssueTerms {
                 | "CLAIMED_AT"
                 | "DISCOVERED_FROM"
                 | "PIVOTED_TO"
+                | "SIBLING_TERMINAL"
         ) {
             text.push(' ');
             text.push_str(key);
@@ -88,7 +89,7 @@ fn add_evidence(candidate: &mut Candidate, score: f64, evidence: &str) {
     }
 }
 
-fn org_link_targets(body: &str, known_ids: &HashSet<&str>) -> Vec<String> {
+pub(crate) fn org_link_targets(body: &str, known_ids: &HashSet<&str>) -> Vec<String> {
     let mut targets = Vec::new();
     let mut rest = body;
     while let Some(start) = rest.find("[[") {

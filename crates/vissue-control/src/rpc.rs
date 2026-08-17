@@ -275,6 +275,38 @@ pub fn error_from_core(err: &CoreError) -> JsonRpcError {
             message: err.to_string(),
             data: Some(json!({ "code": "invalid_state", "id": id, "state": state })),
         },
+        CoreError::StaleWrite {
+            id,
+            expected_state,
+            actual_state,
+            expected_gen,
+            actual_gen,
+        } => JsonRpcError {
+            code: INVALID_STATE,
+            message: err.to_string(),
+            data: Some(json!({
+                "code": "stale",
+                "id": id,
+                "expected_state": expected_state,
+                "actual_state": actual_state,
+                "expected_gen": expected_gen,
+                "actual_gen": actual_gen,
+            })),
+        },
+        CoreError::TerminalConflict {
+            id,
+            held,
+            attempted,
+        } => JsonRpcError {
+            code: CONFLICT,
+            message: err.to_string(),
+            data: Some(json!({
+                "code": "terminal_conflict",
+                "id": id,
+                "held": held,
+                "attempted": attempted,
+            })),
+        },
         CoreError::Other(_) => internal_error(err.to_string()),
     }
 }

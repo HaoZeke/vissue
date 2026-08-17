@@ -926,9 +926,7 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
             let dst_id = if creating {
                 push_successor(&mut doc, &dst_project, dst_title, src, &cfg)?
             } else {
-                let to = opts.to.ok_or_else(|| {
-                    anyhow!("reject destination missing after --to was required")
-                })?;
+                let to = reject_to(opts)?;
                 set_discovered_from_if_empty(&mut doc, to, src)?;
                 to.to_string()
             };
@@ -942,9 +940,7 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
             let dst_id = if creating {
                 push_successor(&mut dst_doc, &dst_project, dst_title, src, &cfg)?
             } else {
-                let to = opts.to.ok_or_else(|| {
-                    anyhow!("reject destination missing after --to was required")
-                })?;
+                let to = reject_to(opts)?;
                 set_discovered_from_if_empty(&mut dst_doc, to, src)?;
                 to.to_string()
             };
@@ -960,6 +956,11 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
         let _ = crate::events::emit_state_change(layout, &src_project, src, &old_state, &new_state);
     }
     Ok(format!("rejected {src} -> {dst_id}\n"))
+}
+
+fn reject_to<'a>(opts: &RejectOpts<'a>) -> Result<&'a str> {
+    opts.to
+        .ok_or_else(|| anyhow!("reject destination missing after --to was required").into())
 }
 
 fn push_successor(

@@ -1030,7 +1030,8 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
 }
 
 /// Every issue referring to `target_id` through a blocker edge, a parent link,
-/// a discovered-from link, or a body mention. The relation is named on the row.
+/// a discovered-from or pivoted-to property, or a body mention. The relation
+/// is named on the row.
 ///
 /// # Errors
 ///
@@ -1053,6 +1054,10 @@ pub fn backlinks(layout: &Layout, target_id: &str) -> Result<String> {
         }
         if h.properties.get("DISCOVERED_FROM").map(|s| s.as_str()) == Some(target_id) {
             let _ = writeln!(out, "{:<22} (discovered-from) ({})", h.id, project);
+            hit = true;
+        }
+        if h.properties.get("PIVOTED_TO").map(|s| s.as_str()) == Some(target_id) {
+            let _ = writeln!(out, "{:<22} (pivoted-to) ({})", h.id, project);
             hit = true;
         }
         if !hit && h.body.contains(target_id) {

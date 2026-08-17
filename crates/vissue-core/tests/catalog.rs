@@ -567,6 +567,23 @@ fn backlinks_report_a_discovered_from_edge_and_a_bare_mention() {
 }
 
 #[test]
+fn backlinks_report_a_pivoted_to_edge() {
+    let mut recs = corpus();
+    recs.push(with_property(
+        issue("atlas", "atlas-8m9n", "CANCELLED", "Old approach"),
+        "PIVOTED_TO",
+        "atlas-1a2b",
+    ));
+
+    let hits = backlinks_from(&recs, "atlas-1a2b").unwrap();
+    let by_id: Vec<(&str, &str)> = hits
+        .iter()
+        .map(|h| (h.id.as_str(), h.relation.as_str()))
+        .collect();
+    assert!(by_id.contains(&("atlas-8m9n", "pivoted-to")), "{by_id:?}");
+}
+
+#[test]
 fn an_issue_is_not_its_own_backlink() {
     let recs = with_body(
         issue("atlas", "atlas-9m0n", "TODO", "Mentions itself"),

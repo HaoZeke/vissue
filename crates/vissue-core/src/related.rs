@@ -62,6 +62,7 @@ fn issue_terms(project: &str, issue: &IssueHeading) -> IssueTerms {
                 | "CLAIMED_BY"
                 | "CLAIMED_AT"
                 | "DISCOVERED_FROM"
+                | "PIVOTED_TO"
         ) {
             text.push(' ');
             text.push_str(key);
@@ -243,13 +244,15 @@ pub fn related_hits_from(
                 neighbors.entry(blocker).or_default().push(index);
             }
         }
-        if let Some(origin) = issue
-            .properties
-            .get("DISCOVERED_FROM")
-            .and_then(|origin| ids.get(origin.as_str()).copied())
-        {
-            neighbors.entry(index).or_default().push(origin);
-            neighbors.entry(origin).or_default().push(index);
+        for key in ["DISCOVERED_FROM", "PIVOTED_TO"] {
+            if let Some(origin) = issue
+                .properties
+                .get(key)
+                .and_then(|origin| ids.get(origin.as_str()).copied())
+            {
+                neighbors.entry(index).or_default().push(origin);
+                neighbors.entry(origin).or_default().push(index);
+            }
         }
         for linked_id in org_link_targets(&issue.body, &known_ids) {
             let Some(linked) = ids.get(linked_id.as_str()).copied() else {
@@ -309,6 +312,12 @@ pub fn related_hits_from(
         }
         if target.properties.get("DISCOVERED_FROM").map(String::as_str) == Some(issue.id.as_str()) {
             explicit.push("source_of");
+        }
+        if target.properties.get("PIVOTED_TO").map(String::as_str) == Some(issue.id.as_str()) {
+            explicit.push("pivoted_to");
+        }
+        if issue.properties.get("PIVOTED_TO").map(String::as_str) == Some(id) {
+            explicit.push("successor_of");
         }
         if org_link_targets(&target.body, &known_ids)
             .iter()

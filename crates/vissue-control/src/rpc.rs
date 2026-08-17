@@ -779,6 +779,12 @@ pub struct UpdateParams {
     /// Remove this blocker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unblock: Option<String>,
+    /// Refuse unless the heading is still this state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub if_state: Option<String>,
+    /// Refuse unless the corpus generation is still this value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub if_gen: Option<u64>,
     /// Override the connection agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
@@ -1434,6 +1440,8 @@ mod tests {
             priority: None,
             block: None,
             unblock: None,
+            if_state: None,
+            if_gen: None,
             agent: None,
         })
         .to_params();

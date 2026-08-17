@@ -528,6 +528,7 @@ impl App {
         match self.backend.update(UpdateReq {
             id: id.clone(),
             state: Some(state.to_string()),
+            if_state: self.selected_state().map(str::to_string),
             ..UpdateReq::default()
         }) {
             Ok(result) => {

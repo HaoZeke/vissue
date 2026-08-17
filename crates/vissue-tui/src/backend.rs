@@ -60,6 +60,10 @@ pub struct UpdateReq {
     pub block: Option<String>,
     /// Blocker id to drop.
     pub unblock: Option<String>,
+    /// Refuse unless the heading is still this state.
+    pub if_state: Option<String>,
+    /// Refuse unless the corpus generation is still this value.
+    pub if_gen: Option<u64>,
 }
 
 /// Drops `since_revision` for one fetch after attach.

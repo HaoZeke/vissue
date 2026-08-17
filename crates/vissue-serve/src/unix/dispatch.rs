@@ -498,7 +498,7 @@ fn dispatch_update(
     let params: UpdateParams = decode(params)?;
     let agent = resolve_agent(session, params.agent.as_deref())?;
     let priority = parse_priority(params.priority.as_deref())?;
-    let outcome = ops::update_as(
+    let outcome = ops::update_as_pred(
         &state.layout,
         &params.id,
         params.state.as_deref(),
@@ -506,6 +506,10 @@ fn dispatch_update(
         params.block.as_deref(),
         params.unblock.as_deref(),
         &agent,
+        vissue_core::UpdatePred {
+            if_state: params.if_state.as_deref(),
+            if_gen: params.if_gen,
+        },
     )
     .map_err(map_core)?;
     let issue = detail_one(&state.layout, &params.id);

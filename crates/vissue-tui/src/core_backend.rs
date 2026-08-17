@@ -164,7 +164,7 @@ impl BoardBackend for CoreBackend {
     }
 
     fn update(&self, req: UpdateReq) -> Result<MutResult, Error> {
-        let UpdateOutcome { report, .. } = ops::update_as(
+        let UpdateOutcome { report, .. } = ops::update_as_pred(
             &self.layout,
             &req.id,
             req.state.as_deref(),
@@ -172,6 +172,10 @@ impl BoardBackend for CoreBackend {
             req.block.as_deref(),
             req.unblock.as_deref(),
             &self.identity,
+            vissue_core::UpdatePred {
+                if_state: req.if_state.as_deref(),
+                if_gen: req.if_gen,
+            },
         )?;
         self.mut_result(report, &req.id)
     }

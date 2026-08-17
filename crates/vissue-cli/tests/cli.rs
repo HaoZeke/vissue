@@ -1494,3 +1494,44 @@ fn update_if_state_refuses_a_stale_done_after_reject() {
     assert!(shown.contains("CANCELLED"), "{shown}");
     assert!(!shown.contains("* DONE"), "{shown}");
 }
+
+#[test]
+fn update_if_gen_and_resolve_keep_the_first_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let root = dir.path().to_str().unwrap();
+    let own = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", root];
+        argv.extend_from_slice(args);
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    let id = stdout(&own(&["create", "-p", "atlas", "--quiet", "close me"]))
+        .trim()
+        .to_string();
+    let seen: u64 = stdout(&own(&["gen"])).trim().parse().unwrap();
+    assert!(own(&["update", &id, "--state", "DONE"]).status.success());
+    let stale = own(&[
+        "update",
+        &id,
+        "--state",
+        "CANCELLED",
+        "--if-gen",
+        &seen.to_string(),
+    ]);
+    assert!(!stale.status.success(), "{}", stdout(&stale));
+    assert!(own(&["update", &id, "--state", "CANCELLED"])
+        .status
+        .success());
+    let shown = stdout(&own(&["show", "--org", &id]));
+    assert!(shown.contains("DONE"), "{shown}");
+    assert!(shown.contains("SIBLING_TERMINAL"), "{shown}");
+    assert!(own(&["resolve", &id, "--state", "CANCELLED"])
+        .status
+        .success());
+    let shown = stdout(&own(&["show", "--org", &id]));
+    assert!(shown.contains("CANCELLED"), "{shown}");
+    assert!(!shown.contains("SIBLING_TERMINAL"), "{shown}");
+}

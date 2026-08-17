@@ -282,6 +282,7 @@ pub fn update_as(
 /// # Errors
 ///
 /// Same as [`update_as`], plus [`Error::StaleWrite`] when the predicate fails.
+#[allow(clippy::too_many_arguments)]
 pub fn update_as_pred(
     layout: &Layout,
     id: &str,
@@ -925,7 +926,9 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
             let dst_id = if creating {
                 push_successor(&mut doc, &dst_project, dst_title, src, &cfg)?
             } else {
-                let to = opts.to.unwrap();
+                let to = opts.to.ok_or_else(|| {
+                    anyhow!("reject destination missing after --to was required")
+                })?;
                 set_discovered_from_if_empty(&mut doc, to, src)?;
                 to.to_string()
             };
@@ -939,7 +942,9 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
             let dst_id = if creating {
                 push_successor(&mut dst_doc, &dst_project, dst_title, src, &cfg)?
             } else {
-                let to = opts.to.unwrap();
+                let to = opts.to.ok_or_else(|| {
+                    anyhow!("reject destination missing after --to was required")
+                })?;
                 set_discovered_from_if_empty(&mut dst_doc, to, src)?;
                 to.to_string()
             };

@@ -298,7 +298,7 @@ fn run_iced(palette: Palette) -> iced::Result {
 
 fn boot(palette: Palette) -> (HudApp, Task<Message>) {
     let hidden = !palette.visible();
-    let app = HudApp::from_palette(palette);
+    let mut app = HudApp::from_palette(palette);
     let task = if hidden {
         app.sync_window()
     } else {

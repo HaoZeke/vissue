@@ -16,6 +16,16 @@ back.
 | Tags Org can hold           | The heading's own =:tag:tag:= run, aligned to =org-tags-column= | Tag search matches |
 | Identity                    | =:ID:=                                            | =org-id= resolves an =id:= link |
 | Project                     | =#+CATEGORY:= in the preamble                     | The agenda labels rows by project |
+| Keyword cycle               | File-local =#+TODO:= (TODO STARTED BLOCKED, then DONE CANCELLED) | =C-c C-t= walks that sequence |
+| Closed / cancelled          | The TODO keyword (=DONE=, =CANCELLED=)            | =C-c C-t=                       |
+| Bounce / successor          | =:PIVOTED_TO:= / =:DISCOVERED_FROM:=              | Ordinary properties; =id:= links |
+| Disagreeing terminals       | =:SIBLING_TERMINAL:= plus the keyword that won    | Delete the property, then =C-c C-t= |
+
+A verb that cannot be done with those keys does not belong in the tracker.
+=vissue reject= and =vissue resolve= write the same properties; =vissue.el=
+exposes them as =vissue-reject-at-point= and =vissue-resolve-at-point=.
+=wait --until-terminal= and =update --if-gen= are the event bus, not Org,
+and stay on the CLI.
 
 A deadline in a property drawer is invisible to the agenda, because Org reads
 the planning line and nothing else. =TAGS=, =DEADLINE=, and =SCHEDULED= are
@@ -26,8 +36,10 @@ finding.
 * Editing a tracker in Emacs
 
 The traffic goes both ways. =C-c C-d=, =C-c C-s=, =C-c C-q=, and marking an
-issue DONE under =org-log-done= all work on an issue heading, and vissue
-reads back what they write.
+issue DONE or CANCELLED under =org-log-done= all work on an issue heading, and
+vissue reads back what they write. A bounce typed by hand is =C-c C-t= to
+=CANCELLED=, then =:PIVOTED_TO:= on this heading and =:DISCOVERED_FROM:= on
+the successor.
 
 #+begin_src elisp
 ;; Put a tracker in the agenda:

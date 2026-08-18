@@ -728,7 +728,11 @@ fn notes_body<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
             if let Some(from) = from {
                 flip = flip.push(badge_state(from, tea));
             }
-            flip = flip.push(text("->").size(tea.meta()).color(tea.muted));
+            flip = flip.push(
+                text(state_arrow(tea.direction))
+                    .size(tea.meta())
+                    .color(tea.muted),
+            );
             flip = flip.push(badge_state(to, tea));
             card = card.push(flip);
         }
@@ -905,6 +909,13 @@ fn related_why(evidence: &[String]) -> String {
         .join("  ·  ")
 }
 
+fn state_arrow(dir: Direction) -> &'static str {
+    match dir {
+        Direction::Ltr => "→",
+        Direction::Rtl => "←",
+    }
+}
+
 fn tab_empty_copy(tab: DetailTab) -> &'static str {
     match tab {
         DetailTab::Tree => "No parent or child links.",
@@ -983,6 +994,9 @@ mod tests {
         assert!(src.contains("widget::value_field"));
         assert!(src.contains("excerpt_label_width"));
         assert!(src.contains("fn notes_body"));
+        assert!(src.contains("fn state_arrow"));
+        assert!(src.contains("\"→\""));
+        assert!(src.contains("\"←\""));
         assert!(src.contains("icedtea::typo::MONO"));
         assert!(src.contains("on_double_click"));
         assert!(src.contains("Message::OpenIssue"));

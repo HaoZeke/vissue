@@ -1,6 +1,7 @@
 //! Seat mocha as icedtea tokens. Type scale is icedtea's.
 
 use iced::Color;
+use icedtea::m3::{Density, DensityName, ElevationPolicy, ShapePolicy};
 use icedtea::theme::Tokens;
 
 /// Body size in pixels (`icedtea::typo::BODY`).
@@ -64,6 +65,9 @@ pub fn tokens() -> Tokens {
             border: Some(OVERLAY1),
         },
     )
+    .with_density(Density::named(DensityName::Compact))
+    .with_shape(ShapePolicy::Material)
+    .with_elevation(ElevationPolicy::Flat)
 }
 
 /// iced [`Theme`](iced::Theme) from the mocha tokens.
@@ -104,6 +108,9 @@ mod tests {
         assert_eq!(t.success, GREEN);
         assert_eq!(t.border, OVERLAY1);
         assert_eq!(t.selection, icedtea::theme::mix(BLUE, BASE, 0.28));
+        assert_eq!(t.density.name, DensityName::Compact);
+        assert_eq!(t.shape, ShapePolicy::Material);
+        assert_eq!(t.elevation, ElevationPolicy::Flat);
         let _ = theme();
     }
 

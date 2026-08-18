@@ -40,7 +40,7 @@ impl<'a> GraphIndex<'a> {
                     .or_default()
                     .push(h.id.as_str());
             }
-            let blockers = blocker_ids(h).collect::<Vec<_>>();
+            let blockers = blocker_ids(h);
             if !blockers.is_empty() {
                 index.blockers.insert(h.id.as_str(), blockers);
             }
@@ -52,13 +52,33 @@ impl<'a> GraphIndex<'a> {
     }
 }
 
-fn blocker_ids(h: &IssueHeading) -> impl Iterator<Item = &str> {
-    h.properties
-        .get("BLOCKED_BY")
-        .into_iter()
-        .flat_map(|raw| raw.split(|c: char| c == ',' || c.is_whitespace()))
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
+fn blocker_ids(h: &IssueHeading) -> Vec<&str> {
+    let mut ids = Vec::new();
+    if let Some(raw) = crate::props::get(&h.properties, crate::props::BLOCKED_BY) {
+        ids.extend(
+            raw.split(|c: char| c == ',' || c.is_whitespace())
+                .map(str::trim)
+                .filter(|id| !id.is_empty()),
+        );
+    }
+    if let Some(raw) = h.properties.get("BLOCKER") {
+        if crate::org::is_edna_blocker(raw) {
+            ids.extend(crate::org::edna_blocker_id_refs(raw));
+        } else {
+            ids.extend(
+                raw.split(|c: char| c == ',' || c.is_whitespace())
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty()),
+            );
+        }
+    }
+    let mut unique = Vec::new();
+    for id in ids {
+        if !unique.contains(&id) {
+            unique.push(id);
+        }
+    }
+    unique
 }
 
 /// One row per issue: id, state, priority cookie, title.
@@ -407,7 +427,7 @@ pub fn count(
                 if !READY_STATES.contains(&h.state.as_str()) {
                     return false;
                 }
-                if blocker_ids(h).any(|b| active_blockers.contains(b)) {
+                if blocker_ids(h).iter().any(|b| active_blockers.contains(*b)) {
                     return false;
                 }
             }
@@ -836,7 +856,7 @@ pub fn roadmap(layout: &Layout, project_filter: Option<&str>) -> Result<String> 
                     .deadline()
                     .map(|d| format!(" :: deadline {d}"))
                     .unwrap_or_default();
-                let blockers = blocker_ids(h).collect::<Vec<_>>();
+                let blockers = blocker_ids(h);
                 let blocked_by = if blockers.is_empty() {
                     String::new()
                 } else {
@@ -877,11 +897,11 @@ fn looks_like_reject_prose(body: &str) -> bool {
 fn edge_connects(all: &[(String, IssueHeading)], a: &str, b: &str) -> bool {
     all.iter().any(|(_, h)| {
         if h.id == a {
-            h.properties.get("DISCOVERED_FROM").map(String::as_str) == Some(b)
-                || h.properties.get("PIVOTED_TO").map(String::as_str) == Some(b)
+            crate::props::get(&h.properties, crate::props::DISCOVERED_FROM) == Some(b)
+                || crate::props::get(&h.properties, crate::props::PIVOTED_TO) == Some(b)
         } else if h.id == b {
-            h.properties.get("DISCOVERED_FROM").map(String::as_str) == Some(a)
-                || h.properties.get("PIVOTED_TO").map(String::as_str) == Some(a)
+            crate::props::get(&h.properties, crate::props::DISCOVERED_FROM) == Some(a)
+                || crate::props::get(&h.properties, crate::props::PIVOTED_TO) == Some(a)
         } else {
             false
         }
@@ -962,7 +982,7 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
         let mut computed_specials = 0usize;
         let mut bad_effort = 0usize;
         for h in &doc.headings {
-            if let Some(kind) = h.properties.get("TYPE") {
+            if let Some(kind) = crate::props::get(&h.properties, crate::props::TYPE) {
                 let kind = kind.trim();
                 if !kind.is_empty()
                     && kind.chars().all(crate::model::is_org_tag_char)
@@ -1018,7 +1038,7 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
         if blocker_as_ids > 0 {
             writeln!(
                 out,
-                "[warn] {project}: {blocker_as_ids} heading(s) use :BLOCKER: as an id list; GNU ELPA org-edna uses that name for conditions. A rewrite moves the ids to :BLOCKED_BY:"
+                "[warn] {project}: {blocker_as_ids} heading(s) use :BLOCKER: as a bare id list; a rewrite mirrors them as org-edna ids(...)"
             )?;
             warnings += 1;
         }
@@ -1095,17 +1115,14 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             )?;
             warnings += 1;
         }
-        if h.properties.contains_key("SIBLING_TERMINAL") {
+        if crate::props::get(&h.properties, crate::props::SIBLING_TERMINAL).is_some() {
             writeln!(
                 out,
                 "[warn] {} (in {}) holds {} and sibling {}",
                 h.id,
                 project,
                 h.state,
-                h.properties
-                    .get("SIBLING_TERMINAL")
-                    .map(String::as_str)
-                    .unwrap_or("?")
+                crate::props::get(&h.properties, crate::props::SIBLING_TERMINAL).unwrap_or("?")
             )?;
             warnings += 1;
         }
@@ -1197,7 +1214,7 @@ pub fn backlinks(layout: &Layout, target_id: &str) -> Result<String> {
             continue;
         }
         let mut hit = false;
-        if blocker_ids(h).any(|b| b == target_id) {
+        if blocker_ids(h).iter().any(|b| *b == target_id) {
             let _ = writeln!(out, "{:<22} (blocked-by) ({})", h.id, project);
             hit = true;
         }
@@ -1205,11 +1222,11 @@ pub fn backlinks(layout: &Layout, target_id: &str) -> Result<String> {
             let _ = writeln!(out, "{:<22} (parent) ({})", h.id, project);
             hit = true;
         }
-        if h.properties.get("DISCOVERED_FROM").map(|s| s.as_str()) == Some(target_id) {
+        if crate::props::get(&h.properties, crate::props::DISCOVERED_FROM) == Some(target_id) {
             let _ = writeln!(out, "{:<22} (discovered-from) ({})", h.id, project);
             hit = true;
         }
-        if h.properties.get("PIVOTED_TO").map(|s| s.as_str()) == Some(target_id) {
+        if crate::props::get(&h.properties, crate::props::PIVOTED_TO) == Some(target_id) {
             let _ = writeln!(out, "{:<22} (pivoted-to) ({})", h.id, project);
             hit = true;
         }

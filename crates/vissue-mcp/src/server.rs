@@ -449,6 +449,20 @@ impl VissueServer {
         text(report::check(&self.layout).map(|r| r.text))
     }
 
+    #[tool(
+        description = "Rewrite files onto the Org / ELPA / vissue property split. Dry-run by default when dry_run is true."
+    )]
+    async fn vissue_normalize(
+        &self,
+        Parameters(args): Parameters<NormalizeArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(ops::normalize(
+            &self.layout,
+            args.project.as_deref(),
+            args.dry_run.unwrap_or(false),
+        ))
+    }
+
     #[tool(description = "Checklist for agents and CI: stalled claims plus corpus validation.")]
     async fn vissue_hygiene(
         &self,

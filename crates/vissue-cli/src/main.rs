@@ -362,6 +362,14 @@ enum Command {
     },
     /// Validate the corpus. Exits non-zero on any error.
     Check,
+    /// Rewrite files onto the Org / ELPA / vissue property split.
+    Normalize {
+        #[arg(short = 'p', short_alias = 'P', long)]
+        project: Option<String>,
+        /// Print what would change without writing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// A content digest of the corpus, for telling whether a copy is current.
     Digest {
         /// Project to include; repeat for several. Omit for every project.
@@ -899,6 +907,12 @@ fn run() -> Result<()> {
                 bail!("{errors} validation error(s)");
             }
         }
+        Command::Normalize { project, dry_run } => {
+            emit!(
+                "{}",
+                normalize_routed(&router, project.as_deref(), dry_run)?
+            )
+        }
         Command::Digest {
             projects,
             json,
@@ -1431,6 +1445,19 @@ fn search_routed(router: &Router, query: &str, limit: usize) -> Result<String> {
     let mut out = String::new();
     for layout in router.unique_layouts() {
         out.push_str(&report::search(layout, query, limit)?);
+    }
+    Ok(out)
+}
+
+fn normalize_routed(router: &Router, project: Option<&str>, dry_run: bool) -> Result<String> {
+    let mut out = String::new();
+    if let Some(name) = project {
+        let pref = router.route(name);
+        out.push_str(&ops::normalize(&pref.layout, Some(&pref.dir), dry_run)?);
+    } else {
+        for layout in router.unique_layouts() {
+            out.push_str(&ops::normalize(layout, None, dry_run)?);
+        }
     }
     Ok(out)
 }

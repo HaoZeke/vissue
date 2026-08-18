@@ -19,6 +19,7 @@ pub mod model;
 pub mod ops;
 pub mod org;
 pub mod process_env;
+pub mod props;
 pub mod related;
 pub mod report;
 pub mod router;

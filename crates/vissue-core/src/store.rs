@@ -267,17 +267,8 @@ impl IssueDoc {
         })
     }
 
-    /// Render and replace the file through a uniquely named temporary. Callers
-    /// hold [`with_issues_lock`] around the parse and this write.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the parent directory cannot be created, the
-    /// temporary cannot be written, or the rename cannot publish it.
-    pub fn write(&self) -> Result<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
+    /// The file body this document would write.
+    pub fn render_string(&self) -> String {
         let mut out = String::new();
         let preamble = if self.preamble.trim().is_empty() {
             default_preamble(&self.project)
@@ -298,6 +289,21 @@ impl IssueDoc {
                 }
             }
         }
+        out
+    }
+
+    /// Render and replace the file through a uniquely named temporary. Callers
+    /// hold [`with_issues_lock`] around the parse and this write.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parent directory cannot be created, the
+    /// temporary cannot be written, or the rename cannot publish it.
+    pub fn write(&self) -> Result<()> {
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let out = self.render_string();
         // A shared temporary name races: a peer renames it out from under this
         // writer and the rename fails with ENOENT.
         let seq = WRITE_TMP_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -957,7 +963,10 @@ mod tests {
         assert_eq!(h.state, original.state);
         assert_eq!(h.priority, original.priority);
         assert_eq!(h.body, original.body);
-        assert_eq!(h.properties.get("TYPE"), original.properties.get("TYPE"));
+        assert_eq!(
+            crate::props::get(&h.properties, crate::props::TYPE),
+            crate::props::get(&original.properties, crate::props::TYPE)
+        );
     }
 
     #[test]

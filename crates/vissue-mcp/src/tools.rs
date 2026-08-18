@@ -186,6 +186,14 @@ pub struct HygieneArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct NormalizeArgs {
+    /// Project name. Omit to rewrite every project.
+    pub project: Option<String>,
+    /// Print what would change without writing.
+    pub dry_run: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct EventsArgs {
     /// Only events with a sequence above this value.
     pub since: Option<u64>,

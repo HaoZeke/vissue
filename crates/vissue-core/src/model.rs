@@ -17,17 +17,7 @@ pub const READY_STATES: &[&str] = &["TODO", "STARTED"];
 pub const TODO_HEADER: &str = "#+TODO: TODO STARTED BLOCKED | DONE CANCELLED";
 
 const PROPERTY_COLUMN: usize = 13;
-const DEFAULT_PROPERTY_ORDER: &[&str] = &[
-    "CREATED",
-    "TYPE",
-    "PARENT",
-    "BLOCKED_BY",
-    "VISSUE_TAGS",
-    "CLAIMED_BY",
-    "CLAIMED_AT",
-    "FILES",
-    "VERIFY",
-];
+const DEFAULT_PROPERTY_ORDER: &[&str] = crate::props::CANONICAL_ORDER;
 
 /// Column org right-aligns headline tags to, matching the `org-tags-column`
 /// default. Writing them anywhere else makes the next Emacs edit realign the
@@ -67,15 +57,15 @@ pub fn split_headline_tags(text: &str) -> (String, Vec<String>) {
 ///
 /// Not `TAGS`: Org reserves that name for the headline tags it exposes as a
 /// special property, and `org-lint` reports a drawer that claims it.
-pub const TAGS_PROPERTY: &str = "VISSUE_TAGS";
+pub const TAGS_PROPERTY: &str = crate::props::TAGS;
 /// The name this property had before the clash with Org was found. Read on
 /// parse and rewritten under the current name.
 pub const LEGACY_TAGS_PROPERTY: &str = "TAGS";
 
 /// Property naming the identity that holds a STARTED issue.
-pub const CLAIMED_BY: &str = "CLAIMED_BY";
+pub const CLAIMED_BY: &str = crate::props::CLAIMED_BY;
 /// Property recording when that claim was taken.
-pub const CLAIMED_AT: &str = "CLAIMED_AT";
+pub const CLAIMED_AT: &str = crate::props::CLAIMED_AT;
 
 /// One line of an issue's `:LOGBOOK:` drawer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -274,17 +264,17 @@ impl IssueHeading {
 
     /// `:PARENT:` id, when set.
     pub fn parent(&self) -> Option<&str> {
-        self.properties.get("PARENT").map(|s| s.as_str())
+        crate::props::get(&self.properties, crate::props::PARENT)
     }
 
     /// The identity holding this issue, when one has claimed it.
     pub fn claimed_by(&self) -> Option<&str> {
-        self.properties.get(CLAIMED_BY).map(|s| s.as_str())
+        crate::props::get(&self.properties, CLAIMED_BY)
     }
 
     /// When the claim was taken, as the stored org timestamp.
     pub fn claimed_at(&self) -> Option<&str> {
-        self.properties.get(CLAIMED_AT).map(|s| s.as_str())
+        crate::props::get(&self.properties, CLAIMED_AT)
     }
 
     /// Whole days the claim has been held, when it parses as a date.
@@ -323,7 +313,7 @@ impl IssueHeading {
     pub fn render(&self) -> String {
         let mut org_tags = self.org_tags.clone();
         let mut properties = self.properties.clone();
-        crate::org::settle_heading_classifiers(&mut org_tags, &mut properties);
+        crate::props::settle(&mut org_tags, &mut properties);
         let mut out = render_heading_line(
             &self.state,
             self.priority,

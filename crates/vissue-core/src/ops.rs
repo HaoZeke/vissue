@@ -5,6 +5,7 @@ use anyhow::{Context, anyhow};
 use crate::error::Result;
 use chrono::NaiveDate;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use crate::config::{Layout, VissueConfig};
 use crate::error::Error;
@@ -106,15 +107,15 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
         let mut props = BTreeMap::new();
         props.insert("ID".into(), id.clone());
         props.insert("CREATED".into(), today_inactive_bracket());
-        if !props.contains_key("DISCOVERED_FROM")
+        if crate::props::get(&props, crate::props::DISCOVERED_FROM).is_none()
             && let Some(body) = opts.body
             && let Some(origin) = first_existing_id_link(body, &known_ids)
         {
-            props.insert("DISCOVERED_FROM".into(), origin);
+            crate::props::insert(&mut props, crate::props::DISCOVERED_FROM, origin);
         }
         let mut org_tags: Vec<String> = Vec::new();
         if let Some(t) = opts.issue_type {
-            props.insert("TYPE".into(), t.into());
+            crate::props::insert(&mut props, crate::props::TYPE, t.into());
             // Type is an Org tag when the character class allows it, so
             // agenda tag search and C-c \ see `bug` / `feature` / `task`.
             if t.chars().all(crate::model::is_org_tag_char)
@@ -154,7 +155,7 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
             }
         }
         if let Some(p) = opts.parent {
-            props.insert("PARENT".into(), p.into());
+            crate::props::insert(&mut props, crate::props::PARENT, p.into());
         }
 
         doc.headings.push(IssueHeading {
@@ -396,7 +397,11 @@ pub fn update_as_pred(
                     graph.accepts_edge(blk, id)?;
                 }
                 current.push(blk.to_string());
-                h.properties.insert("BLOCKED_BY".into(), current.join(","));
+                crate::props::insert(
+                    &mut h.properties,
+                    crate::props::BLOCKED_BY,
+                    current.join(" "),
+                );
                 if h.state == "TODO" || h.state == "STARTED" {
                     let from = h.state.clone();
                     h.record_state_change("BLOCKED");
@@ -412,7 +417,7 @@ pub fn update_as_pred(
             current.retain(|x| x != blk);
             if current.len() < before {
                 if current.is_empty() {
-                    h.properties.remove("BLOCKED_BY");
+                    crate::props::remove(&mut h.properties, crate::props::BLOCKED_BY);
                     if h.state == "BLOCKED" {
                         let from = h.state.clone();
                         h.record_state_change("TODO");
@@ -422,7 +427,11 @@ pub fn update_as_pred(
                         }
                     }
                 } else {
-                    h.properties.insert("BLOCKED_BY".into(), current.join(","));
+                    crate::props::insert(
+                        &mut h.properties,
+                        crate::props::BLOCKED_BY,
+                        current.join(" "),
+                    );
                 }
                 changed.push(format!("blocked_by -= {blk}"));
             }
@@ -484,8 +493,11 @@ fn is_terminal(state: &str) -> bool {
 }
 
 fn record_sibling_terminal(h: &mut IssueHeading, attempted: &str) {
-    h.properties
-        .insert("SIBLING_TERMINAL".into(), attempted.to_string());
+    crate::props::insert(
+        &mut h.properties,
+        crate::props::SIBLING_TERMINAL,
+        attempted.to_string(),
+    );
 }
 
 /// Pick one terminal after a sibling close. Clears `:SIBLING_TERMINAL:`.
@@ -513,7 +525,7 @@ pub fn resolve_terminal(layout: &Layout, id: &str, state: &str) -> Result<String
             h.record_state_change(state);
             settle_claim(h, &from, state, &identity);
         }
-        h.properties.remove("SIBLING_TERMINAL");
+        crate::props::remove(&mut h.properties, crate::props::SIBLING_TERMINAL);
         doc.write()?;
         Ok(from)
     })?;
@@ -1043,7 +1055,7 @@ fn push_successor(
     let mut props = BTreeMap::new();
     props.insert("ID".into(), id.clone());
     props.insert("CREATED".into(), today_inactive_bracket());
-    props.insert("DISCOVERED_FROM".into(), src.to_string());
+    crate::props::insert(&mut props, crate::props::DISCOVERED_FROM, src.to_string());
     doc.headings.push(IssueHeading {
         id: id.clone(),
         title: title.to_string(),
@@ -1068,13 +1080,14 @@ fn set_discovered_from_if_empty(doc: &mut IssueDoc, id: &str, src: &str) -> Resu
         .iter_mut()
         .find(|h| h.id == id)
         .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
-    let empty = h
-        .properties
-        .get("DISCOVERED_FROM")
+    let empty = crate::props::get(&h.properties, crate::props::DISCOVERED_FROM)
         .is_none_or(|s| s.trim().is_empty());
     if empty {
-        h.properties
-            .insert("DISCOVERED_FROM".into(), src.to_string());
+        crate::props::insert(
+            &mut h.properties,
+            crate::props::DISCOVERED_FROM,
+            src.to_string(),
+        );
     }
     Ok(())
 }
@@ -1100,7 +1113,7 @@ fn cancel_and_pivot(
         h.record_state_change("CANCELLED");
         settle_claim(h, &old_state, "CANCELLED", identity);
     }
-    h.properties.insert("PIVOTED_TO".into(), dst.to_string());
+    crate::props::insert(&mut h.properties, crate::props::PIVOTED_TO, dst.to_string());
     if let Some(reason) = reason {
         append_reason(h, reason, identity);
     }
@@ -1143,6 +1156,65 @@ fn first_existing_id_link(body: &str, known: &std::collections::HashSet<String>)
         rest = &after_start[end + 2..];
     }
     None
+}
+
+/// Rewrite project files onto the Org / ELPA / vissue property split.
+///
+/// Folds typos (`BLOCKEDBY`, drawer `TAGS`), mirrors `:BLOCKED_BY:` into
+/// org-edna `:BLOCKER: ids(...)` when that does not overwrite a condition,
+/// puts legal types on the heading, and inserts a missing `#+CATEGORY:`.
+///
+/// # Errors
+///
+/// Returns an error if a project file cannot be read or rewritten.
+pub fn normalize(layout: &Layout, project: Option<&str>, dry_run: bool) -> Result<String> {
+    let projects = match project {
+        Some(name) => vec![resolve_existing_project_case(layout, name)?],
+        None => crate::store::list_projects(layout)?,
+    };
+    let mut out = String::new();
+    let mut files = 0usize;
+    let mut headings = 0usize;
+    let mut changed = 0usize;
+    for project in projects {
+        let path = layout.project_issues_path(&project);
+        if !path.exists() {
+            continue;
+        }
+        files += 1;
+        let before =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let report = with_issues_lock(&path, || {
+            let mut doc = IssueDoc::parse_file(&project, &path)?;
+            let mut moved = 0usize;
+            for h in &mut doc.headings {
+                moved += crate::props::settle(&mut h.org_tags, &mut h.properties);
+            }
+            let after = doc.render_string();
+            if after != before {
+                if !dry_run {
+                    doc.write()?;
+                }
+                Ok(Some((moved, after.len())))
+            } else {
+                Ok(None)
+            }
+        })?;
+        headings += IssueDoc::parse(&project, path.clone(), &before)
+            .map(|d| d.headings.len())
+            .unwrap_or(0);
+        if let Some((moved, _)) = report {
+            changed += 1;
+            let verb = if dry_run { "would rewrite" } else { "rewrote" };
+            writeln!(out, "{verb} {project} ({moved} key move(s))")?;
+        }
+    }
+    let mode = if dry_run { "dry-run" } else { "wrote" };
+    writeln!(
+        out,
+        "normalize {mode}: {changed}/{files} file(s) changed, {headings} heading(s) scanned"
+    )?;
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1400,7 +1472,10 @@ mod tests {
         .unwrap();
         let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
         let h = &doc.headings[0];
-        assert_eq!(h.properties.get("TYPE").map(String::as_str), Some("bug"));
+        assert_eq!(
+            crate::props::get(&h.properties, crate::props::TYPE),
+            Some("bug")
+        );
         assert_eq!(h.org_tags, vec!["bug"]);
         let written = std::fs::read_to_string(layout.project_issues_path("sample")).unwrap();
         assert!(written.contains("#+CATEGORY: sample"), "{written}");
@@ -1964,14 +2039,14 @@ mod tests {
         let h = issue_at(&layout, "sample", &id);
         assert_eq!(h.state, "DONE", "first terminal must stay");
         assert_eq!(
-            h.properties.get("SIBLING_TERMINAL").map(String::as_str),
+            crate::props::get(&h.properties, crate::props::SIBLING_TERMINAL),
             Some("CANCELLED")
         );
 
         resolve_terminal(&layout, &id, "CANCELLED").unwrap();
         let h = issue_at(&layout, "sample", &id);
         assert_eq!(h.state, "CANCELLED");
-        assert!(!h.properties.contains_key("SIBLING_TERMINAL"));
+        assert!(crate::props::get(&h.properties, crate::props::SIBLING_TERMINAL).is_none());
     }
 
     #[test]
@@ -2027,5 +2102,31 @@ mod tests {
             "{}",
             report.text
         );
+    }
+
+    #[test]
+    fn normalize_rewrites_legacy_keys_and_keeps_edna() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        let path = layout.project_issues_path("sample");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "#+TITLE: sample issues\n#+TODO: TODO STARTED BLOCKED | DONE CANCELLED\n\n* TODO [#A] Legacy\n:PROPERTIES:\n:ID:         sample-aaaa\n:TYPE:       bug\n:PARENT:     sample-root\n:BLOCKEDBY:  sample-bbbb\n:END:\n\n* TODO [#A] Edna condition\n:PROPERTIES:\n:ID:         sample-cccc\n:BLOCKER:    prev-sibling\n:END:\n",
+        )
+        .unwrap();
+        let dry = normalize(&layout, Some("sample"), true).unwrap();
+        assert!(dry.contains("would rewrite"), "{dry}");
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(on_disk.contains(":TYPE:"), "{on_disk}");
+        let wrote = normalize(&layout, Some("sample"), false).unwrap();
+        assert!(wrote.contains("rewrote"), "{wrote}");
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(after.contains("#+CATEGORY: sample"), "{after}");
+        assert!(after.contains(":TYPE:       bug"), "{after}");
+        assert!(after.contains(":PARENT:"), "{after}");
+        assert!(after.contains(":BLOCKED_BY:"), "{after}");
+        assert!(after.contains("ids(sample-bbbb)"), "{after}");
+        assert!(after.contains("prev-sibling"), "{after}");
     }
 }

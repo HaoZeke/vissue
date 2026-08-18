@@ -49,20 +49,26 @@ fn issue_terms(project: &str, issue: &IssueHeading) -> IssueTerms {
         text.push_str(tag);
     }
     for (key, value) in &issue.properties {
-        if matches!(key.as_str(), "TYPE") || key == crate::model::TAGS_PROPERTY {
+        if matches!(key.as_str(), "TYPE" | "VISSUE_TYPE") || key == crate::model::TAGS_PROPERTY {
             text.push(' ');
             text.push_str(value);
         } else if !matches!(
             key.as_str(),
             "ID" | "CREATED"
+                | "VISSUE_BLOCKED_BY"
                 | "BLOCKED_BY"
+                | "VISSUE_PARENT"
                 | "PARENT"
                 | "DEADLINE"
                 | "SCHEDULED"
+                | "VISSUE_CLAIMED_BY"
                 | "CLAIMED_BY"
                 | "CLAIMED_AT"
+                | "VISSUE_DISCOVERED_FROM"
                 | "DISCOVERED_FROM"
+                | "VISSUE_PIVOTED_TO"
                 | "PIVOTED_TO"
+                | "VISSUE_SIBLING_TERMINAL"
                 | "SIBLING_TERMINAL"
         ) {
             text.push(' ');
@@ -225,11 +231,9 @@ pub fn related_hits_from(
                 neighbors.entry(blocker).or_default().push(index);
             }
         }
-        for key in ["DISCOVERED_FROM", "PIVOTED_TO"] {
-            if let Some(origin) = issue
-                .properties
-                .get(key)
-                .and_then(|origin| ids.get(origin.as_str()).copied())
+        for key in [crate::props::DISCOVERED_FROM, crate::props::PIVOTED_TO] {
+            if let Some(origin) = crate::props::get(&issue.properties, key)
+                .and_then(|origin| ids.get(origin).copied())
             {
                 neighbors.entry(index).or_default().push(origin);
                 neighbors.entry(origin).or_default().push(index);
@@ -288,16 +292,20 @@ pub fn related_hits_from(
         if issue.parent() == Some(id) {
             explicit.push("child");
         }
-        if issue.properties.get("DISCOVERED_FROM").map(String::as_str) == Some(id) {
+        if crate::props::get(&issue.properties, crate::props::DISCOVERED_FROM) == Some(id) {
             explicit.push("discovered_from");
         }
-        if target.properties.get("DISCOVERED_FROM").map(String::as_str) == Some(issue.id.as_str()) {
+        if crate::props::get(&target.properties, crate::props::DISCOVERED_FROM)
+            == Some(issue.id.as_str())
+        {
             explicit.push("source_of");
         }
-        if target.properties.get("PIVOTED_TO").map(String::as_str) == Some(issue.id.as_str()) {
+        if crate::props::get(&target.properties, crate::props::PIVOTED_TO)
+            == Some(issue.id.as_str())
+        {
             explicit.push("pivoted_to");
         }
-        if issue.properties.get("PIVOTED_TO").map(String::as_str) == Some(id) {
+        if crate::props::get(&issue.properties, crate::props::PIVOTED_TO) == Some(id) {
             explicit.push("successor_of");
         }
         if org_link_targets(&target.body, &known_ids)

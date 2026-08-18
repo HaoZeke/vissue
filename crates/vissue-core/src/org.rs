@@ -629,8 +629,10 @@ pub fn settle_heading_classifiers(
             org_tags.push(tag.to_string());
         }
     }
-    if let Some(kind) = properties.get("TYPE") {
-        push_tag(org_tags, kind.trim());
+    for key in ["VISSUE_TYPE", "TYPE"] {
+        if let Some(kind) = properties.get(key) {
+            push_tag(org_tags, kind.trim());
+        }
     }
     if let Some(raw) = properties.get(crate::model::TAGS_PROPERTY).cloned() {
         let mut kept = Vec::new();
@@ -651,7 +653,6 @@ pub fn settle_heading_classifiers(
             properties.insert(crate::model::TAGS_PROPERTY.to_string(), kept.join(","));
         }
     }
-    settle_blocker_aliases(properties);
 }
 
 /// Org specials that are computed. Writing them in a drawer does not
@@ -735,7 +736,7 @@ pub fn is_edna_blocker(raw: &str) -> bool {
 }
 
 /// Issue ids mentioned in an org-edna `ids(...)` / `id(...)` form.
-pub fn edna_blocker_ids(raw: &str) -> Vec<String> {
+pub fn edna_blocker_id_refs(raw: &str) -> Vec<&str> {
     let mut ids = Vec::new();
     let mut rest = raw;
     while let Some(start) = rest.find('(') {
@@ -743,14 +744,23 @@ pub fn edna_blocker_ids(raw: &str) -> Vec<String> {
             break;
         };
         let inner = &rest[start + 1..start + 1 + end];
-        for id in split_id_list(inner) {
-            if !id.contains('"') && !ids.iter().any(|seen| seen == &id) {
+        for id in inner.split(|c: char| c == ',' || c.is_whitespace()) {
+            let id = id.trim();
+            if !id.is_empty() && !id.contains('"') && !ids.iter().any(|seen| *seen == id) {
                 ids.push(id);
             }
         }
         rest = &rest[start + 1 + end + 1..];
     }
     ids
+}
+
+/// Issue ids mentioned in an org-edna `ids(...)` / `id(...)` form.
+pub fn edna_blocker_ids(raw: &str) -> Vec<String> {
+    edna_blocker_id_refs(raw)
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 /// Every blocker id a heading declares: `:BLOCKED_BY:`, a typo
@@ -760,7 +770,7 @@ pub fn blocker_ids_from_properties(
     properties: &std::collections::BTreeMap<String, String>,
 ) -> Vec<String> {
     let mut ids = Vec::new();
-    for key in ["BLOCKED_BY", "BLOCKEDBY"] {
+    for key in ["VISSUE_BLOCKED_BY", "BLOCKED_BY", "BLOCKEDBY"] {
         if let Some(raw) = properties.get(key) {
             for id in split_id_list(raw) {
                 if !ids.iter().any(|seen| seen == &id) {
@@ -782,32 +792,6 @@ pub fn blocker_ids_from_properties(
         }
     }
     ids
-}
-
-fn settle_blocker_aliases(properties: &mut std::collections::BTreeMap<String, String>) {
-    let mut extra = Vec::new();
-    if let Some(raw) = properties.remove("BLOCKEDBY") {
-        extra.extend(split_id_list(&raw));
-    }
-    if let Some(raw) = properties.get("BLOCKER").cloned()
-        && !is_edna_blocker(&raw)
-    {
-        extra.extend(split_id_list(&raw));
-        properties.remove("BLOCKER");
-    }
-    if extra.is_empty() {
-        return;
-    }
-    let mut ids = properties
-        .get("BLOCKED_BY")
-        .map(|s| split_id_list(s))
-        .unwrap_or_default();
-    for id in extra {
-        if !ids.iter().any(|seen| seen == &id) {
-            ids.push(id);
-        }
-    }
-    properties.insert("BLOCKED_BY".to_string(), ids.join(" "));
 }
 
 /// Effort value Org's column view and agenda effort filter read.
@@ -1279,20 +1263,9 @@ mod tests {
             blocker_ids_from_properties(&props),
             vec!["atlas-1a2b", "atlas-3e4f"]
         );
-        settle_heading_classifiers(&mut Vec::new(), &mut props);
-        assert_eq!(
-            props.get("BLOCKED_BY").map(String::as_str),
-            Some("atlas-1a2b atlas-3e4f")
-        );
-        assert!(!props.contains_key("BLOCKER"));
         let mut edna = std::collections::BTreeMap::new();
         edna.insert("BLOCKER".into(), "prev-sibling".into());
-        settle_heading_classifiers(&mut Vec::new(), &mut edna);
-        assert_eq!(
-            edna.get("BLOCKER").map(String::as_str),
-            Some("prev-sibling")
-        );
-        assert!(!edna.contains_key("BLOCKED_BY"));
+        assert!(blocker_ids_from_properties(&edna).is_empty());
     }
 
     #[test]

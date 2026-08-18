@@ -53,8 +53,8 @@ impl DependencyGraph {
             graph.ids.insert(issue.id.clone(), node);
         }
         for issue in &headings {
-            for blocker in blocker_ids(issue) {
-                let Some(&from) = graph.ids.get(blocker) else {
+            for blocker in issue.blocked_by() {
+                let Some(&from) = graph.ids.get(&blocker) else {
                     continue;
                 };
                 let to = graph.ids[&issue.id];
@@ -167,14 +167,4 @@ impl DependencyGraph {
         result.sort();
         Ok(result)
     }
-}
-
-fn blocker_ids(issue: &IssueHeading) -> impl Iterator<Item = &str> {
-    issue
-        .properties
-        .get("BLOCKED_BY")
-        .into_iter()
-        .flat_map(|raw| raw.split(|c: char| c == ',' || c.is_whitespace()))
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
 }

@@ -55,10 +55,12 @@ defaulting to =C=.
 =:BLOCKED_BY:=, =:VISSUE_TAGS:=, =:TYPE:=, =:CLAIMED_BY:=, =:CLAIMED_AT:=,
 and =:DISCOVERED_FROM:= are read by the query verbs. =:TYPE:= is also
 written as a heading tag when Org's tag character class allows it, which
-is the form tag search sees. Any other property is preserved untouched,
-in the order it appears on disk. =check= names a file whose preamble
-has no =#+CATEGORY:=, and a project whose types never made it onto the
-heading.
+is the form tag search sees. =:BLOCKED_BY:= is mirrored to =:BLOCKER:
+ids(...)= so GNU ELPA org-edna sees the same edge. Any other property is
+preserved untouched, in the order it appears on disk. =check= names a
+file whose preamble has no =#+CATEGORY:=, and a project whose types
+never made it onto the heading. =vissue normalize= rewrites a tracker
+onto that shape; =--dry-run= prints the files that would change.
 
 =:BLOCKED_BY:= accepts commas, whitespace, or both. =:PARENT:= may name
 another issue or any Org heading with an =:ID:= under the tracker prefix, so a

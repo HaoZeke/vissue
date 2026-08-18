@@ -478,6 +478,7 @@ fn dispatch_create(
             parent: params.parent.as_deref(),
             quiet: false,
             body: params.body.as_deref(),
+            extra_ids: &[],
         },
     )
     .map_err(map_core)?;

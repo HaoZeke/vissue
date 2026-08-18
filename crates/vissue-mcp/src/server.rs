@@ -8,16 +8,17 @@ use rmcp::{
 use vissue_core::config::Layout;
 use vissue_core::mirror::{self, Format};
 use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
-use vissue_core::store;
+use vissue_core::router::Router;
 use vissue_core::{agent, events, report};
 
 use crate::tools::*;
 
 /// The tool router is built by `#[tool_handler]` through `Self::tool_router()`,
-/// so the server carries only the layout it acts on.
+/// so the server carries the default layout and the user-level project router.
 #[derive(Clone)]
 pub struct VissueServer {
     layout: Layout,
+    router: Router,
 }
 
 fn text<E: std::fmt::Display>(result: Result<String, E>) -> Result<CallToolResult, McpError> {
@@ -42,18 +43,33 @@ fn json<E: std::fmt::Display>(
 #[tool_router]
 impl VissueServer {
     /// Resolve the layout from `VISSUE_ROOT` and `VISSUE_PREFIX`, or the
-    /// current directory.
+    /// current directory, then load the user-level route table.
     pub fn from_env() -> anyhow::Result<Self> {
-        Ok(Self::with_layout(Layout::resolve(None, None)?))
+        let layout = Layout::resolve(None, None)?;
+        let router = Router::load(layout.clone())?;
+        Ok(Self { layout, router })
     }
 
+    #[cfg(test)]
     pub fn with_layout(layout: Layout) -> Self {
-        Self { layout }
+        Self {
+            router: Router::unrouted(layout.clone()),
+            layout,
+        }
+    }
+
+    fn layout_for_id(&self, id: &str) -> vissue_core::Result<Layout> {
+        Ok(self.router.find_by_id(id)?.layout)
     }
 
     #[tool(description = "List the projects that hold an issues.org under the tracker root.")]
     async fn vissue_projects(&self) -> Result<CallToolResult, McpError> {
-        text(store::list_projects(&self.layout).map(|ps| format!("{}\n", ps.join("\n"))))
+        text(self.router.visible_projects().map(|ps| {
+            format!(
+                "{}\n",
+                ps.into_iter().map(|p| p.key).collect::<Vec<_>>().join("\n")
+            )
+        }))
     }
 
     #[tool(description = "List issues, optionally filtered by project and state.")]
@@ -61,8 +77,8 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<ListArgs>,
     ) -> Result<CallToolResult, McpError> {
-        json(agent::issues_json(
-            &self.layout,
+        json(issues_json_routed(
+            &self.router,
             args.project.as_deref(),
             args.state.as_deref(),
             false,
@@ -74,8 +90,8 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<ProjectArgs>,
     ) -> Result<CallToolResult, McpError> {
-        json(agent::issues_json(
-            &self.layout,
+        json(issues_json_routed(
+            &self.router,
             args.project.as_deref(),
             None,
             true,
@@ -87,7 +103,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<IdArgs>,
     ) -> Result<CallToolResult, McpError> {
-        json(agent::show_json(&self.layout, &args.issue_id))
+        json(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| agent::show_json(&layout, &args.issue_id)),
+        )
     }
 
     #[tool(description = "Create an issue in a project's issues.org.")]
@@ -95,8 +114,8 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<CreateArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(ops::create(
-            &self.layout,
+        text(create_routed(
+            &self.router,
             &args.project,
             &args.title,
             CreateOpts {
@@ -117,16 +136,18 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<RejectArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(ops::reject(
-            &self.layout,
-            &args.issue_id,
-            RejectOpts {
-                to: args.to.as_deref(),
-                project: args.project.as_deref(),
-                title: args.title.as_deref(),
-                reason: args.reason.as_deref(),
-            },
-        ))
+        text(self.layout_for_id(&args.issue_id).and_then(|layout| {
+            ops::reject(
+                &layout,
+                &args.issue_id,
+                RejectOpts {
+                    to: args.to.as_deref(),
+                    project: args.project.as_deref(),
+                    title: args.title.as_deref(),
+                    reason: args.reason.as_deref(),
+                },
+            )
+        }))
     }
 
     #[tool(description = "Pick one terminal after a sibling close (DONE or CANCELLED).")]
@@ -134,11 +155,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<ResolveArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(ops::resolve_terminal(
-            &self.layout,
-            &args.issue_id,
-            &args.state,
-        ))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| ops::resolve_terminal(&layout, &args.issue_id, &args.state)),
+        )
     }
 
     #[tool(description = "Update an issue's state, priority, or blocker edges.")]
@@ -146,18 +166,20 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<UpdateArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let outcome = ops::update_pred(
-            &self.layout,
-            &args.issue_id,
-            args.state.as_deref(),
-            priority_char(args.priority.as_ref()),
-            args.block.as_deref(),
-            args.unblock.as_deref(),
-            UpdatePred {
-                if_state: args.if_state.as_deref(),
-                if_gen: args.if_gen,
-            },
-        );
+        let outcome = self.layout_for_id(&args.issue_id).and_then(|layout| {
+            ops::update_pred(
+                &layout,
+                &args.issue_id,
+                args.state.as_deref(),
+                priority_char(args.priority.as_ref()),
+                args.block.as_deref(),
+                args.unblock.as_deref(),
+                UpdatePred {
+                    if_state: args.if_state.as_deref(),
+                    if_gen: args.if_gen,
+                },
+            )
+        });
         text(outcome.map(|o| {
             let mut s = o.report;
             for hint in o.hints {
@@ -172,11 +194,11 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<ClaimArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(agent::claim(
-            &self.layout,
-            &args.issue_id,
-            args.force.unwrap_or(false),
-        ))
+        text(
+            self.layout_for_id(&args.issue_id).and_then(|layout| {
+                agent::claim(&layout, &args.issue_id, args.force.unwrap_or(false))
+            }),
+        )
     }
 
     #[tool(
@@ -186,7 +208,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<AppendArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(ops::append_body(&self.layout, &args.issue_id, &args.text))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| ops::append_body(&layout, &args.issue_id, &args.text)),
+        )
     }
 
     #[tool(description = "Add a dated note to an issue's logbook without touching state or claim.")]
@@ -194,7 +219,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<NoteArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(ops::note(&self.layout, &args.issue_id, &args.text))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| ops::note(&layout, &args.issue_id, &args.text)),
+        )
     }
 
     #[tool(description = "Every live claim, oldest first: who holds what issue, and for how long.")]
@@ -231,11 +259,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<FoldArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(ops::fold(
-            &self.layout,
-            std::path::Path::new(&args.file),
-            &args.project,
-        ))
+        text({
+            let pref = self.router.route(&args.project);
+            ops::fold(&pref.layout, std::path::Path::new(&args.file), &pref.dir)
+        })
     }
 
     #[tool(description = "Count issues, optionally filtered by project, state, or readiness.")]
@@ -268,13 +295,15 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<RelatedArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(report::related(
-            &self.layout,
-            &args.issue_id,
-            args.depth.unwrap_or(2),
-            args.limit.unwrap_or(20),
-            args.format.as_deref().unwrap_or("text"),
-        ))
+        text(self.layout_for_id(&args.issue_id).and_then(|layout| {
+            report::related(
+                &layout,
+                &args.issue_id,
+                args.depth.unwrap_or(2),
+                args.limit.unwrap_or(20),
+                args.format.as_deref().unwrap_or("text"),
+            )
+        }))
     }
 
     #[tool(description = "List issues whose PARENT property matches this id.")]
@@ -282,7 +311,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<IdArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(report::children(&self.layout, &args.issue_id))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| report::children(&layout, &args.issue_id)),
+        )
     }
 
     #[tool(description = "List issues that refer to this id through any relation.")]
@@ -290,7 +322,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<IdArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(report::backlinks(&self.layout, &args.issue_id))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| report::backlinks(&layout, &args.issue_id)),
+        )
     }
 
     #[tool(description = "Issues waiting on this id. Dependency hygiene alias for backlinks.")]
@@ -298,7 +333,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<IdArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(agent::waiting_on(&self.layout, &args.issue_id))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| agent::waiting_on(&layout, &args.issue_id)),
+        )
     }
 
     #[tool(description = "The first lines of an issue's file range, screened for secrets.")]
@@ -306,7 +344,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<IdArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(agent::body_excerpt(&self.layout, &args.issue_id))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| agent::body_excerpt(&layout, &args.issue_id)),
+        )
     }
 
     #[tool(
@@ -316,7 +357,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<IdArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(agent::org_text(&self.layout, &args.issue_id))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| agent::org_text(&layout, &args.issue_id)),
+        )
     }
 
     #[tool(description = "Children and blockers below an id, as ascii indent or Graphviz DOT.")]
@@ -324,11 +368,13 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<TreeArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(report::tree(
-            &self.layout,
-            &args.issue_id,
-            args.format.as_deref().unwrap_or("ascii"),
-        ))
+        text(self.layout_for_id(&args.issue_id).and_then(|layout| {
+            report::tree(
+                &layout,
+                &args.issue_id,
+                args.format.as_deref().unwrap_or("ascii"),
+            )
+        }))
     }
 
     #[tool(description = "The blocker and parent graph as Graphviz DOT.")]
@@ -445,13 +491,9 @@ impl VissueServer {
 
     #[tool(description = "Report the server version and the resolved root and prefix.")]
     async fn vissue_identity(&self) -> Result<CallToolResult, McpError> {
-        text(Ok::<_, vissue_core::error::Error>(format!(
-            "vissue-mcp {}\nroot:   {}\nprefix: {}\nroot={}\nprefix={}\n",
-            env!("CARGO_PKG_VERSION"),
-            self.layout.root().display(),
-            self.layout.prefix(),
-            self.layout.root().display(),
-            self.layout.prefix()
+        text(Ok::<_, vissue_core::error::Error>(identity_report(
+            &self.layout,
+            &self.router,
         )))
     }
 
@@ -460,11 +502,11 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<DepthArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(report::ancestors(
-            &self.layout,
-            &args.issue_id,
-            args.depth.unwrap_or(3),
-        ))
+        text(
+            self.layout_for_id(&args.issue_id).and_then(|layout| {
+                report::ancestors(&layout, &args.issue_id, args.depth.unwrap_or(3))
+            }),
+        )
     }
 
     #[tool(description = "Issues transitively waiting on this id, bounded by hop depth.")]
@@ -472,11 +514,11 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<DepthArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(report::impact(
-            &self.layout,
-            &args.issue_id,
-            args.depth.unwrap_or(3),
-        ))
+        text(
+            self.layout_for_id(&args.issue_id).and_then(|layout| {
+                report::impact(&layout, &args.issue_id, args.depth.unwrap_or(3))
+            }),
+        )
     }
 
     #[tool(description = "Cycles in the blocker graph, or a line saying there are none.")]
@@ -489,7 +531,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<RefileArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(ops::refile(&self.layout, &args.issue_id, &args.to))
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| ops::refile(&layout, &args.issue_id, &args.to)),
+        )
     }
 
     #[tool(
@@ -508,7 +553,10 @@ impl VissueServer {
             };
             return text(
                 events::wait_until_terminal(
-                    &self.layout,
+                    &match self.layout_for_id(id) {
+                        Ok(layout) => layout,
+                        Err(e) => return text(Err(e)),
+                    },
                     id,
                     args.poll_ms.unwrap_or(200),
                     args.timeout_ms.unwrap_or(10_000),
@@ -548,6 +596,70 @@ impl VissueServer {
             vissue_core::config::identity(&self.layout)
         )))
     }
+}
+
+fn create_routed(
+    router: &Router,
+    project: &str,
+    title: &str,
+    opts: CreateOpts<'_>,
+) -> vissue_core::Result<String> {
+    let pref = router.route(project);
+    let extra = router.extra_ids_for(&pref.dir)?;
+    let opts = CreateOpts {
+        extra_ids: &extra,
+        ..opts
+    };
+    ops::create(&pref.layout, &pref.dir, title, opts)
+}
+
+fn issues_json_routed(
+    router: &Router,
+    project: Option<&str>,
+    state: Option<&str>,
+    ready_only: bool,
+) -> vissue_core::Result<serde_json::Value> {
+    if let Some(p) = project {
+        let pref = router.route(p);
+        return agent::issues_json(&pref.layout, Some(&pref.dir), state, ready_only);
+    }
+    let mut rows = Vec::new();
+    for pref in router.visible_projects()? {
+        let value = agent::issues_json(&pref.layout, Some(&pref.dir), state, ready_only)?;
+        if let Some(arr) = value.as_array() {
+            rows.extend(arr.iter().cloned());
+        }
+    }
+    Ok(serde_json::Value::Array(rows))
+}
+
+fn identity_report(layout: &Layout, router: &Router) -> String {
+    let mut out = format!(
+        "vissue-mcp {}\nroot:   {}\nprefix: {}\nroot={}\nprefix={}\n",
+        env!("CARGO_PKG_VERSION"),
+        layout.root().display(),
+        layout.prefix(),
+        layout.root().display(),
+        layout.prefix()
+    );
+    if let Ok(prefs) = router.visible_projects() {
+        for pref in prefs {
+            if pref.key == pref.dir
+                && pref.layout.root() == layout.root()
+                && pref.layout.prefix() == layout.prefix()
+            {
+                continue;
+            }
+            out.push_str(&format!(
+                "route: {} -> {} {} {}\n",
+                pref.key,
+                pref.layout.root().display(),
+                pref.layout.prefix(),
+                pref.dir
+            ));
+        }
+    }
+    out
 }
 
 #[tool_handler]

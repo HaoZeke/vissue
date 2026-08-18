@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use vissue_core::config::Layout;
 use vissue_core::mirror::{self, Format};
 use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
+use vissue_core::router::Router;
 use vissue_core::store;
 use vissue_core::{agent, events, report};
 
@@ -68,6 +69,11 @@ struct Cli {
     /// back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`.
     #[arg(long, global = true)]
     prefix: Option<String>,
+
+    /// Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep
+    /// every verb on the process default layout.
+    #[arg(long, global = true)]
+    no_route: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -555,9 +561,37 @@ fn main() {
     }
 }
 
+fn build_router(cli: &Cli) -> Result<Router> {
+    let default = Layout::resolve(cli.root.as_deref(), cli.prefix.as_deref())?;
+    if cli.no_route {
+        return Ok(Router::unrouted(default));
+    }
+    Ok(Router::load(default)?)
+}
+
+fn create_routed(
+    router: &Router,
+    project: &str,
+    title: &str,
+    opts: CreateOpts<'_>,
+) -> Result<String> {
+    let pref = router.route(project);
+    let extra = router.extra_ids_for(&pref.dir)?;
+    let opts = CreateOpts {
+        extra_ids: &extra,
+        ..opts
+    };
+    Ok(ops::create(&pref.layout, &pref.dir, title, opts)?)
+}
+
+fn layout_for_id(router: &Router, id: &str) -> Result<Layout> {
+    Ok(router.find_by_id(id)?.layout)
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let layout = Layout::resolve(cli.root.as_deref(), cli.prefix.as_deref())?;
+    let router = build_router(&cli)?;
+    let layout = router.default_layout().clone();
 
     match cli.command {
         Command::Create {
@@ -579,8 +613,8 @@ fn run() -> Result<()> {
                 (None, Some(path)) => Some(read_body_file(&path)?),
                 (None, None) => None,
             };
-            let out = ops::create(
-                &layout,
+            let out = create_routed(
+                &router,
                 &project,
                 &title,
                 CreateOpts {
@@ -592,6 +626,7 @@ fn run() -> Result<()> {
                     parent: parent.as_deref(),
                     quiet,
                     body: body_text.as_deref(),
+                    ..Default::default()
                 },
             )?;
             emit!("{out}");
@@ -603,8 +638,8 @@ fn run() -> Result<()> {
             parent,
         } => {
             let project = ops::resolve_project(&layout, project.as_deref())?;
-            let out = ops::create(
-                &layout,
+            let out = create_routed(
+                &router,
                 &project,
                 &title,
                 CreateOpts {
@@ -622,26 +657,33 @@ fn run() -> Result<()> {
             json,
         } => {
             if json {
-                let rows =
-                    agent::issues_json(&layout, project.as_deref(), state.as_deref(), false)?;
-                emitln!("{}", serde_json::to_string_pretty(&rows)?);
+                emitln!(
+                    "{}",
+                    serde_json::to_string_pretty(&issues_json_routed(
+                        &router,
+                        project.as_deref(),
+                        state.as_deref(),
+                        false
+                    )?)?
+                );
             } else {
                 emit!(
                     "{}",
-                    report::list(&layout, project.as_deref(), state.as_deref(), false)?
+                    list_routed(&router, project.as_deref(), state.as_deref(), false)?
                 );
             }
         }
         Command::Show { id, json, org } => {
+            let found = layout_for_id(&router, &id)?;
             if json {
                 emitln!(
                     "{}",
-                    serde_json::to_string_pretty(&agent::show_json(&layout, &id)?)?
+                    serde_json::to_string_pretty(&agent::show_json(&found, &id)?)?
                 );
             } else if org {
-                emit!("{}", agent::org_text(&layout, &id)?);
+                emit!("{}", agent::org_text(&found, &id)?);
             } else {
-                emit!("{}", report::show(&layout, &id)?);
+                emit!("{}", report::show(&found, &id)?);
             }
         }
         Command::Update {
@@ -653,8 +695,9 @@ fn run() -> Result<()> {
             if_state,
             if_gen,
         } => {
+            let found = layout_for_id(&router, &id)?;
             let outcome = ops::update_pred(
-                &layout,
+                &found,
                 &id,
                 state.as_deref(),
                 priority,
@@ -670,35 +713,51 @@ fn run() -> Result<()> {
                 eprintln!("[hint] {hint}");
             }
         }
-        Command::Resolve { id, state } => emit!("{}", ops::resolve_terminal(&layout, &id, &state)?),
+        Command::Resolve { id, state } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", ops::resolve_terminal(&found, &id, &state)?)
+        }
         Command::Reject {
             id,
             to,
             project,
             title,
             reason,
-        } => emit!(
-            "{}",
-            ops::reject(
-                &layout,
-                &id,
-                RejectOpts {
-                    to: to.as_deref(),
-                    project: project.as_deref(),
-                    title: title.as_deref(),
-                    reason: reason.as_deref(),
-                },
-            )?
-        ),
+        } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!(
+                "{}",
+                ops::reject(
+                    &found,
+                    &id,
+                    RejectOpts {
+                        to: to.as_deref(),
+                        project: project.as_deref(),
+                        title: title.as_deref(),
+                        reason: reason.as_deref(),
+                    },
+                )?
+            )
+        }
         Command::Ready { project, json } => {
             if json {
-                let rows = agent::issues_json(&layout, project.as_deref(), None, true)?;
-                emitln!("{}", serde_json::to_string_pretty(&rows)?);
+                emitln!(
+                    "{}",
+                    serde_json::to_string_pretty(&issues_json_routed(
+                        &router,
+                        project.as_deref(),
+                        None,
+                        true
+                    )?)?
+                );
             } else {
-                emit!("{}", report::ready(&layout, project.as_deref())?);
+                emit!("{}", list_routed(&router, project.as_deref(), None, true)?);
             }
         }
-        Command::Claim { id, force } => emit!("{}", agent::claim(&layout, &id, force)?),
+        Command::Claim { id, force } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", agent::claim(&found, &id, force)?)
+        }
         Command::Append { id, text, file } => {
             let body = match (text, file) {
                 (Some(t), None) => t,
@@ -706,40 +765,63 @@ fn run() -> Result<()> {
                 (None, None) => bail!("pass --text or --file (`-` reads stdin)"),
                 (Some(_), Some(_)) => unreachable!("clap rejects both"),
             };
-            emit!("{}", ops::append_body(&layout, &id, &body)?)
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", ops::append_body(&found, &id, &body)?)
         }
         Command::Note { id, text } => {
-            emit!("{}", ops::note(&layout, &id, &text.join(" "))?)
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", ops::note(&found, &id, &text.join(" "))?)
         }
-        Command::Claims { by, project, json } => emit!(
-            "{}",
-            report::claims(&layout, by.as_deref(), project.as_deref(), json)?
-        ),
+        Command::Claims { by, project, json } => {
+            emit!(
+                "{}",
+                claims_routed(&router, by.as_deref(), project.as_deref(), json)?
+            )
+        }
         Command::Fold { file, project } => {
             let project = ops::resolve_project(&layout, project.as_deref())?;
-            emit!("{}", ops::fold(&layout, &file, &project)?)
+            let pref = router.route(&project);
+            emit!("{}", ops::fold(&pref.layout, &file, &pref.dir)?)
         }
         Command::Agenda { days, project } => {
-            emit!("{}", report::agenda(&layout, days, project.as_deref())?)
+            emit!("{}", agenda_routed(&router, days, project.as_deref())?)
         }
-        Command::Hygiene { stale_days } => emit!("{}", agent::hygiene(&layout, stale_days)?),
+        Command::Hygiene { stale_days } => emit!("{}", hygiene_routed(&router, stale_days)?),
         Command::Whoami => emitln!("{}", vissue_core::config::identity(&layout)),
-        Command::WaitingOn { id } => emit!("{}", agent::waiting_on(&layout, &id)?),
-        Command::BodyExcerpt { id } => emit!("{}", agent::body_excerpt(&layout, &id)?),
-        Command::Search { query, limit } => {
-            emit!("{}", report::search(&layout, &query, limit)?)
+        Command::WaitingOn { id } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", agent::waiting_on(&found, &id)?)
         }
-        Command::Children { id } => emit!("{}", report::children(&layout, &id)?),
-        Command::Ancestors { id, depth } => emit!("{}", report::ancestors(&layout, &id, depth)?),
-        Command::Impact { id, depth } => emit!("{}", report::impact(&layout, &id, depth)?),
+        Command::BodyExcerpt { id } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", agent::body_excerpt(&found, &id)?)
+        }
+        Command::Search { query, limit } => {
+            emit!("{}", search_routed(&router, &query, limit)?)
+        }
+        Command::Children { id } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", report::children(&found, &id)?)
+        }
+        Command::Ancestors { id, depth } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", report::ancestors(&found, &id, depth)?)
+        }
+        Command::Impact { id, depth } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", report::impact(&found, &id, depth)?)
+        }
         Command::Related {
             id,
             depth,
             limit,
             format,
-        } => emit!("{}", report::related(&layout, &id, depth, limit, &format)?),
+        } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", report::related(&found, &id, depth, limit, &format)?)
+        }
         Command::Stale { days, project } => {
-            emit!("{}", report::stale(&layout, days, project.as_deref())?)
+            emit!("{}", stale_routed(&router, days, project.as_deref())?)
         }
         Command::Count {
             project,
@@ -747,20 +829,31 @@ fn run() -> Result<()> {
             ready,
         } => emit!(
             "{}",
-            report::count(&layout, project.as_deref(), state.as_deref(), ready)?
+            count_routed(&router, project.as_deref(), state.as_deref(), ready)?
         ),
-        Command::Export { project } => emit!("{}", report::export(&layout, project.as_deref())?),
-        Command::Tree { id, format } => emit!("{}", report::tree(&layout, &id, &format)?),
-        Command::Cycles => emit!("{}", report::cycles(&layout)?),
-        Command::Graph { project } => emit!("{}", report::graph(&layout, project.as_deref())?),
-        Command::Refile { id, to } => emit!("{}", ops::refile(&layout, &id, &to)?),
-        Command::Backlinks { id } => emit!("{}", report::backlinks(&layout, &id)?),
-        Command::Roadmap { project } => emit!("{}", report::roadmap(&layout, project.as_deref())?),
+        Command::Export { project } => emit!("{}", export_routed(&router, project.as_deref())?),
+        Command::Tree { id, format } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", report::tree(&found, &id, &format)?)
+        }
+        Command::Cycles => emit!("{}", cycles_routed(&router)?),
+        Command::Graph { project } => emit!("{}", graph_routed(&router, project.as_deref())?),
+        Command::Refile { id, to } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", ops::refile(&found, &id, &to)?)
+        }
+        Command::Backlinks { id } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", report::backlinks(&found, &id)?)
+        }
+        Command::Roadmap { project } => {
+            emit!("{}", roadmap_routed(&router, project.as_deref())?)
+        }
         Command::Check => {
-            let out = report::check(&layout)?;
-            emit!("{}", out.text);
-            if out.errors > 0 {
-                bail!("{} validation error(s)", out.errors);
+            let (text, errors) = check_routed(&router)?;
+            emit!("{}", text);
+            if errors > 0 {
+                bail!("{errors} validation error(s)");
             }
         }
         Command::Digest {
@@ -826,7 +919,8 @@ fn run() -> Result<()> {
                 let Some(id) = id else {
                     bail!("--until-terminal requires --id");
                 };
-                match events::wait_until_terminal(&layout, &id, poll_ms, timeout_ms)? {
+                let found = layout_for_id(&router, &id)?;
+                match events::wait_until_terminal(&found, &id, poll_ms, timeout_ms)? {
                     events::TerminalWait::Done { generation } => {
                         emitln!("DONE {generation}");
                     }
@@ -850,8 +944,8 @@ fn run() -> Result<()> {
         }
         Command::Gen => emitln!("{}", events::generation(&layout)),
         Command::Projects => {
-            for project in store::list_projects(&layout)? {
-                emitln!("{project}");
+            for project in router.visible_projects()? {
+                emitln!("{}", project.key);
             }
         }
         Command::Completions { shell } => {
@@ -930,6 +1024,23 @@ fn run() -> Result<()> {
             emitln!("prefix: {}", layout.prefix());
             emitln!("root={}", layout.root().display());
             emitln!("prefix={}", layout.prefix());
+            if router.is_routed() {
+                for pref in router.visible_projects()? {
+                    if pref.key == pref.dir
+                        && pref.layout.root() == layout.root()
+                        && pref.layout.prefix() == layout.prefix()
+                    {
+                        continue;
+                    }
+                    emitln!(
+                        "route: {} -> {} {} {}",
+                        pref.key,
+                        pref.layout.root().display(),
+                        pref.layout.prefix(),
+                        pref.dir
+                    );
+                }
+            }
         }
         Command::Serve(args) => {
             let socket = args
@@ -1151,6 +1262,172 @@ fn exec_hud(opts: ExecHud) -> Result<()> {
         }
         bail!("{} exited without a status", bin.display());
     }
+}
+
+fn list_routed(
+    router: &Router,
+    project: Option<&str>,
+    state: Option<&str>,
+    ready_only: bool,
+) -> Result<String> {
+    if let Some(p) = project {
+        let pref = router.route(p);
+        return if ready_only {
+            Ok(report::ready(&pref.layout, Some(&pref.dir))?)
+        } else {
+            Ok(report::list(&pref.layout, Some(&pref.dir), state, false)?)
+        };
+    }
+    let mut out = String::new();
+    for pref in router.visible_projects()? {
+        let chunk = if ready_only {
+            report::ready(&pref.layout, Some(&pref.dir))?
+        } else {
+            report::list(&pref.layout, Some(&pref.dir), state, false)?
+        };
+        out.push_str(&chunk);
+    }
+    Ok(out)
+}
+
+fn issues_json_routed(
+    router: &Router,
+    project: Option<&str>,
+    state: Option<&str>,
+    ready_only: bool,
+) -> Result<serde_json::Value> {
+    if let Some(p) = project {
+        let pref = router.route(p);
+        return Ok(agent::issues_json(
+            &pref.layout,
+            Some(&pref.dir),
+            state,
+            ready_only,
+        )?);
+    }
+    let mut rows = Vec::new();
+    for pref in router.visible_projects()? {
+        let value = agent::issues_json(&pref.layout, Some(&pref.dir), state, ready_only)?;
+        if let Some(arr) = value.as_array() {
+            rows.extend(arr.iter().cloned());
+        }
+    }
+    Ok(serde_json::Value::Array(rows))
+}
+
+fn count_routed(
+    router: &Router,
+    project: Option<&str>,
+    state: Option<&str>,
+    ready: bool,
+) -> Result<String> {
+    if let Some(p) = project {
+        let pref = router.route(p);
+        return Ok(report::count(&pref.layout, Some(&pref.dir), state, ready)?);
+    }
+    let mut n = 0usize;
+    for pref in router.visible_projects()? {
+        let text = report::count(&pref.layout, Some(&pref.dir), state, ready)?;
+        n += text.trim().parse::<usize>().unwrap_or(0);
+    }
+    Ok(format!("{n}\n"))
+}
+
+fn claims_routed(
+    router: &Router,
+    by: Option<&str>,
+    project: Option<&str>,
+    json: bool,
+) -> Result<String> {
+    concat_project_reports(router, project, |layout, filter| {
+        report::claims(layout, by, filter, json)
+    })
+}
+
+fn agenda_routed(router: &Router, days: i64, project: Option<&str>) -> Result<String> {
+    concat_project_reports(router, project, |layout, filter| {
+        report::agenda(layout, days, filter)
+    })
+}
+
+fn stale_routed(router: &Router, days: i64, project: Option<&str>) -> Result<String> {
+    concat_project_reports(router, project, |layout, filter| {
+        report::stale(layout, days, filter)
+    })
+}
+
+fn export_routed(router: &Router, project: Option<&str>) -> Result<String> {
+    concat_project_reports(router, project, report::export)
+}
+
+fn graph_routed(router: &Router, project: Option<&str>) -> Result<String> {
+    concat_project_reports(router, project, report::graph)
+}
+
+fn roadmap_routed(router: &Router, project: Option<&str>) -> Result<String> {
+    concat_project_reports(router, project, report::roadmap)
+}
+
+fn concat_project_reports(
+    router: &Router,
+    project: Option<&str>,
+    mut f: impl FnMut(&Layout, Option<&str>) -> vissue_core::Result<String>,
+) -> Result<String> {
+    if let Some(p) = project {
+        let pref = router.route(p);
+        return Ok(f(&pref.layout, Some(&pref.dir))?);
+    }
+    let mut out = String::new();
+    for pref in router.visible_projects()? {
+        out.push_str(&f(&pref.layout, Some(&pref.dir))?);
+    }
+    Ok(out)
+}
+
+fn search_routed(router: &Router, query: &str, limit: usize) -> Result<String> {
+    let mut out = String::new();
+    for layout in router.unique_layouts() {
+        out.push_str(&report::search(layout, query, limit)?);
+    }
+    Ok(out)
+}
+
+fn hygiene_routed(router: &Router, stale_days: Option<i64>) -> Result<String> {
+    let mut out = String::new();
+    for layout in router.unique_layouts() {
+        out.push_str(&agent::hygiene(layout, stale_days)?);
+    }
+    Ok(out)
+}
+
+fn cycles_routed(router: &Router) -> Result<String> {
+    let mut out = String::new();
+    for layout in router.unique_layouts() {
+        out.push_str(&report::cycles(layout)?);
+    }
+    Ok(out)
+}
+
+fn check_routed(router: &Router) -> Result<(String, usize)> {
+    let mut text = String::new();
+    let mut errors = 0usize;
+    for layout in router.unique_layouts() {
+        let report = report::check(layout)?;
+        text.push_str(&report.text);
+        errors += report.errors;
+    }
+    for (id, paths) in router.duplicate_ids()? {
+        errors += 1;
+        let listed = paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        text.push_str(&format!(
+            "[err]  duplicate id across layouts: {id} in {listed}\n"
+        ));
+    }
+    Ok((text, errors))
 }
 
 fn read_body_file(path: &str) -> Result<String> {

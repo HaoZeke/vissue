@@ -44,26 +44,11 @@ pub const YELLOW: Color = Color::from_rgb8(0xf9, 0xe2, 0xaf);
 
 /// Mocha mapped onto icedtea's semantic tokens.
 ///
-/// Start from the catalog mocha, then set the seat colors. icedtea
-/// rebuilds the scheme from those aliases.
+/// Seat colors are the mocha aliases (canvas through border). Density,
+/// corners, and elevation are Compact / Material / Flat.
 pub fn tokens() -> Tokens {
-    let mut tok = icedtea::theme::named("catppuccin-mocha").tokens;
-    tok.accent = PEACH;
-    tok.success = GREEN;
-    tok.warning = YELLOW;
-    tok.danger = RED;
-    icedtea::theme::apply_os_chrome(
-        tok,
-        true,
-        icedtea::theme::OsChrome {
-            primary: Some(BLUE),
-            canvas: Some(BASE),
-            surface: Some(SURFACE0),
-            panel: Some(MANTLE),
-            text: Some(TEXT),
-            muted: Some(SUBTEXT),
-            border: Some(OVERLAY1),
-        },
+    Tokens::from_aliases(
+        BASE, SURFACE0, MANTLE, TEXT, SUBTEXT, BLUE, PEACH, GREEN, YELLOW, RED, OVERLAY1,
     )
     .with_density(Density::named(DensityName::Compact))
     .with_shape(ShapePolicy::Material)
@@ -103,11 +88,18 @@ mod tests {
     fn theme_uses_mocha_tokens() {
         let t = tokens();
         assert_eq!(t.canvas, BASE);
+        assert_eq!(t.surface, SURFACE0);
+        assert_eq!(t.panel, MANTLE);
+        assert_eq!(t.text, TEXT);
+        assert_eq!(t.muted, SUBTEXT);
         assert_eq!(t.primary, BLUE);
-        assert_eq!(t.danger, RED);
+        assert_eq!(t.accent, PEACH);
         assert_eq!(t.success, GREEN);
+        assert_eq!(t.warning, YELLOW);
+        assert_eq!(t.danger, RED);
         assert_eq!(t.border, OVERLAY1);
         assert_eq!(t.selection, icedtea::theme::mix(BLUE, BASE, 0.28));
+        assert_eq!(t.selection_text, TEXT);
         assert_eq!(t.density.name, DensityName::Compact);
         assert_eq!(t.shape, ShapePolicy::Material);
         assert_eq!(t.elevation, ElevationPolicy::Flat);

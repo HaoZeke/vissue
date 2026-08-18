@@ -401,7 +401,7 @@ pub fn ping_report(layout: &Layout, detail: Option<&str>) -> Result<String> {
 
 /// Block until the generation passes `last`, or the timeout expires. Returns
 /// the generation either way; the caller compares it against `last` to tell
-/// which happened.
+/// which happened. A `timeout_ms` of 0 is a peek: it never sleeps.
 ///
 /// # Errors
 ///
@@ -410,15 +410,18 @@ pub fn ping_report(layout: &Layout, detail: Option<&str>) -> Result<String> {
 pub fn wait_generation(layout: &Layout, last: u64, poll_ms: u64, timeout_ms: u64) -> Result<u64> {
     let dir = events_dir(layout);
     let start = std::time::Instant::now();
+    let poll = poll_ms.max(1);
     loop {
         let g = generation_in(&dir);
         if g > last {
             return Ok(g);
         }
-        if start.elapsed().as_millis() as u64 >= timeout_ms {
+        let elapsed = start.elapsed().as_millis() as u64;
+        if elapsed >= timeout_ms {
             return Ok(g);
         }
-        std::thread::sleep(std::time::Duration::from_millis(poll_ms.max(50)));
+        let remain = timeout_ms - elapsed;
+        std::thread::sleep(std::time::Duration::from_millis(poll.min(remain)));
     }
 }
 
@@ -679,6 +682,30 @@ mod tests {
         let g = generation(&layout);
         let waited = wait_generation(&layout, g + 100, 50, 120).unwrap();
         assert!(waited <= g + 100, "timed out without advancing");
+    }
+
+    #[test]
+    fn a_zero_timeout_does_not_sleep() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        let start = std::time::Instant::now();
+        let _ = wait_generation(&layout, u64::MAX, 200, 0).unwrap();
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(50),
+            "timeout 0 must not wait out the poll interval"
+        );
+    }
+
+    #[test]
+    fn a_short_timeout_does_not_wait_the_poll_interval() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        let start = std::time::Instant::now();
+        let _ = wait_generation(&layout, u64::MAX, 200, 1).unwrap();
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(50),
+            "a 1ms timeout must not sleep the 200ms poll"
+        );
     }
 
     fn layout_with_issue(state: &str, id: &str) -> (tempfile::TempDir, Layout) {

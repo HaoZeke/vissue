@@ -79,6 +79,433 @@ impl BlockNest {
     }
 }
 
+/// Walk that hides both greater/dynamic blocks and Org Babel result
+/// regions (manual 16).
+///
+/// vissue never evaluates a source block. It only has to recognise the
+/// syntax Babel writes, so a `#+RESULTS:` payload is not an issue and
+/// does not define an `:ID:`.
+#[derive(Debug, Default, Clone)]
+pub struct OrgScan {
+    blocks: BlockNest,
+    results: ResultsState,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum ResultsState {
+    #[default]
+    Out,
+    /// Just saw `#+RESULTS:`; the next element is the payload.
+    Awaiting,
+    /// The payload is a greater or dynamic block.
+    ViaBlock,
+    Drawer,
+    Table,
+    FixedWidth,
+    List,
+    Headline {
+        stars: usize,
+    },
+}
+
+impl OrgScan {
+    /// Empty scan, at file (or heading) scope.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Whether the previous line left us inside a block or a results payload.
+    pub fn inside(&self) -> bool {
+        self.blocks.inside() || !matches!(self.results, ResultsState::Out)
+    }
+
+    /// Observe `line`. Returns true when the line is not document
+    /// structure: it belongs to a block or to a Babel results element.
+    pub fn observe(&mut self, line: &str) -> bool {
+        let trimmed = line.trim_start();
+
+        if self.blocks.inside() || is_block_end(trimmed) {
+            let in_block = self.blocks.observe(line);
+            if !self.blocks.inside() && matches!(self.results, ResultsState::ViaBlock) {
+                self.results = ResultsState::Out;
+            }
+            return in_block || matches!(self.results, ResultsState::ViaBlock);
+        }
+
+        if is_results_keyword(line.trim()) {
+            self.results = ResultsState::Awaiting;
+            return true;
+        }
+
+        if is_block_begin(trimmed) {
+            if matches!(self.results, ResultsState::Awaiting) {
+                self.results = ResultsState::ViaBlock;
+            }
+            return self.blocks.observe(line);
+        }
+
+        match self.results {
+            ResultsState::Out => false,
+            ResultsState::ViaBlock => {
+                self.results = ResultsState::Out;
+                false
+            }
+            ResultsState::Awaiting => {
+                if line.trim().is_empty() {
+                    return true;
+                }
+                self.start_result_element(line)
+            }
+            ResultsState::Drawer => {
+                if line.trim().eq_ignore_ascii_case(":END:") {
+                    self.results = ResultsState::Out;
+                }
+                true
+            }
+            ResultsState::Table => {
+                if is_org_table_line(line.trim()) {
+                    true
+                } else {
+                    self.results = ResultsState::Out;
+                    self.observe(line)
+                }
+            }
+            ResultsState::FixedWidth => {
+                if is_fixed_width_line(line) {
+                    true
+                } else {
+                    self.results = ResultsState::Out;
+                    self.observe(line)
+                }
+            }
+            ResultsState::List => {
+                if line.trim().is_empty() {
+                    self.results = ResultsState::Out;
+                    return true;
+                }
+                if is_org_list_line(line) || is_list_continuation(line) {
+                    true
+                } else {
+                    self.results = ResultsState::Out;
+                    self.observe(line)
+                }
+            }
+            ResultsState::Headline { stars } => {
+                if is_headline(line) {
+                    let n = headline_stars(line);
+                    if n > 0 && n <= stars {
+                        self.results = ResultsState::Out;
+                        return self.observe(line);
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    fn start_result_element(&mut self, line: &str) -> bool {
+        let trimmed = line.trim();
+        if opens_a_drawer(trimmed) {
+            self.results = ResultsState::Drawer;
+            return true;
+        }
+        if is_org_table_line(trimmed) {
+            self.results = ResultsState::Table;
+            return true;
+        }
+        if is_fixed_width_line(line) {
+            self.results = ResultsState::FixedWidth;
+            return true;
+        }
+        if is_org_list_line(line) {
+            self.results = ResultsState::List;
+            return true;
+        }
+        if is_headline(line) {
+            self.results = ResultsState::Headline {
+                stars: headline_stars(line),
+            };
+            return true;
+        }
+        // A file link, a scalar paragraph, or anything else Babel dumps as
+        // one element: this line is the payload.
+        self.results = ResultsState::Out;
+        true
+    }
+}
+
+/// `#+RESULTS:` / `#+RESULTS[hash]:` / `#+RESULTS: name` (manual 16.6).
+pub fn is_results_keyword(trimmed: &str) -> bool {
+    let Some(rest) = strip_hash_plus(trimmed.trim()) else {
+        return false;
+    };
+    let Some(after) =
+        strip_keyword_prefix(rest, "RESULTS").or_else(|| strip_keyword_prefix(rest, "RESULT"))
+    else {
+        return false;
+    };
+    let after = after.trim_start();
+    if after.starts_with(':') {
+        return true;
+    }
+    if after.starts_with('[') {
+        return after.contains(':');
+    }
+    false
+}
+
+/// `#+CALL: name(...)` (manual 16.5 / Library of Babel).
+pub fn is_babel_call(trimmed: &str) -> bool {
+    let Some(rest) = strip_hash_plus(trimmed.trim()) else {
+        return false;
+    };
+    strip_keyword_prefix(rest, "CALL").is_some_and(|after| after.starts_with(':'))
+}
+
+/// Affiliated keyword that binds to the next element (manual 16.3, org-element).
+pub fn is_affiliated_keyword(trimmed: &str) -> bool {
+    let Some(rest) = strip_hash_plus(trimmed.trim()) else {
+        return false;
+    };
+    let Some((key, _)) = rest.split_once(':') else {
+        return false;
+    };
+    let key = key.trim();
+    if starts_ignore_ascii(key, "ATTR_") {
+        return true;
+    }
+    matches!(
+        key.to_ascii_uppercase().as_str(),
+        "CAPTION"
+            | "DATA"
+            | "HEADER"
+            | "HEADERS"
+            | "LABEL"
+            | "NAME"
+            | "PLOT"
+            | "RESNAME"
+            | "RESULT"
+            | "RESULTS"
+            | "SOURCE"
+            | "SRCNAME"
+            | "TBLNAME"
+    )
+}
+
+/// The `#+BEGIN_SRC lang switches :headers` line (manual 16.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SrcBlockHead<'a> {
+    /// Language token, `python` or `org`.
+    pub lang: &'a str,
+    /// Switches such as `-n -r`.
+    pub switches: &'a str,
+    /// Header arguments, starting at the first `:key`.
+    pub headers: &'a str,
+}
+
+/// Parse a source-block opening line. Other greater blocks yield `None`.
+pub fn parse_src_begin(line: &str) -> Option<SrcBlockHead<'_>> {
+    let rest = strip_hash_plus(line.trim_start())?;
+    let after = strip_keyword_prefix(rest, "BEGIN_SRC")?;
+    let after = after.trim_start();
+    if after.is_empty() {
+        return None;
+    }
+    let (lang, rest) = first_word(after).unwrap_or((after, ""));
+    let rest = rest.trim_start();
+    let (switches, headers) = match rest.find(':') {
+        Some(i) => (rest[..i].trim(), rest[i..].trim()),
+        None => (rest.trim(), ""),
+    };
+    Some(SrcBlockHead {
+        lang,
+        switches,
+        headers,
+    })
+}
+
+/// `:key value` pairs from a header-args string (manual 16.3).
+pub fn parse_header_args(s: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut rest = s.trim();
+    while let Some(idx) = rest.find(':') {
+        rest = rest[idx + 1..].trim_start();
+        if rest.is_empty() {
+            break;
+        }
+        let (key, after) = match rest.find(char::is_whitespace) {
+            Some(i) => (&rest[..i], rest[i..].trim_start()),
+            None => (rest, ""),
+        };
+        if key.is_empty() {
+            break;
+        }
+        let (value, next) = next_header_value(after);
+        out.push((key.to_string(), value.to_string()));
+        rest = next;
+    }
+    out
+}
+
+fn next_header_value(s: &str) -> (&str, &str) {
+    if s.is_empty() || s.starts_with(':') {
+        return ("", s);
+    }
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b':' && (i == 0 || bytes[i - 1].is_ascii_whitespace()) {
+            break;
+        }
+        i += 1;
+    }
+    // Back up so we split on a char boundary.
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    (s[..i].trim(), s[i..].trim_start())
+}
+
+/// Noweb references `<<name>>` / `<<name(args)>>` (manual 16.11).
+pub fn noweb_refs(body: &str) -> Vec<&str> {
+    let mut refs = Vec::new();
+    let mut rest = body;
+    while let Some(start) = rest.find("<<") {
+        let after = &rest[start + 2..];
+        let Some(end) = after.find(">>") else {
+            break;
+        };
+        let inner = after[..end].trim();
+        if !inner.is_empty() && !inner.contains('\n') && !refs.iter().any(|seen| *seen == inner) {
+            refs.push(inner);
+        }
+        rest = &after[end + 2..];
+    }
+    refs
+}
+
+/// Inline `src_lang{body}` / `src_lang[headers]{body}` (manual 16.2).
+pub fn inline_src_spans(text: &str) -> Vec<(&str, &str, &str)> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(idx) = rest.find("src_") {
+        let after = &rest[idx + 4..];
+        let lang_len = after
+            .find(|c: char| c.is_whitespace() || c == '[' || c == '{')
+            .unwrap_or(after.len());
+        if lang_len == 0 {
+            rest = &after[1.min(after.len())..];
+            continue;
+        }
+        let lang = &after[..lang_len];
+        let mut tail = &after[lang_len..];
+        let mut headers = "";
+        if let Some(inner) = tail.strip_prefix('[') {
+            let Some(end) = inner.find(']') else {
+                rest = tail;
+                continue;
+            };
+            headers = &inner[..end];
+            tail = &inner[end + 1..];
+        }
+        let Some(inner) = tail.strip_prefix('{') else {
+            rest = tail;
+            continue;
+        };
+        let Some(end) = inner.find('}') else {
+            rest = tail;
+            continue;
+        };
+        out.push((lang, headers, &inner[..end]));
+        rest = &inner[end + 1..];
+    }
+    out
+}
+
+/// Inline `call_name(args)` / `call_name[hdr](args)` (manual 16.5).
+pub fn inline_call_names(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(idx) = rest.find("call_") {
+        let after = &rest[idx + 5..];
+        let name_len = after
+            .find(|c: char| c.is_whitespace() || c == '[' || c == '(')
+            .unwrap_or(after.len());
+        if name_len == 0 {
+            rest = &after[1.min(after.len())..];
+            continue;
+        }
+        let name = &after[..name_len];
+        let tail = &after[name_len..];
+        if tail.starts_with('(') || tail.starts_with('[') {
+            out.push(name);
+        }
+        rest = tail;
+    }
+    out
+}
+
+fn strip_hash_plus(trimmed: &str) -> Option<&str> {
+    trimmed.strip_prefix("#+")
+}
+
+fn strip_keyword_prefix<'a>(s: &'a str, keyword: &str) -> Option<&'a str> {
+    if s.len() >= keyword.len()
+        && s.is_char_boundary(keyword.len())
+        && s[..keyword.len()].eq_ignore_ascii_case(keyword)
+    {
+        Some(&s[keyword.len()..])
+    } else {
+        None
+    }
+}
+
+fn headline_stars(line: &str) -> usize {
+    line.len() - line.trim_start_matches('*').len()
+}
+
+fn is_org_table_line(trimmed: &str) -> bool {
+    trimmed.starts_with('|')
+}
+
+fn is_fixed_width_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    matches!(
+        trimmed.as_bytes(),
+        [b':'] | [b':', b' ', ..] | [b':', b'\t', ..]
+    ) && !opens_a_drawer(trimmed)
+        && !trimmed.eq_ignore_ascii_case(":END:")
+}
+
+fn is_org_list_line(line: &str) -> bool {
+    if is_headline(line) {
+        return false;
+    }
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("- ") || trimmed.starts_with("+ ") {
+        return true;
+    }
+    let Some((token, rest)) = first_word(trimmed) else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    if rest.is_empty() && !token.ends_with('.') && !token.ends_with(')') {
+        return false;
+    }
+    let bare = token.trim_end_matches(['.', ')']);
+    if bare.is_empty() || bare == token {
+        return false;
+    }
+    bare.chars().all(|c| c.is_ascii_digit())
+        || (bare.len() == 1 && bare.chars().all(|c| c.is_ascii_alphabetic()))
+}
+
+fn is_list_continuation(line: &str) -> bool {
+    !is_headline(line)
+        && (line.starts_with(' ') || line.starts_with('\t'))
+        && !line.trim().is_empty()
+}
+
 fn is_block_begin(trimmed: &str) -> bool {
     let Some(rest) = trimmed.strip_prefix("#+") else {
         return false;
@@ -565,5 +992,105 @@ mod tests {
     fn property_plus_appends() {
         assert_eq!(property_key_and_append("BLOCKED_BY+"), ("BLOCKED_BY", true));
         assert_eq!(property_key_and_append("ID"), ("ID", false));
+    }
+
+    #[test]
+    fn results_keywords_match_what_babel_writes() {
+        assert!(is_results_keyword("#+RESULTS:"));
+        assert!(is_results_keyword("  #+results:"));
+        assert!(is_results_keyword("#+RESULTS[deadbeef]:"));
+        assert!(is_results_keyword(
+            "#+RESULTS[(2026-08-18 17:50) abcdef]: named"
+        ));
+        assert!(is_results_keyword("#+RESULTS: named"));
+        assert!(!is_results_keyword("#+RESULTANT:"));
+        assert!(!is_results_keyword("#+TODO: TODO"));
+    }
+
+    #[test]
+    fn babel_call_and_affiliated_keywords() {
+        assert!(is_babel_call("#+CALL: plot(x=1) :results output"));
+        assert!(is_babel_call("#+call: fn[:session]()"));
+        assert!(!is_babel_call("#+CALLING:"));
+        assert!(is_affiliated_keyword("#+NAME: plot"));
+        assert!(is_affiliated_keyword("#+HEADER: :var x=1"));
+        assert!(is_affiliated_keyword("#+ATTR_HTML: :width 40"));
+        assert!(is_affiliated_keyword("#+TBLNAME: old"));
+        assert!(!is_affiliated_keyword("#+TODO: TODO"));
+    }
+
+    #[test]
+    fn src_begin_splits_lang_switches_and_headers() {
+        let head = parse_src_begin("  #+BEGIN_SRC python -n -r :results output :var x=1").unwrap();
+        assert_eq!(head.lang, "python");
+        assert_eq!(head.switches, "-n -r");
+        assert_eq!(head.headers, ":results output :var x=1");
+        assert_eq!(
+            parse_header_args(head.headers),
+            vec![
+                ("results".into(), "output".into()),
+                ("var".into(), "x=1".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn noweb_and_inline_src_and_calls() {
+        assert_eq!(
+            noweb_refs("use <<setup>> and <<setup(n=1)>>"),
+            vec!["setup", "setup(n=1)"]
+        );
+        assert_eq!(
+            inline_src_spans("see src_python[:results raw]{print(1)} and src_elisp{(+ 1 2)}"),
+            vec![
+                ("python", ":results raw", "print(1)"),
+                ("elisp", "", "(+ 1 2)")
+            ]
+        );
+        assert_eq!(
+            inline_call_names("then call_plot[:session](x=1) here"),
+            vec!["plot"]
+        );
+    }
+
+    #[test]
+    fn babel_results_hide_headlines_and_drawers() {
+        let mut scan = OrgScan::new();
+        assert!(!scan.observe("#+NAME: dump"));
+        assert!(!scan.observe("prologue"));
+        assert!(scan.observe("#+BEGIN_SRC python :results raw"));
+        assert!(scan.observe("print('* TODO dumped')"));
+        assert!(scan.observe("#+END_SRC"));
+        assert!(!scan.inside());
+        assert!(scan.observe("#+RESULTS:"));
+        assert!(scan.observe("* TODO dumped"));
+        assert!(scan.observe(":PROPERTIES:"));
+        assert!(scan.observe(":ID:         ghost-9999"));
+        assert!(scan.observe(":END:"));
+        assert!(scan.inside());
+        assert!(!scan.observe("* TODO real"));
+        assert!(!scan.inside());
+    }
+
+    #[test]
+    fn babel_results_table_and_fixed_width_and_drawer() {
+        let mut scan = OrgScan::new();
+        assert!(scan.observe("#+RESULTS:"));
+        assert!(scan.observe("| a | b |"));
+        assert!(scan.observe("|---+---|"));
+        assert!(scan.observe("| 1 | 2 |"));
+        assert!(!scan.observe("after the table"));
+
+        let mut scan = OrgScan::new();
+        assert!(scan.observe("#+RESULTS:"));
+        assert!(scan.observe(": 42"));
+        assert!(!scan.observe("not fixed width"));
+
+        let mut scan = OrgScan::new();
+        assert!(scan.observe("#+RESULTS:"));
+        assert!(scan.observe(":RESULTS:"));
+        assert!(scan.observe("* looks like a headline"));
+        assert!(scan.observe(":END:"));
+        assert!(!scan.observe("* TODO real"));
     }
 }

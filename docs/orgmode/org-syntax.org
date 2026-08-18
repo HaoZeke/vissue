@@ -195,9 +195,82 @@ not resolved.
 
 * 16 Working with Source Code
 
-The structure of a code block is a greater block (2.8). Header
-arguments, noweb, and evaluation are not interpreted. A block that
-quotes an =issues.org= heading must not become one.
+vissue never evaluates a source block. It recognises the syntax Babel
+writes so evaluation output cannot become an issue or define an id.
+
+** 16.1 Features overview
+
+Out of scope as an evaluator. The verbs do not run =C-c C-c= and do
+not start a session.
+
+** 16.2 Structure of code blocks
+
+=#+BEGIN_SRC lang switches :headers= is a greater block (2.8). The
+opening line is parsed into language, switches (=-n -r=), and header
+arguments. Inline =src_lang{body}= and =src_lang[headers]{body}= are
+recognised in prose; they do not create structure.
+
+** 16.3 Using header arguments
+
+=:key value= pairs on the begin line, on =#+HEADER:= / =#+HEADERS:=
+lines, and in =#+PROPERTY: header-args= are parsed as pairs. They are
+not applied. =#+NAME:=, =#+HEADER:=, =#+CAPTION:=, and =#+ATTR_*= are
+affiliated keywords: they bind to the next element and are not
+headlines.
+
+** 16.4 Environment of a code block
+
+=:dir=, =:session=, =:var=, and the rest stay on the line. Nothing is
+executed, so nothing is bound.
+
+** 16.5 Evaluating code blocks
+
+=#+CALL: name[inside](args) :headers= is a Babel call, not a file
+keyword that starts an issue. Inline =call_name(args)= is recognised
+the same way. Neither is evaluated.
+
+** 16.6 Results of evaluation
+
+=#+RESULTS:=, =#+RESULTS[hash]:=, and =#+RESULTS: name= open a results
+element. The payload that follows is literal until it ends, matching
+what =org-babel-result-end= consumes:
+
+- a =:RESULTS:= (or any) drawer
+- a greater or dynamic block (=:results org=, =html=, =latex=,
+  =example=)
+- a table
+- a fixed-width =: value= line
+- a plain list
+- a file link or a one-line scalar
+- a headline dumped by =:results raw=, including its subtree
+
+A =* TODO= or a =:PROPERTIES:= / =:ID:= inside that payload is not an
+issue and does not define an id. The text stays in the parent issue's
+body.
+
+** 16.7 Exporting code blocks, 16.8 Extracting source code
+
+=:exports= and =:tangle= are header arguments. They are not acted on.
+=vissue= does not tangle.
+
+** 16.9 Languages, 16.10 Editing source code
+
+The language token is stored on the begin line. Editing support is
+Emacs.
+
+** 16.11 Noweb reference syntax
+
+=<<name>>= and =<<name(args)>>= inside a source body are noweb
+references. They are recognised; they are not expanded.
+
+** 16.12 Library of Babel
+
+A named block plus =#+CALL:= is the Library of Babel on disk. The
+parser sees both; it does not load =ob-lob=.
+
+** 16.13 Key bindings, 16.14 Batch execution
+
+Emacs. Not interpreted.
 
 * 17 Miscellaneous
 

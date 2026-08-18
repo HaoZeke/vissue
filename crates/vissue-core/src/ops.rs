@@ -751,7 +751,7 @@ pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<S
     }
     let mut entries: Vec<Entry> = Vec::new();
     let mut i = 0;
-    let mut nest = crate::org::BlockNest::new();
+    let mut nest = crate::org::OrgScan::new();
     while i < lines.len() {
         if nest.observe(&lines[i]) {
             i += 1;
@@ -759,7 +759,7 @@ pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<S
         }
         if let Some(title) = lines[i].strip_prefix("* TODO ") {
             let start = i + 1;
-            let mut end_nest = crate::org::BlockNest::new();
+            let mut end_nest = crate::org::OrgScan::new();
             let end = {
                 let mut j = start;
                 while j < lines.len() {

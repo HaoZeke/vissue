@@ -14,7 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::config::Layout;
 use crate::model::{IssueHeading, LogEntry, TODO_HEADER, parse_log_line, today_inactive_bracket};
 use crate::org::{
-    BlockNest, is_headline, is_issue_headline, is_planning_line, is_top_level_headline,
+    OrgScan, is_headline, is_issue_headline, is_planning_line, is_top_level_headline,
     opens_a_drawer, parse_headline_bits, parse_planning_line, property_key_and_append,
     split_statistics_cookies, todo_keywords_from_lines,
 };
@@ -216,7 +216,7 @@ impl IssueDoc {
     pub fn parse(project: &str, path: PathBuf, content: &str) -> Result<Self> {
         let lines: Vec<&str> = content.lines().collect();
         let keywords = todo_keywords_from_lines(&lines);
-        let mut nest = BlockNest::new();
+        let mut nest = OrgScan::new();
         let first_heading = lines
             .iter()
             .position(|line| {
@@ -244,7 +244,7 @@ impl IssueDoc {
             headings.push(heading);
             i = body_end;
             let inter_start = i;
-            let mut nest = BlockNest::new();
+            let mut nest = OrgScan::new();
             while i < lines.len() {
                 if !nest.observe(lines[i]) && is_issue_headline(lines[i], &keywords) {
                     break;
@@ -512,7 +512,7 @@ fn parse_heading(
 
     let body_start = i;
     let mut body_end = body_start;
-    let mut nest = BlockNest::new();
+    let mut nest = OrgScan::new();
     while body_end < lines.len() {
         if !nest.observe(lines[body_end]) && is_top_level_headline(lines[body_end]) {
             break;
@@ -859,7 +859,7 @@ fn org_ids(content: &str) -> impl Iterator<Item = &str> {
     // Org takes a planning line on the line under the headline and nowhere
     // else, so prose opening on `DEADLINE:` further down is prose.
     let mut under_headline = false;
-    let mut nest = BlockNest::new();
+    let mut nest = OrgScan::new();
 
     content.lines().filter_map(move |line| {
         let trimmed = line.trim();
@@ -879,8 +879,8 @@ fn org_ids(content: &str) -> impl Iterator<Item = &str> {
             return None;
         }
 
-        // Greater and dynamic blocks are literal. A quoted headline or
-        // drawer inside one does not define an id (manual 2.8, 16.2).
+        // Greater blocks and Babel results are literal. A quoted headline
+        // or a #+RESULTS: payload does not define an id (manual 2.8, 16).
         if nest.observe(line) {
             at_drawer_site = false;
             under_headline = false;
@@ -1595,5 +1595,72 @@ mod tests {
         );
         let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
         assert_eq!(doc.headings[0].blocked_by(), vec!["x-bbbb", "x-cccc"]);
+    }
+
+    #[test]
+    fn babel_results_do_not_split_an_issue_or_define_an_id() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Real issue\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n\n",
+            "#+NAME: dump\n",
+            "#+HEADER: :results raw\n",
+            "#+BEGIN_SRC python :results raw\n",
+            "print('* TODO dumped')\n",
+            "#+END_SRC\n\n",
+            "#+RESULTS:\n",
+            "* TODO dumped\n",
+            ":PROPERTIES:\n",
+            ":ID:         ghost-9999\n",
+            ":END:\n\n",
+            "Still the same issue.\n\n",
+            "* TODO [#B] Next\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-bbbb\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(
+            doc.headings
+                .iter()
+                .map(|h| h.id.as_str())
+                .collect::<Vec<_>>(),
+            ["x-aaaa", "x-bbbb"]
+        );
+        assert!(
+            doc.headings[0].body.contains("#+RESULTS:"),
+            "{}",
+            doc.headings[0].body
+        );
+        assert!(
+            doc.headings[0].body.contains("* TODO dumped"),
+            "{}",
+            doc.headings[0].body
+        );
+        assert!(doc.headings[0].body.contains("Still the same issue."));
+        assert_eq!(ids(content), ["x-aaaa", "x-bbbb"]);
+    }
+
+    #[test]
+    fn a_babel_call_with_results_drawer_stays_in_the_body() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Calls a named block\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n\n",
+            "#+CALL: plot(x=1) :results drawer\n",
+            "#+RESULTS:\n",
+            ":RESULTS:\n",
+            "* TODO not an issue\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings.len(), 1);
+        assert!(doc.headings[0].body.contains("#+CALL: plot"));
+        assert!(doc.headings[0].body.contains("* TODO not an issue"));
+        assert_eq!(ids(content), ["x-aaaa"]);
     }
 }

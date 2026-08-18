@@ -70,7 +70,10 @@ drawer lines round-trip verbatim and appear in the JSONL export as =raw=, so
 data another tool records survives a vissue rewrite. A =COMMENT= heading
 or a =* Notes= section between issues is kept as Org, not turned into a
 missing =:ID:=. A =#+BEGIN_SRC= / =#+BEGIN_EXAMPLE= / =#+BEGIN:= block is
-literal: a quoted =* TODO= inside one is not an issue.
+literal: a quoted =* TODO= inside one is not an issue. =#+RESULTS:=
+and =#+CALL:= are Babel (manual 16): the payload is the parent
+issue's body, even when it looks like a heading or a property
+drawer. Nothing is evaluated.
 
 The planning line accepts Org's full timestamp, including a range
 =<date>--<date>=, a repeater, and a warning period. File-local =#+TODO:=

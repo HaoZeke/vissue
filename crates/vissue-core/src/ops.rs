@@ -955,7 +955,14 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
         if src_path == dst_path {
             let mut doc = IssueDoc::parse_file(&src_project, &src_path)?;
             let dst_id = if creating {
-                push_successor(&mut doc, &dst_project, dst_title, src, &cfg, opts.dst_extra_ids)?
+                push_successor(
+                    &mut doc,
+                    &dst_project,
+                    dst_title,
+                    src,
+                    &cfg,
+                    opts.dst_extra_ids,
+                )?
             } else {
                 let to = reject_to(opts)?;
                 set_discovered_from_if_empty(&mut doc, to, src)?;

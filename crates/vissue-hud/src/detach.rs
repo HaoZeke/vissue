@@ -76,10 +76,7 @@ pub fn start_detached(cli: &HudCli) -> anyhow::Result<i32> {
         cmd.process_group(0);
     }
     let _child = cmd.spawn()?;
-    wait_until_accepts(
-        &summon::default_socket_path(),
-        accept_timeout(),
-    );
+    wait_until_accepts(&summon::default_socket_path(), accept_timeout());
     Ok(0)
 }
 

@@ -176,7 +176,8 @@ impl VissueServer {
         Parameters(args): Parameters<RejectArgs>,
     ) -> Result<CallToolResult, McpError> {
         text(self.layout_for_id(&args.issue_id).and_then(|layout| {
-            let dest = self.reject_destination(&layout, args.to.as_deref(), args.project.as_deref())?;
+            let dest =
+                self.reject_destination(&layout, args.to.as_deref(), args.project.as_deref())?;
             ops::reject(
                 &layout,
                 &args.issue_id,

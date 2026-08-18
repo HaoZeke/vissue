@@ -883,10 +883,7 @@ fn run() -> Result<()> {
         Command::Refile { id, to } => {
             let found = layout_for_id(&router, &id)?;
             let dest = router.route(&to);
-            emit!(
-                "{}",
-                ops::refile_to(&found, &id, &dest.layout, &dest.dir)?
-            )
+            emit!("{}", ops::refile_to(&found, &id, &dest.layout, &dest.dir)?)
         }
         Command::Backlinks { id } => {
             let found = layout_for_id(&router, &id)?;

@@ -207,6 +207,36 @@ fn map_rpc(err: RpcError) -> Error {
                     .unwrap_or("")
                     .to_string(),
             },
+            CONFLICT
+                if rpc
+                    .data
+                    .as_ref()
+                    .and_then(|d| d.get("code"))
+                    .and_then(Value::as_str)
+                    == Some("duplicate_id") =>
+            {
+                Error::DuplicateId {
+                    id: rpc
+                        .data
+                        .as_ref()
+                        .and_then(|d| d.get("id"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    paths: rpc
+                        .data
+                        .as_ref()
+                        .and_then(|d| d.get("paths"))
+                        .and_then(Value::as_array)
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(Value::as_str)
+                                .map(std::path::PathBuf::from)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                }
+            }
             CONFLICT => Error::ClaimConflict {
                 id: rpc
                     .data

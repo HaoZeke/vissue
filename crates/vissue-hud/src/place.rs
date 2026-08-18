@@ -254,7 +254,7 @@ mod tests {
         let s = crate::app::board_window();
         assert!(!s.decorations);
         assert_eq!(s.level, iced::window::Level::AlwaysOnTop);
-        assert!(s.exit_on_close_request);
+        assert!(!s.exit_on_close_request);
         #[cfg(target_os = "linux")]
         {
             assert_eq!(s.platform_specific.application_id, OVERLAY_APP_ID);

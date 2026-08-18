@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use iced::event::{self, Event};
 use iced::keyboard::{self, Key, key::Named};
-use iced::window::{self, Mode};
+use iced::window;
 use iced::{Element, Font, Pixels, Subscription, Task, time};
 
 use vissue_core::config::Layout;
@@ -80,6 +80,10 @@ pub enum Message {
     MdLink(String),
     /// Expand or collapse a Tree-tab node.
     TreeToggle(u64),
+    /// Expand every Tree-tab node that has children.
+    TreeExpandAll,
+    /// Collapse every Tree-tab node that has children.
+    TreeCollapseAll,
     /// Highlight the issue under a Tree-tab node.
     TreePick(u64),
     /// Open this issue as the selected board row.
@@ -123,7 +127,11 @@ impl HudApp {
         match message {
             Message::WindowId(id) => {
                 self.window_id = id;
-                self.sync_window()
+                if self.palette.visible() {
+                    self.place_tries = 20;
+                    self.try_place();
+                }
+                Task::none()
             }
             Message::Tick => {
                 self.palette.poll_updates();
@@ -223,6 +231,14 @@ impl HudApp {
                 self.palette.toggle_tree_node(id);
                 Task::none()
             }
+            Message::TreeExpandAll => {
+                self.palette.set_tree_expanded(true);
+                Task::none()
+            }
+            Message::TreeCollapseAll => {
+                self.palette.set_tree_expanded(false);
+                Task::none()
+            }
             Message::TreePick(id) => {
                 self.palette.select_tree_node(id);
                 Task::none()
@@ -262,28 +278,29 @@ impl HudApp {
     }
 
     fn sync_window(&mut self) -> Task<Message> {
-        let visible = self.palette.visible();
-        if visible {
-            self.place_tries = 20;
-        } else {
-            self.place_tries = 0;
+        match overlay_action(self.palette.visible(), self.window_id.is_some()) {
+            OverlayAction::Open => self.open_window(),
+            OverlayAction::Close => {
+                self.place_tries = 0;
+                match self.window_id.take() {
+                    Some(id) => window::close(id),
+                    None => Task::none(),
+                }
+            }
+            OverlayAction::Place => {
+                self.place_tries = 20;
+                self.try_place();
+                Task::none()
+            }
+            OverlayAction::Idle => Task::none(),
         }
-        let mode = if visible {
-            Mode::Windowed
-        } else {
-            Mode::Hidden
-        };
-        if let Some(id) = self.window_id {
-            self.try_place();
-            return window::set_mode(id, mode);
-        }
-        window::latest().then(move |id| match id {
-            Some(id) => Task::batch([
-                Task::done(Message::WindowId(Some(id))),
-                window::set_mode(id, mode),
-            ]),
-            None => Task::none(),
-        })
+    }
+
+    fn open_window(&mut self) -> Task<Message> {
+        self.place_tries = 20;
+        let (id, open) = window::open(board_window());
+        self.window_id = Some(id);
+        open.map(|id| Message::WindowId(Some(id)))
     }
 
     fn try_place(&mut self) {
@@ -304,10 +321,7 @@ pub fn board_window() -> window::Settings {
         .overlay()
         .size(HUD_W, HUD_H)
         .min_size(360.0, 420.0);
-    let mut win = icedtea::app::bootstrap(&boot).window;
-    // Overlay default swallows the compositor close. A mapped board exits.
-    win.exit_on_close_request = true;
-    win
+    icedtea::app::bootstrap(&boot).window
 }
 
 /// First paint via core, attach unless `--offline`, then the iced loop.
@@ -335,7 +349,7 @@ pub fn run(opts: BootOpts) -> anyhow::Result<()> {
 fn run_iced(palette: Palette) -> iced::Result {
     icedtea::typo::install_platform_faces();
     let cell = std::sync::Mutex::new(Some(palette));
-    iced::application(
+    iced::daemon(
         move || {
             let palette = cell.lock().expect("boot").take().expect("boot once");
             boot(palette)
@@ -344,25 +358,24 @@ fn run_iced(palette: Palette) -> iced::Result {
         view,
     )
     .subscription(subscription)
-    .theme(|_: &HudApp| theme::theme())
-    .title(|_: &HudApp| "vissue".to_string())
+    .theme(|_: &HudApp, _| theme::theme())
+    .title(|_: &HudApp, _| "vissue".to_string())
     .default_font(icedtea::typo::UI)
     .settings(iced::Settings {
         default_text_size: Pixels::from(icedtea::typo::BODY),
         default_font: icedtea::typo::UI,
         ..Default::default()
     })
-    .window(board_window())
     .run()
 }
 
 fn boot(palette: Palette) -> (HudApp, Task<Message>) {
-    let hidden = !palette.visible();
+    let visible = palette.visible();
     let mut app = HudApp::from_palette(palette);
-    let task = if hidden {
-        app.sync_window()
+    let task = if visible {
+        app.open_window()
     } else {
-        window::latest().map(Message::WindowId)
+        Task::none()
     };
     (app, task)
 }
@@ -371,8 +384,26 @@ fn update(app: &mut HudApp, message: Message) -> Task<Message> {
     app.update(message)
 }
 
-fn view(app: &HudApp) -> Element<'_, Message> {
+fn view(app: &HudApp, _id: window::Id) -> Element<'_, Message> {
     crate::view::view(&app.palette)
+}
+
+/// What the overlay window should do for a visibility change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverlayAction {
+    Open,
+    Close,
+    Place,
+    Idle,
+}
+
+fn overlay_action(visible: bool, mapped: bool) -> OverlayAction {
+    match (visible, mapped) {
+        (true, false) => OverlayAction::Open,
+        (false, true) => OverlayAction::Close,
+        (true, true) => OverlayAction::Place,
+        (false, false) => OverlayAction::Idle,
+    }
 }
 
 fn subscription(_app: &HudApp) -> Subscription<Message> {
@@ -441,5 +472,19 @@ mod tests {
         assert!(app.close_exits());
         app.palette.hide();
         assert!(!app.close_exits());
+    }
+
+    #[test]
+    fn hide_closes_the_overlay_window() {
+        assert_eq!(overlay_action(false, true), OverlayAction::Close);
+        assert_eq!(overlay_action(true, false), OverlayAction::Open);
+        assert_eq!(overlay_action(true, true), OverlayAction::Place);
+        assert_eq!(overlay_action(false, false), OverlayAction::Idle);
+        let src = include_str!("app.rs");
+        let prod = src.split("#[cfg(test)]").next().unwrap();
+        assert!(prod.contains("window::close"));
+        assert!(prod.contains("iced::daemon"));
+        assert!(!prod.contains("Mode::Hidden"));
+        assert!(!prod.contains("set_mode"));
     }
 }

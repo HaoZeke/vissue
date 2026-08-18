@@ -719,12 +719,26 @@ impl Palette {
         }
     }
 
+    /// Expand or collapse every node that has children.
+    pub fn set_tree_expanded(&mut self, expanded: bool) {
+        if let Some(tree) = &mut self.issue_tree {
+            set_issue_tree_expanded(tree, expanded);
+        }
+    }
+
+    /// True when every parent in the loaded tree is expanded.
+    pub fn tree_all_expanded(&self) -> bool {
+        self.issue_tree.as_ref().is_some_and(tree_all_expanded)
+    }
+
     /// Highlight a Tree-tab node without leaving the current tree.
     pub fn select_tree_node(&mut self, id: u64) {
         let Some(issue) = self.tree_ids.get(id as usize).cloned() else {
             return;
         };
-        self.tree_focus = Some(issue);
+        self.tree_focus = Some(issue.clone());
+        self.viewing_held = true;
+        self.fill_detail(Some(&issue));
     }
 
     /// Select `id` as the board row and load it into the issue pane.
@@ -736,6 +750,7 @@ impl Palette {
         self.viewing_held = true;
         self.tree_focus = Some(id.to_string());
         if self.selected_id() == Some(id) {
+            self.viewing = Some(id.to_string());
             self.refresh_detail();
             return;
         }
@@ -1466,12 +1481,7 @@ impl Palette {
     }
 
     fn refresh_detail(&mut self) {
-        let hold = self.viewing_held
-            && self
-                .viewing
-                .as_deref()
-                .is_some_and(|id| !self.id_in_filter(id));
-        let id = if hold {
+        let id = if self.viewing_held {
             self.viewing.clone()
         } else {
             self.selected_id().map(str::to_string)
@@ -1484,12 +1494,6 @@ impl Palette {
         {
             self.tree_focus = id;
         }
-    }
-
-    fn id_in_filter(&self, id: &str) -> bool {
-        self.filtered
-            .iter()
-            .any(|&i| self.items.get(i).is_some_and(|item| item.id == id))
     }
 
     fn follow_selection(&mut self) {
@@ -1527,15 +1531,18 @@ impl Palette {
         }
         match self.detail_tab {
             DetailTab::Tree => {
-                self.issue_tree = None;
-                self.tree_ids.clear();
-                match self.backend.tree(id) {
-                    Ok(node) => {
-                        let mut ids = Vec::new();
-                        self.issue_tree = Some(issue_tree_from(&node, &mut ids));
-                        self.tree_ids = ids;
+                let keep = self.viewing_held && self.tree_ids.iter().any(|row| row == id);
+                if !keep {
+                    self.issue_tree = None;
+                    self.tree_ids.clear();
+                    match self.backend.tree(id) {
+                        Ok(node) => {
+                            let mut ids = Vec::new();
+                            self.issue_tree = Some(issue_tree_from(&node, &mut ids));
+                            self.tree_ids = ids;
+                        }
+                        Err(err) => self.message = err.to_string(),
                     }
-                    Err(err) => self.message = err.to_string(),
                 }
             }
             DetailTab::Related => {
@@ -1779,6 +1786,7 @@ impl Palette {
         }
         let project = self.project.clone();
         let project = project.as_deref();
+        let keep = self.selected_id().map(str::to_string);
         match self.filter {
             BoardFilter::Ready => self.reload_ready(project),
             BoardFilter::List => self.reload_list(project),
@@ -1797,9 +1805,14 @@ impl Palette {
         } else {
             self.filtered = (0..self.items.len()).collect();
         }
-        if self.selected >= self.filtered.len() {
-            self.selected = self.filtered.len().saturating_sub(1);
-        }
+        self.selected = keep
+            .as_deref()
+            .and_then(|id| {
+                self.filtered
+                    .iter()
+                    .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+            })
+            .unwrap_or_else(|| self.filtered.len().saturating_sub(1));
         self.seed_collapse();
         if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
             self.collapsed.remove(&p);
@@ -2123,8 +2136,6 @@ pub struct TreeRow<'a> {
     pub state: &'a str,
     /// Heading title.
     pub title: &'a str,
-    /// Whether `:BLOCKED_BY:` is set.
-    pub blocked: bool,
     /// Whether children are shown.
     pub expanded: bool,
     /// Whether the row has children.
@@ -2137,7 +2148,6 @@ struct IssueTreeNode {
     issue_id: String,
     state: String,
     title: String,
-    blocked: bool,
     expanded: bool,
     children: Vec<IssueTreeNode>,
 }
@@ -2155,24 +2165,25 @@ fn issue_tree_from(node: &vissue_core::views::TreeNode, ids: &mut Vec<String>) -
         issue_id: node.id.clone(),
         state: node.state.clone(),
         title: node.title.clone(),
-        blocked: !node.blocked_by.is_empty(),
         expanded: !children.is_empty(),
         children,
     }
 }
 
-fn flatten_issue_tree<'a>(node: &'a IssueTreeNode, depth: u32, out: &mut Vec<TreeRow<'a>>) {
-    let has_children = !node.children.is_empty();
-    out.push(TreeRow {
+fn tree_row_ref(node: &IssueTreeNode, depth: u32) -> TreeRow<'_> {
+    TreeRow {
         depth,
         tea_id: node.tea_id,
         issue_id: &node.issue_id,
         state: &node.state,
         title: &node.title,
-        blocked: node.blocked,
         expanded: node.expanded,
-        has_children,
-    });
+        has_children: !node.children.is_empty(),
+    }
+}
+
+fn flatten_issue_tree<'a>(node: &'a IssueTreeNode, depth: u32, out: &mut Vec<TreeRow<'a>>) {
+    out.push(tree_row_ref(node, depth));
     if node.expanded {
         for child in &node.children {
             flatten_issue_tree(child, depth + 1, out);
@@ -2188,6 +2199,19 @@ fn toggle_issue_tree(node: &mut IssueTreeNode, id: u64) -> bool {
     node.children
         .iter_mut()
         .any(|child| toggle_issue_tree(child, id))
+}
+
+fn set_issue_tree_expanded(node: &mut IssueTreeNode, expanded: bool) {
+    if !node.children.is_empty() {
+        node.expanded = expanded;
+    }
+    for child in &mut node.children {
+        set_issue_tree_expanded(child, expanded);
+    }
+}
+
+fn tree_all_expanded(node: &IssueTreeNode) -> bool {
+    (node.children.is_empty() || node.expanded) && node.children.iter().all(tree_all_expanded)
 }
 
 fn apply_forest(items: Vec<HudItem>) -> Vec<HudItem> {
@@ -2566,10 +2590,28 @@ mod tests {
             .tea_id;
         palette.select_tree_node(child_id);
         assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
-        assert_eq!(palette.tree_rows()[0].issue_id, "atlas-1a2b");
+        assert_eq!(
+            palette.tree_rows()[0].issue_id,
+            "atlas-1a2b",
+            "pick must not re-root the tree"
+        );
+        assert!(
+            palette.tree_rows()[0].has_children,
+            "parent keeps its chevron after a child pick"
+        );
         assert_eq!(palette.tree_selected(), Some(child_id));
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Emit a summary table"),
+            "pick should load that issue into the header"
+        );
         assert_eq!(palette.detail_tab(), DetailTab::Tree);
         palette.set_detail_tab(DetailTab::Related);
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Emit a summary table"),
+            "a tree pick stays loaded on Related"
+        );
         palette.set_detail_tab(DetailTab::Tree);
         assert_eq!(
             palette.tree_selected(),
@@ -2584,6 +2626,32 @@ mod tests {
             Some(child_id),
             "a tree pick should survive Enter cycling the side tabs"
         );
+    }
+
+    #[test]
+    fn opening_the_selected_row_after_a_tree_pick_loads_it() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Tree);
+        let child_id = palette
+            .tree_rows()
+            .into_iter()
+            .find(|row| row.issue_id == "atlas-2c3d")
+            .expect("parent tree includes the child")
+            .tea_id;
+        palette.select_tree_node(child_id);
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Emit a summary table")
+        );
+        palette.open_issue("atlas-1a2b");
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Parse the manifest header"),
+            "opening the list row must load that issue after a child pick"
+        );
+        assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
+        assert_eq!(palette.detail().map(|d| d.id.as_str()), Some("atlas-1a2b"));
     }
 
     #[test]
@@ -2633,6 +2701,57 @@ mod tests {
     }
 
     #[test]
+    fn reload_keeps_the_selected_issue() {
+        let (_dir, layout) = writable();
+        let issues = layout.project_issues_path("atlas");
+        let mut palette = open_atlas(layout, "hud-test");
+        palette.set_filter(BoardFilter::List);
+        palette.select_id("atlas-4g5h");
+        assert_eq!(palette.selected_id(), Some("atlas-4g5h"));
+        let body = std::fs::read_to_string(&issues).unwrap();
+        let inserted =
+            "* TODO [#C] Inserted first\n:PROPERTIES:\n:ID:         atlas-zzzz\n:END:\n\n";
+        let body = match body.find("\n* ") {
+            Some(at) => format!("{}{}{}", &body[..=at], inserted, &body[at + 1..]),
+            None => format!("{body}\n{inserted}"),
+        };
+        std::fs::write(&issues, body).unwrap();
+        palette.backend.refresh().unwrap();
+        let _ = palette.reload();
+        assert!(
+            palette
+                .filtered_items()
+                .iter()
+                .any(|item| item.id == "atlas-zzzz"),
+            "the inserted heading should be on the board"
+        );
+        assert_eq!(
+            palette.selected_id(),
+            Some("atlas-4g5h"),
+            "reload must keep the selected issue when a row is inserted above it"
+        );
+    }
+
+    #[test]
+    fn list_select_reloads_the_tree() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.set_filter(BoardFilter::List);
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Tree);
+        assert_eq!(palette.tree_rows()[0].issue_id, "atlas-1a2b");
+        palette.select_id("atlas-4g5h");
+        assert_eq!(
+            palette.tree_rows()[0].issue_id,
+            "atlas-4g5h",
+            "clicking a list row must load that issue's tree"
+        );
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Rename the config key")
+        );
+    }
+
+    #[test]
     fn tree_tab_toggle_hides_children() {
         let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
         palette.select_id("atlas-1a2b");
@@ -2645,6 +2764,24 @@ mod tests {
             palette.tree_rows().len() < before,
             "collapse should hide children"
         );
+    }
+
+    #[test]
+    fn tree_tab_expand_and_collapse_all() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Tree);
+        let open = palette.tree_rows().len();
+        assert!(open > 1, "fixture parent should have children");
+        palette.set_tree_expanded(false);
+        assert_eq!(palette.tree_rows().len(), 1, "collapse all leaves the root");
+        assert!(!palette.tree_rows()[0].expanded);
+        palette.set_tree_expanded(true);
+        assert_eq!(palette.tree_rows().len(), open);
+        assert!(palette.tree_rows()[0].expanded);
+        assert!(palette.tree_all_expanded());
+        palette.set_tree_expanded(false);
+        assert!(!palette.tree_all_expanded());
     }
 
     #[test]
@@ -2839,6 +2976,17 @@ mod tests {
         assert!(atlas.contains("only atlas"), "{atlas}");
         let beacon = std::fs::read_to_string(layout.project_issues_path("beacon")).unwrap();
         assert!(!beacon.contains("only atlas"), "{beacon}");
+    }
+
+    #[test]
+    fn toggle_done_flips_todo_to_done() {
+        let (_dir, layout) = writable();
+        let mut palette = open_atlas(layout, "hud-test");
+        palette.set_filter(BoardFilter::List);
+        palette.select_id("atlas-2c3d");
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "TODO");
+        palette.toggle_done("atlas-2c3d");
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "DONE");
     }
 
     #[test]

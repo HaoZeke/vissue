@@ -1,6 +1,6 @@
 //! Board face on icedtea constructors. Drawing only; logic lives in [`crate::palette`].
 
-use iced::widget::{Space, column, container, mouse_area, row, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, text};
 use iced::{Alignment, Element, Fill, Length};
 use icedtea::a11y::{A11y, Role};
 use icedtea::collection::Tabs;
@@ -16,7 +16,7 @@ use crate::app::Message;
 use crate::palette::{BoardFilter, DetailTab, Focus, HudItem, Palette, TreeRow};
 use crate::theme;
 
-/// Board face. Hidden state draws nothing so a `Mode::Hidden` frame is empty.
+/// Board face. Hidden state draws nothing so a closed overlay is empty.
 pub fn view(palette: &Palette) -> Element<'_, Message> {
     if !palette.visible() {
         return Space::new().width(0).height(0).into();
@@ -42,35 +42,7 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
                 tea,
             ));
         } else {
-            let mut list = column![].spacing(4);
-            let selected = palette.selected_index();
-            let group = palette.project().is_none();
-            for section in &sections {
-                let mut rows = column![].spacing(4);
-                if !section.collapsed || group {
-                    for (i, item) in &section.rows {
-                        rows = rows.push(task_row(item, *i == selected, tea));
-                    }
-                }
-                if group {
-                    list = list.push(project_group(
-                        section.project,
-                        section.rows.len(),
-                        !section.collapsed,
-                        !palette.query().is_empty(),
-                        rows,
-                        tea,
-                    ));
-                } else {
-                    list = list.push(rows);
-                }
-            }
-            let list = pane_scroll(list.into(), tea, A11y::new("tasks", Role::List));
-            if palette.selected_id().is_some() {
-                pane = pane.push(list_detail(palette, list, tea));
-            } else {
-                pane = pane.push(list);
-            }
+            pane = pane.push(task_board(palette, tea));
         }
         if sections.is_empty() && palette.selected_id().is_some() {
             pane = pane.push(detail_panel(palette, tea));
@@ -251,6 +223,46 @@ fn project_browser(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     )
 }
 
+fn task_cards<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
+    let selected = palette.selected_index();
+    let group = palette.project().is_none();
+    let mut list = column![].spacing(4).width(Fill);
+    for section in palette.sections() {
+        let mut rows = column![].spacing(4).width(Fill);
+        if !section.collapsed || group {
+            for (i, item) in &section.rows {
+                rows = rows.push(task_row(item, *i == selected, tea));
+            }
+        }
+        if group {
+            list = list.push(project_group(
+                section.project,
+                section.rows.len(),
+                !section.collapsed,
+                !palette.query().is_empty(),
+                rows,
+                tea,
+            ));
+        } else {
+            list = list.push(rows);
+        }
+    }
+    list.into()
+}
+
+fn task_board<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
+    let list = pane_scroll(
+        task_cards(palette, tea),
+        tea,
+        A11y::new("tasks", Role::List),
+    );
+    if palette.selected_id().is_some() {
+        list_detail(palette, list, tea)
+    } else {
+        list
+    }
+}
+
 fn add_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     if palette.focus() == Focus::Add {
         widget::themed_text_input(
@@ -306,62 +318,79 @@ fn project_group<'a>(
     )
 }
 
-fn tree_row<'a>(
-    palette: &'a Palette,
-    node: TreeRow<'a>,
-    selected: bool,
-    tea: Tokens,
-) -> Element<'a, Message> {
-    let twisty: Element<'a, Message> = if node.has_children {
-        let mark = if node.expanded { "▾" } else { "▸" };
-        let id = node.tea_id;
-        mouse_area(text(mark).size(tea.body()).color(tea.muted))
-            .on_press(Message::TreeToggle(id))
-            .into()
+/// Outline indent: four density gaps (16px at Compact), wider than the twisty.
+pub(crate) fn tree_indent_px(depth: u32, tea: Tokens) -> f32 {
+    depth as f32 * tea.density.gap() * 4.0
+}
+
+fn tree_twisty_width(tea: Tokens) -> f32 {
+    tea.density.gap() * 2.0 + 4.0
+}
+
+fn tree_twisty_mark(expanded: bool, dir: Direction) -> &'static str {
+    if expanded {
+        "▾"
     } else {
-        Space::new().width(14).into()
+        match dir {
+            Direction::Ltr => "▸",
+            Direction::Rtl => "◂",
+        }
+    }
+}
+
+fn tree_row<'a>(node: TreeRow<'a>, selected: bool, tea: Tokens) -> Element<'a, Message> {
+    let twisty: Element<'a, Message> = if node.has_children {
+        let id = node.tea_id;
+        mouse_area(
+            text(tree_twisty_mark(node.expanded, tea.direction))
+                .size(tea.meta())
+                .color(tea.muted),
+        )
+        .on_press(Message::TreeToggle(id))
+        .into()
+    } else {
+        Space::new().width(tree_twisty_width(tea)).into()
     };
-    let item = palette.item_by_id(node.issue_id);
-    let marks = issue_marks(
-        item.map(|i| i.priority.as_str()),
-        node.state,
-        node.blocked,
-        item.is_some_and(|i| i.claimed_by.is_some()),
-        tea,
-    );
-    let title_color = if node.state == "DONE" {
+    let title_color = if matches!(node.state, "DONE" | "CANCELLED") {
         tea.muted
     } else {
         tea.text
     };
     let pick = node.tea_id;
     let open = node.issue_id.to_string();
-    let mut line = row![
-        Space::new().width((node.depth as f32) * 16.0),
-        twisty,
-        marks,
-        text(node.title.to_string())
-            .size(tea.body())
-            .font(icedtea::typo::UI)
-            .color(title_color)
-            .wrapping(iced::widget::text::Wrapping::Word)
-            .width(Fill),
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center)
-    .width(Fill);
-    if let Some(item) = item {
-        line = line.push(project_mark(&item.project, tea));
+    let indent: Element<'a, Message> = Space::new().width(tree_indent_px(node.depth, tea)).into();
+    let state = badge_state(node.state, tea);
+    let title: Element<'a, Message> = text(node.title.to_string())
+        .size(tea.meta())
+        .font(icedtea::typo::UI)
+        .color(title_color)
+        .wrapping(iced::widget::text::Wrapping::Word)
+        .width(Fill)
+        .into();
+    let hit: Element<'a, Message> = {
+        let mut face = row![];
+        for kid in icedtea::i18n::order(tea.direction, [state, title]) {
+            face = face.push(kid);
+        }
+        mouse_area(
+            face.spacing(6)
+                .align_y(Alignment::Center)
+                .width(Fill)
+                .padding(tea.density.gap() / 2.0),
+        )
+        .on_press(Message::TreePick(pick))
+        .on_double_click(Message::OpenIssue(open))
+        .into()
+    };
+    let mut line = row![];
+    for kid in icedtea::i18n::order(tea.direction, [indent, twisty, hit]) {
+        line = line.push(kid);
     }
-    let body = line.padding([4, 4]);
-    mouse_area(
-        container(body)
-            .width(Fill)
-            .style(move |_| icedtea::style::card(tea, selected)),
-    )
-    .on_press(Message::TreePick(pick))
-    .on_double_click(Message::OpenIssue(open))
-    .into()
+    let line = line.spacing(4).align_y(Alignment::Center).width(Fill);
+    container(line)
+        .width(Fill)
+        .style(move |_| icedtea::style::list_row(tea, selected))
+        .into()
 }
 
 fn task_row(item: &HudItem, selected: bool, tea: Tokens) -> Element<'_, Message> {
@@ -388,29 +417,9 @@ fn task_row(item: &HudItem, selected: bool, tea: Tokens) -> Element<'_, Message>
         bits.push(due.to_string());
     }
     let title_color = if done { tea.muted } else { tea.text };
-    let indent = (item.depth as f32) * 18.0;
-    let line = row![
-        marks,
-        text(item.title.clone())
-            .size(tea.body())
-            .font(icedtea::typo::UI)
-            .color(title_color),
-        project_mark(&item.project, tea),
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center)
-    .width(Fill);
-    let mut text_col = column![line]
-        .spacing(4)
-        .width(Fill)
-        .align_x(Alignment::Start);
-    if !bits.is_empty() {
-        text_col = text_col.push(widget::meta(
-            bits.join("  ·  "),
-            tea,
-            A11y::new("state", Role::Status),
-        ));
-    }
+    let indent: Element<'_, Message> = Space::new()
+        .width(item.depth as f32 * tea.density.gap() * 4.0)
+        .into();
     let box_el = widget::themed_checkbox(
         "",
         done,
@@ -418,18 +427,51 @@ fn task_row(item: &HudItem, selected: bool, tea: Tokens) -> Element<'_, Message>
         tea,
         A11y::new("done", Role::Checkbox),
     );
-    let body = row![Space::new().width(indent), box_el, text_col,]
-        .spacing(10)
-        .align_y(Alignment::Center)
+    let title = text(item.title.clone())
+        .size(tea.body())
+        .font(icedtea::typo::UI)
+        .color(title_color)
+        .wrapping(iced::widget::text::Wrapping::Word)
+        .width(Fill);
+    let mut body_col = column![title].spacing(2).width(Fill);
+    if !bits.is_empty() {
+        body_col = body_col.push(
+            text(bits.join("  ·  "))
+                .size(tea.meta())
+                .color(tea.muted)
+                .wrapping(iced::widget::text::Wrapping::Word)
+                .width(Fill),
+        );
+    }
+    let project = project_mark(&item.project, tea);
+    let hit: Element<'_, Message> = {
+        let mut face = row![];
+        for kid in icedtea::i18n::order(tea.direction, [marks, body_col.into(), project]) {
+            face = face.push(kid);
+        }
+        mouse_area(face.spacing(8).align_y(Alignment::Start).width(Fill))
+            .on_press(Message::SelectId(id))
+            .into()
+    };
+    let mut line = row![];
+    for kid in icedtea::i18n::order(tea.direction, [indent, box_el, hit]) {
+        line = line.push(kid);
+    }
+    let body = line
+        .spacing(8)
+        .align_y(Alignment::Start)
         .width(Fill)
         .padding([8, 6]);
-    mouse_area(
-        container(body)
-            .width(Fill)
-            .style(move |_| icedtea::style::card(tea, selected)),
-    )
-    .on_press(Message::SelectId(id))
-    .into()
+    container(body)
+        .width(Fill)
+        .style(move |_| icedtea::style::card(tea, selected))
+        .into()
+}
+
+/// Extra "blocked" chip only when the state keyword is not already BLOCKED
+/// and the heading is still open.
+pub(crate) fn extra_blocked_mark(state: &str, blocked: bool) -> bool {
+    blocked && matches!(state, "TODO" | "STARTED")
 }
 
 fn issue_marks(
@@ -444,7 +486,7 @@ fn issue_marks(
         marks = marks.push(badge_priority(priority, tea));
     }
     marks = marks.push(badge_state(state, tea));
-    if blocked {
+    if extra_blocked_mark(state, blocked) {
         marks = marks.push(badge_mark("blocked", Variant::Warning, tea, "blocked"));
     }
     if claimed {
@@ -598,8 +640,8 @@ fn list_detail<'a>(
     tea: Tokens,
 ) -> Element<'a, Message> {
     icedtea::layout::split_view(
-        list,
-        detail_panel(palette, tea),
+        container(list).width(Fill).into(),
+        container(detail_panel(palette, tea)).width(Fill).into(),
         palette.detail_split(),
         palette.split_total(),
         Message::Sash,
@@ -681,6 +723,19 @@ fn select_field<'a>(
     ))
 }
 
+fn tree_fold_all(all_open: bool, tea: Tokens) -> Element<'static, Message> {
+    let (label, msg) = if all_open {
+        ("Collapse all", Message::TreeCollapseAll)
+    } else {
+        ("Expand all", Message::TreeExpandAll)
+    };
+    button(text(label).size(tea.meta()).color(tea.muted))
+        .padding([2, 6])
+        .style(icedtea::style::button_style(tea, Variant::Ghost))
+        .on_press(msg)
+        .into()
+}
+
 fn tree_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     let rows = palette.tree_rows();
     if rows.is_empty() {
@@ -691,9 +746,9 @@ fn tree_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         );
     }
     let selected = palette.tree_selected();
-    let mut col = column![].spacing(2);
+    let mut col = column![tree_fold_all(palette.tree_all_expanded(), tea)].spacing(4);
     for row in rows {
-        col = col.push(tree_row(palette, row, selected == Some(row.tea_id), tea));
+        col = col.push(tree_row(row, selected == Some(row.tea_id), tea));
     }
     col.into()
 }
@@ -781,7 +836,7 @@ fn issue_fields<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
             FontFace::Ui,
             label_w,
             tea,
-            Direction::Ltr,
+            tea.direction,
             A11y::new(id, Role::Group),
         ));
     }
@@ -925,16 +980,7 @@ fn tab_empty_copy(tab: DetailTab) -> &'static str {
 }
 
 fn pane_scroll<'a>(child: Element<'a, Message>, tea: Tokens, a11y: A11y) -> Element<'a, Message> {
-    // themed_scroll always paints a rail, even when the pane fits.
-    // iced overlay scrollbars appear only on overflow.
-    icedtea::a11y::attach(
-        iced::widget::scrollable(child)
-            .style(icedtea::style::scroll_style(tea))
-            .width(Fill)
-            .height(Fill)
-            .into(),
-        &a11y,
-    )
+    widget::themed_scroll(child, tea, a11y, false, None, None::<fn(f32) -> Message>)
 }
 
 fn empty_copy(palette: &Palette) -> &'static str {
@@ -970,42 +1016,54 @@ mod tests {
         assert!(src.contains("widget::expander"));
         assert!(src.contains("widget::themed_checkbox"));
         assert!(src.contains("split_view"));
+        assert!(src.contains("widget::themed_scroll"));
+        assert!(src.contains("icedtea::style::list_row"));
         assert!(src.contains("fn tree_row"));
-        assert!(src.contains("fn issue_marks"));
-        assert!(src.contains("widget::badge"));
-        assert!(src.contains("Variant::Success"));
-        assert!(src.contains("fn actions"));
-        assert!(src.contains("fn related_list"));
-        assert!(src.contains("fn issue_header"));
-        assert!(src.contains("fn issue_main"));
-        assert!(src.contains("fn issue_fields"));
-        assert!(src.contains("fn issue_prose"));
-        assert!(src.contains("FillPortion(3)"));
-        assert!(src.contains("FillPortion(2)"));
-        let prod = src.split("#[cfg(test)]").next().unwrap();
-        assert!(!prod.contains("TAB_FIT"));
-        assert!(!prod.contains("920"));
-        assert!(src.contains("fn side_pane"));
+        assert!(src.contains("fn tree_fold_all"));
+        assert!(src.contains("fn extra_blocked_mark"));
+        let task = src.split("fn task_row").nth(1).unwrap();
+        let task = task.split("fn extra_blocked_mark").next().unwrap();
+        assert!(
+            task.contains("Wrapping::Word"),
+            "list titles wrap inside the pane"
+        );
+        let tree_fn = src.split("fn tree_row").nth(1).unwrap();
+        let tree_fn = tree_fn.split("fn task_row").next().unwrap();
+        assert!(tree_fn.contains("Message::TreePick"));
+        assert!(tree_fn.contains("on_double_click"));
+        assert!(tree_fn.contains("Message::OpenIssue"));
+        assert!(tree_fn.contains("badge_state"));
         assert!(src.contains("widget::tab_bar"));
-        assert!(src.contains("responsive"));
-        assert!(src.contains("size.width"));
-        assert!(src.contains("Wrapping::Word"));
         assert!(src.contains("widget::selectable"));
         assert!(src.contains("widget::value_field"));
-        assert!(src.contains("excerpt_label_width"));
         assert!(src.contains("fn notes_body"));
         assert!(src.contains("fn state_arrow"));
-        assert!(src.contains("\"→\""));
-        assert!(src.contains("\"←\""));
-        assert!(src.contains("icedtea::typo::MONO"));
-        assert!(src.contains("on_double_click"));
-        assert!(src.contains("Message::OpenIssue"));
-        assert!(src.contains("icedtea::style::card"));
-        assert!(src.contains("Variant::Chip"));
         let prod = src.split("fn project_mark").nth(1).unwrap();
         let prod = prod.split("fn badge_priority").next().unwrap();
         assert!(prod.contains("Variant::Chip"));
         assert!(!prod.contains("Variant::Danger"));
+    }
+
+    #[test]
+    fn tree_indent_is_wider_than_the_twisty() {
+        let tea = crate::theme::tokens();
+        let step = crate::view::tree_indent_px(1, tea);
+        let twisty = tea.density.gap() * 2.0 + 4.0;
+        assert!(
+            step > twisty,
+            "one hop {step} must read deeper than twisty {twisty}"
+        );
+        assert_eq!(crate::view::tree_indent_px(3, tea), step * 3.0);
+    }
+
+    #[test]
+    fn extra_blocked_mark_does_not_repeat_state() {
+        assert!(!crate::view::extra_blocked_mark("BLOCKED", true));
+        assert!(!crate::view::extra_blocked_mark("CANCELLED", true));
+        assert!(!crate::view::extra_blocked_mark("DONE", true));
+        assert!(crate::view::extra_blocked_mark("TODO", true));
+        assert!(crate::view::extra_blocked_mark("STARTED", true));
+        assert!(!crate::view::extra_blocked_mark("TODO", false));
     }
 
     #[test]

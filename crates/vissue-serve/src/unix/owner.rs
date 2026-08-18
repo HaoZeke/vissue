@@ -7,7 +7,6 @@ use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
 use anyhow::{Context, anyhow};
 
@@ -77,7 +76,8 @@ impl OwnerHandle {
     ///
     /// # Errors
     ///
-    /// Fails when the owner does not accept on the socket within 5 seconds.
+    /// Fails when the owner does not accept on the socket within
+    /// [`crate::accept_timeout`].
     pub fn spawn(cfg: ServeConfig) -> Result<Self> {
         use super::lifecycle::wait_until_accepts;
 
@@ -100,7 +100,7 @@ impl OwnerHandle {
                 }
             });
         });
-        if !wait_until_accepts(&socket, Duration::from_secs(5)) {
+        if !wait_until_accepts(&socket, crate::accept_timeout()) {
             return Err(anyhow!("owner did not accept on {}", socket.display()).into());
         }
         Ok(Self {

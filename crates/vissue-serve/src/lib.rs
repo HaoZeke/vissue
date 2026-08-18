@@ -104,8 +104,24 @@ pub const LIVE_CAPABILITIES: &[&str] = vissue_control::V1_CAPABILITIES;
 /// Fallback revision when no owner is live. A running owner starts at 1.
 pub const SERVE_REVISION: u64 = 0;
 
-/// How long a detach parent waits for the child to accept.
-pub const ACCEPT_TIMEOUT_MS: u64 = 5_000;
+/// How long a caller waits for a freshly started owner to accept.
+///
+/// A cold start binds a socket after building a multi-thread runtime and
+/// loading the tracker, so a saturated machine can need well past a second.
+/// `VISSUE_ACCEPT_TIMEOUT_MS` overrides it for hosts slower still.
+pub const ACCEPT_TIMEOUT_MS: u64 = 15_000;
+
+/// [`ACCEPT_TIMEOUT_MS`], or `VISSUE_ACCEPT_TIMEOUT_MS` when that parses as
+/// a non-zero number of milliseconds.
+#[must_use]
+pub fn accept_timeout() -> std::time::Duration {
+    let ms = std::env::var("VISSUE_ACCEPT_TIMEOUT_MS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|ms| *ms > 0)
+        .unwrap_or(ACCEPT_TIMEOUT_MS);
+    std::time::Duration::from_millis(ms)
+}
 
 #[cfg(test)]
 mod tests {

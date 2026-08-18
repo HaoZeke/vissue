@@ -19,7 +19,7 @@ use vissue_control::client::Client;
 use vissue_core::events;
 
 use super::owner::{lock_is_free, log_path, prepare_socket_dir, read_pid_file, remove_pid_file};
-use crate::{ACCEPT_TIMEOUT_MS, EnsureResult, SERVE_REVISION, ServeConfig, Status};
+use crate::{EnsureResult, SERVE_REVISION, ServeConfig, Status};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -363,7 +363,7 @@ pub fn start_detached(cfg: &ServeConfig) -> Result<EnsureResult> {
         }
     };
 
-    let timeout = Duration::from_millis(ACCEPT_TIMEOUT_MS);
+    let timeout = crate::accept_timeout();
     if wait_until_accepts(&cfg.socket, timeout) {
         return Ok(EnsureResult {
             ok: true,

@@ -162,6 +162,7 @@ socket.
 | =VISSUE_AGENT=   | Identity a claim records, ahead of the config file          |
 | =VISSUE_EVENTS=          | =0= suppresses the change stream entirely                          |
 | =VISSUE_CONTROL_SOCKET=  | Unix control socket path                                           |
+| =VISSUE_ACCEPT_TIMEOUT_MS= | Milliseconds to wait for a freshly started owner to accept; default 15000 |
 | =VISSUE_SERVE_LOG=       | Detached serve log; default is =control.log= next to the socket    |
 | =VISSUE_HUD_BIN=         | =vissue hud= launcher override for the =vissue-hud= binary         |
 | =VISSUE_HUD_SUMMON_SOCKET= | HUD show/hide socket; default is =hud.sock= next to the control socket |

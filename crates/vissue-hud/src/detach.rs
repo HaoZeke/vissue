@@ -5,10 +5,10 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use vissue_serve::accept_timeout;
+
 use crate::cli::HudCli;
 use crate::summon;
-
-const ACCEPT_TIMEOUT_MS: u64 = 5_000;
 
 /// Child argv for a detached owner: always `--foreground`, never a summon verb
 /// that would bounce off a live socket.
@@ -78,7 +78,7 @@ pub fn start_detached(cli: &HudCli) -> anyhow::Result<i32> {
     let _child = cmd.spawn()?;
     wait_until_accepts(
         &summon::default_socket_path(),
-        Duration::from_millis(ACCEPT_TIMEOUT_MS),
+        accept_timeout(),
     );
     Ok(0)
 }

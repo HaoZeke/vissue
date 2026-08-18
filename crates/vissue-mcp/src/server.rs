@@ -50,6 +50,7 @@ impl VissueServer {
         Ok(Self { layout, router })
     }
 
+    #[cfg(test)]
     pub fn with_layout(layout: Layout) -> Self {
         Self {
             router: Router::unrouted(layout.clone()),

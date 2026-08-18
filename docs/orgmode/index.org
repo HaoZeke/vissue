@@ -49,6 +49,9 @@ the lock that stops two workers taking the same node.
   is a partial order, and what the citations do and do not justify.
 - [[file:emacs.org][Emacs]] is the other reader of the same file: the agenda, tag
   search, and =id:= links, with nothing installed.
+- [[file:org-syntax.org][Org syntax]] is the Org 9.8 manual mapped onto an
+  =issues.org=: what the parser treats as structure, and what it keeps
+  as body.
 - [[file:control.org][Control]] is the optional Unix socket: framing, methods, and
   how the board and HUD attach.
 
@@ -83,4 +86,5 @@ $ vissue man > ~/.local/share/man/man1/vissue.1
    control
    explanation
    emacs
+   org-syntax
 #+end_export

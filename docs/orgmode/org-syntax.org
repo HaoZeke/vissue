@@ -1,0 +1,227 @@
+#+title: Org syntax
+#+options: toc:nil num:nil
+
+How the Org 9.8 manual
+(https://orgmode.org/manual/) maps onto an =issues.org=. The file is an
+ordinary Org document. A construct Org would not treat as a headline or a
+property drawer must not become one here.
+
+The parser lives in =vissue-core::org= and is driven from =IssueDoc::parse=.
+=tests/org_interop.sh= is the live Emacs check for the subset Org itself
+writes back.
+
+* 1 Introduction
+
+Out of scope. The manual's tour of Org as an editor does not change the
+bytes on disk.
+
+* 2 Document Structure
+
+** 2.1 Headlines
+
+A headline is one or more stars at column 0, then a space. A line of
+emphasis that merely looks starred is not one. An indented star is
+not one. Only a level-one headline with a recognised TODO keyword is
+an issue. A deeper heading stays in the parent's body. A heading
+whose first word is not a TODO keyword (a Notes section, say) is kept
+as Org between issues and rewritten in place. A =COMMENT= heading
+(see 13.6) is not an issue.
+
+** 2.2 Visibility cycling, 2.3 Motion, 2.4 Structure editing, 2.5 Sparse trees
+
+Editor commands. They change visibility or move point; they do not
+change the syntax the parser has to recognise.
+
+** 2.6 Plain lists
+
+Body text. A markdown star-space bullet at column 0 would be a
+headline, so a write indents that line by one space. Deeper lists are
+left alone.
+
+** 2.7 Drawers
+
+=:NAME:= on its own line opens a drawer; =:END:= closes it. Drawers
+cannot contain a headline or another drawer. The parser accepts
+=:PROPERTIES:=, =:LOGBOOK:=, and any other drawer at the drawer site,
+in any order. It writes =:PROPERTIES:= then =:LOGBOOK:= then the rest,
+which is the order =org-log-into-drawer= produces.
+
+** 2.8 Blocks
+
+=#+BEGIN_NAME= / =#+END_NAME= (greater blocks) and =#+BEGIN:= / =#+END:=
+(dynamic blocks) are literal. A =* TODO= or =:PROPERTIES:= line inside
+one is not a headline or a drawer. Case and indentation follow Org:
+=#+begin_src= and a two-space indent both count.
+
+* 3 Tables
+
+Body text. Spreadsheet formulas, column groups, and Org Plot are not
+interpreted.
+
+* 4 Hyperlinks
+
+=related= and =check= resolve:
+
+- =[[id:foo]]= and =[[id:foo][desc]]=
+- =[[foo]]= when =foo= is a known id
+- =[[file:x.org::foo]]= / =[[file:x.org::#foo]]= when the search
+  fragment is a known id
+- =<id:foo>=
+- a bare =id:foo=
+
+Radio targets, link abbreviations, and custom search options are not
+interpreted. Attachment links are body text.
+
+* 5 TODO Items
+
+** 5.1 Basic TODO functionality
+
+The house cycle is =TODO STARTED BLOCKED | DONE CANCELLED=, written as
+=#+TODO:= in a fresh preamble. =C-c C-t= in Emacs walks that sequence.
+
+** 5.2 Extended use of TODO keywords
+
+File-local =#+TODO:= lines accumulate. Fast-access keys
+(=TODO(t)=, =WAIT(w@)=) are stripped. The house keywords stay
+recognised even when the file lists a subset, so a preamble that only
+names =TODO= and =DONE= does not drop a =STARTED= heading. A heading
+whose keyword is in that combined set is an issue; =update --state=
+still only writes the house five.
+
+** 5.3 Tracking TODO state changes
+
+=:LOGBOOK:= lines of the form =- State "X" from "Y" [ts]= are parsed.
+=CLOCK:= lines and anything else in the drawer survive as raw text
+(manual 8.4).
+
+** 5.4 Priorities
+
+=[#A]=, =[#B]=, =[#C]= immediately after the keyword. A title that
+opens with a bracket that is not a one-character cookie keeps its
+text. Missing cookie defaults to =C=.
+
+** 5.5 Breaking down tasks
+
+Trailing =[2/5]= and =[40%]= cookies are not part of the title. They
+round-trip on the headline, before the tag run.
+
+** 5.6 Checkboxes
+
+Body text. =[/]= and =[%]= cookies on list items are not read.
+
+** 5.7 TODO dependencies
+
+Org's =ORDERED= property and =org-enforce-todo-dependencies= are not
+the tracker. =:BLOCKED_BY:= is.
+
+* 6 Tags
+
+Org tags are =[[:alnum:]_@#%]+=, right-aligned to column 77. A tag
+that character class rejects (=needs-review=) stays in
+=:VISSUE_TAGS:=. =#+FILETAGS:= is written on a fresh file and parsed
+for documentation; it is not copied onto every heading, because every
+issue in the file would then share the same two tags and =search=
+would stop meaning anything.
+
+* 7 Properties and Columns
+
+=:NAME: value= in a =:PROPERTIES:= drawer. =:NAME+: value= appends.
+=:ID:= is required on an issue. Special property names Org reserves
+(=TAGS=, =DEADLINE=, =SCHEDULED=, =CLOSED=) are not written into the
+drawer; dates live on the planning line. Column view, property
+inheritance, and =#+PROPERTY:= file-level inheritance are not
+interpreted. A property drawer further down the entry, past body
+text, is an ordinary drawer and does not define an id.
+
+* 8 Dates and Times
+
+The planning line accepts the full Org timestamp: active angles,
+inactive brackets, a time of day, a time range on one stamp, a range
+of two stamps joined by two hyphens, a repeater, a warning period, and
+a diary sexp. Several planning keywords may share a line, in Org's
+order CLOSED then SCHEDULED then DEADLINE, or sit on successive lines.
+=agenda= reads the first calendar date in the stamp.
+
+Clocking, effort estimates, and relative timers are preserved when
+they appear as =CLOCK:= logbook lines or ordinary properties; they
+are not summed.
+
+* 9 Refiling and Archiving
+
+=vissue refile= moves a heading to another project's file. Org's
+archive sibling and =ARCHIVE= tag are not special-cased: an
+=:ARCHIVE:= tag is an Org tag, and a heading so tagged is still an
+issue if it has a TODO keyword.
+
+* 10 Capture and Attachments
+
+Out of scope. Capture templates and attachment directories are Emacs
+configuration. An =[[attachment:...]]= link is body text.
+
+* 11 Agenda Views
+
+The file is a legal agenda file: =#+CATEGORY:= names the project so a
+multi-file agenda does not label every row =issues=, planning dates
+feed the weekly view, and headline tags feed tag search. Custom
+agenda commands, column view in the agenda, and stuck-project
+recipes are Emacs configuration.
+
+* 12 Markup for Rich Contents
+
+Paragraphs, emphasis, subscripts, entities, LaTeX fragments,
+captions, rules, and footnotes are body text. Literal examples
+(=#+BEGIN_EXAMPLE=, =#+BEGIN_SRC=) are blocks (2.8): their contents
+are not headlines.
+
+* 13 Exporting
+
+** 13.6 Comment lines
+
+A line starting with =# = is a comment. A =COMMENT= keyword on a
+headline comments out that subtree; the heading is not an issue and
+is kept as Org around the issues.
+
+The rest of the export dispatcher, include files, macros, and the
+HTML/LaTeX/Beamer/ODT/Texinfo backends are not interpreted.
+
+* 14 Publishing
+
+Out of scope. Publishing is a project-alist in Emacs.
+
+* 15 Citation handling
+
+=cite:= links and print-bibliography blocks are body text. They are
+not resolved.
+
+* 16 Working with Source Code
+
+The structure of a code block is a greater block (2.8). Header
+arguments, noweb, and evaluation are not interpreted. A block that
+quotes an =issues.org= heading must not become one.
+
+* 17 Miscellaneous
+
+** 17.8 In-buffer settings
+
+=#+TODO:=, =#+FILETAGS:=, =#+CATEGORY:=, =#+TITLE:=, and the other
+keywords in a fresh preamble are written and preserved. =#+TODO:= is
+read (5.2). Unknown keywords stay in the preamble.
+
+** 17.9 Regular expressions, 17.10 Org syntax
+
+The formal grammar is the authority for headlines, drawers, blocks,
+and timestamps. This crate implements the subset an issues file uses;
+it is not a full =org-element= clone.
+
+** 17.12 Escape character
+
+A comma before =*= or =#+= is Org's escape. Those lines do not start
+with =* = or =#+=, so they are already not headlines or blocks.
+
+* What a rewrite will not invent
+
+The parser keeps what it does not understand: extra drawers, =CLOCK:=
+lines, file keywords it does not name, COMMENT trees, and notes
+headings between issues. It will not turn a legal Org construct into
+a missing =:ID:=, and it will not drop a section that is not an
+issue.

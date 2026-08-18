@@ -60,13 +60,22 @@ Org's own shape. Two rules cover it:
 - Take the advisory lock on =<path>.lock= before a read-modify-write cycle.
   vissue holds it across parse and write; a writer that ignores it can lose an
   edit that landed in between, with nothing to report it.
-- Put a =:LOGBOOK:= drawer *below* the planning line and the property drawer.
-  A stamp that stops touching its heading stops being a stamp, and the drawer
-  beneath it stops being findable.
+- Put drawers under the heading, after the planning line. Org does not
+  require =:PROPERTIES:= to come first, and the parser no longer does
+  either; a rewrite still emits =:PROPERTIES:= then =:LOGBOOK:= then any
+  other drawer, which is the order =org-log-into-drawer= produces.
 
 vissue keeps whatever it does not understand. CLOCK entries and other opaque
 drawer lines round-trip verbatim and appear in the JSONL export as =raw=, so
-data another tool records survives a vissue rewrite.
+data another tool records survives a vissue rewrite. A =COMMENT= heading
+or a =* Notes= section between issues is kept as Org, not turned into a
+missing =:ID:=. A =#+BEGIN_SRC= / =#+BEGIN_EXAMPLE= / =#+BEGIN:= block is
+literal: a quoted =* TODO= inside one is not an issue.
+
+The planning line accepts Org's full timestamp, including a range
+=<date>--<date>=, a repeater, and a warning period. File-local =#+TODO:=
+keywords are recognised so a =WAITING= heading does not fail the file.
+The chapter-by-chapter map is [[file:org-syntax.org][Org syntax]].
 
 One line is the exception, and it exists because Org says so: a body line
 beginning =* = opens a headline, which would end the issue at that point and

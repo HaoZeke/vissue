@@ -4,7 +4,7 @@
 .SH NAME
 vissue \- Plain\-text issue tracking over per\-project orgmode files
 .SH SYNOPSIS
-\fBvissue\fR [\fB\-\-root\fR] [\fB\-\-prefix\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBvissue\fR [\fB\-\-root\fR] [\fB\-\-prefix\fR] [\fB\-\-no\-route\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 Plain\-text issue tracking over per\-project orgmode files
 .SH OPTIONS
@@ -14,6 +14,9 @@ Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory
 .TP
 \fB\-\-prefix\fR \fI<PREFIX>\fR
 Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`
+.TP
+\fB\-\-no\-route\fR
+Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help

@@ -17,6 +17,7 @@ _vissue() {
     _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '-V[Print version]' \
@@ -47,6 +48,7 @@ _arguments "${_arguments_options[@]}" : \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '-q[Print only the new id]' \
 '--quiet[Print only the new id]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':title -- One-line title:_default' \
@@ -61,6 +63,7 @@ _arguments "${_arguments_options[@]}" : \
 '--parent=[]:PARENT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':title -- One-line title:_default' \
@@ -75,6 +78,7 @@ _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--json[Emit JSON rows instead of text]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -85,6 +89,7 @@ _arguments "${_arguments_options[@]}" : \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--json[Emit a JSON object instead of text]' \
 '(--json)--org[Emit the heading'\''s org text in full, nothing else. Use this to write the issue out as the specification someone works from]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -101,6 +106,7 @@ _arguments "${_arguments_options[@]}" : \
 '--if-gen=[Refuse unless the corpus generation is still this value]:IF_GEN:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -112,6 +118,7 @@ _arguments "${_arguments_options[@]}" : \
 '--state=[]:STATE:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -125,6 +132,7 @@ _arguments "${_arguments_options[@]}" : \
 '--reason=[Why this issue is rejected]:REASON:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id -- Issue id to reject:_default' \
@@ -138,6 +146,7 @@ _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--json[]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -147,6 +156,7 @@ _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--force[Take over a claim held by another identity]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -156,6 +166,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -168,6 +179,7 @@ _arguments "${_arguments_options[@]}" : \
 '--file=[Read the text from a file; \`-\` reads stdin]:FILE:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':id:_default' \
@@ -181,6 +193,7 @@ _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--json[Machine-readable output]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -191,6 +204,7 @@ _arguments "${_arguments_options[@]}" : \
 '--project=[Project the folded issues are created in. Auto-detected from .project-ctx.toml when omitted]:PROJECT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':file -- The inbox file to fold:_files' \
@@ -204,6 +218,7 @@ _arguments "${_arguments_options[@]}" : \
 '--project=[]:PROJECT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -213,6 +228,7 @@ _arguments "${_arguments_options[@]}" : \
 '--stale-days=[Days a claim may be held before it counts as stale]:STALE_DAYS:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -221,6 +237,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -229,6 +246,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -238,6 +256,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -249,6 +268,7 @@ _arguments "${_arguments_options[@]}" : \
 '--limit=[]:LIMIT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':query:_default' \
@@ -258,6 +278,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -269,6 +290,7 @@ _arguments "${_arguments_options[@]}" : \
 '--depth=[]:DEPTH:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -280,6 +302,7 @@ _arguments "${_arguments_options[@]}" : \
 '--depth=[]:DEPTH:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -294,6 +317,7 @@ _arguments "${_arguments_options[@]}" : \
 '--format=[text or org; org emits links to the source headings]:FORMAT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -307,6 +331,7 @@ _arguments "${_arguments_options[@]}" : \
 '--project=[]:PROJECT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -321,6 +346,7 @@ _arguments "${_arguments_options[@]}" : \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '-r[Count only actionable issues]' \
 '--ready[Count only actionable issues]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -331,6 +357,7 @@ _arguments "${_arguments_options[@]}" : \
 '--project=[]:PROJECT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -341,6 +368,7 @@ _arguments "${_arguments_options[@]}" : \
 '--format=[ascii or dot]:FORMAT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -350,6 +378,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -360,6 +389,7 @@ _arguments "${_arguments_options[@]}" : \
 '--project=[]:PROJECT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -369,6 +399,7 @@ _arguments "${_arguments_options[@]}" : \
 '--to=[Target project]:TO:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -378,6 +409,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':id:_default' \
@@ -389,6 +421,7 @@ _arguments "${_arguments_options[@]}" : \
 '--project=[]:PROJECT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -397,6 +430,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -410,6 +444,7 @@ _arguments "${_arguments_options[@]}" : \
 '--json[Emit a JSON object instead of text]' \
 '-q[Print only the combined digest]' \
 '--quiet[Print only the combined digest]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -427,6 +462,7 @@ _arguments "${_arguments_options[@]}" : \
 '--state=[Include only this state]:STATE:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -438,6 +474,7 @@ _arguments "${_arguments_options[@]}" : \
 '--limit=[Maximum events returned]:LIMIT:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -447,6 +484,7 @@ _arguments "${_arguments_options[@]}" : \
 '--detail=[]:DETAIL:_default' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -460,6 +498,7 @@ _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--until-terminal[Block until the issue is DONE or CANCELLED]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -468,6 +507,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -476,6 +516,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -484,6 +525,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -496,6 +538,7 @@ _arguments "${_arguments_options[@]}" : \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '-d[Detach after the socket accepts. The child is placed in its own process group (not a new session) and can still receive SIGHUP from the parent terminal]' \
 '--detach[Detach after the socket accepts. The child is placed in its own process group (not a new session) and can still receive SIGHUP from the parent terminal]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ":: :_vissue__subcmd__serve_commands" \
@@ -514,6 +557,7 @@ _arguments "${_arguments_options[@]}" : \
 '--socket=[Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then \$XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock]:SOCKET:_files' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -524,6 +568,7 @@ _arguments "${_arguments_options[@]}" : \
 '--socket=[Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then \$XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock]:SOCKET:_files' \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -535,6 +580,7 @@ _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--json[Machine-readable object]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -582,6 +628,7 @@ _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--offline[Never attach, never spawn serve; CatalogService plus generation poll]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -599,6 +646,7 @@ _arguments "${_arguments_options[@]}" : \
 '--hide[Hide a running board, or dismiss a live rofi picker]' \
 '--iced[Use the iced board. Default when \`--rofi\` is absent]' \
 '--rofi[Use the rofi picker instead of the iced board]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
@@ -607,6 +655,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 ':shell -- Shell to generate for:(bash elvish fish powershell zsh)' \
@@ -616,6 +665,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--root=[Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory]:ROOT:_files' \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -626,6 +676,7 @@ _arguments "${_arguments_options[@]}" : \
 '--prefix=[Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then \`prefix\` in vissue.toml, then \`Software\`]:PREFIX:_default' \
 '--check[Load the overlay and exit 1 on conflict]' \
 '--occupancy[Print taken chords]' \
+'--no-route[Ignore \`\$VISSUE_CONFIG\` / \`~/.config/vissue/config.toml\` and keep every verb on the process default layout]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0

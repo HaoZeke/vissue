@@ -1,6 +1,6 @@
 # Print an optspec for argparse to handle cmd's options that are independent of any subcommand.
 function __fish_vissue_global_optspecs
-    string join \n root= prefix= h/help V/version
+    string join \n root= prefix= no-route h/help V/version
 end
 
 function __fish_vissue_needs_command
@@ -26,6 +26,7 @@ end
 
 complete -c vissue -n "__fish_vissue_needs_command" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_needs_command" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_needs_command" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_needs_command" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_needs_command" -s V -l version -d 'Print version'
 complete -c vissue -n "__fish_vissue_needs_command" -f -a "create" -d 'Create an issue. Pass the body with --body or --body-file (`-` reads stdin); omit both to leave the body empty for a later edit'
@@ -88,23 +89,27 @@ complete -c vissue -n "__fish_vissue_using_subcommand create" -l body-file -d 'R
 complete -c vissue -n "__fish_vissue_using_subcommand create" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand create" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand create" -s q -l quiet -d 'Print only the new id'
+complete -c vissue -n "__fish_vissue_using_subcommand create" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand create" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand q" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand q" -s t -l type -r
 complete -c vissue -n "__fish_vissue_using_subcommand q" -l parent -r
 complete -c vissue -n "__fish_vissue_using_subcommand q" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand q" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand q" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand q" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand list" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand list" -s s -l state -d 'Filter by state: TODO, STARTED, BLOCKED, DONE, or CANCELLED' -r
 complete -c vissue -n "__fish_vissue_using_subcommand list" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand list" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand list" -l json -d 'Emit JSON rows instead of text'
+complete -c vissue -n "__fish_vissue_using_subcommand list" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand list" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand show" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand show" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand show" -l json -d 'Emit a JSON object instead of text'
 complete -c vissue -n "__fish_vissue_using_subcommand show" -l org -d 'Emit the heading\'s org text in full, nothing else. Use this to write the issue out as the specification someone works from'
+complete -c vissue -n "__fish_vissue_using_subcommand show" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand show" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand update" -s s -l state -r
 complete -c vissue -n "__fish_vissue_using_subcommand update" -l priority -r
@@ -114,128 +119,158 @@ complete -c vissue -n "__fish_vissue_using_subcommand update" -l if-state -d 'Re
 complete -c vissue -n "__fish_vissue_using_subcommand update" -l if-gen -d 'Refuse unless the corpus generation is still this value' -r
 complete -c vissue -n "__fish_vissue_using_subcommand update" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand update" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand update" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand update" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand resolve" -s s -l state -r
 complete -c vissue -n "__fish_vissue_using_subcommand resolve" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand resolve" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand resolve" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand resolve" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand reject" -l to -d 'Existing destination issue' -r
 complete -c vissue -n "__fish_vissue_using_subcommand reject" -s p -l project -d 'Project for a newly created replacement' -r
 complete -c vissue -n "__fish_vissue_using_subcommand reject" -l reason -d 'Why this issue is rejected' -r
 complete -c vissue -n "__fish_vissue_using_subcommand reject" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand reject" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand reject" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand reject" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand ready" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand ready" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand ready" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand ready" -l json
+complete -c vissue -n "__fish_vissue_using_subcommand ready" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand ready" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand claim" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand claim" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand claim" -l force -d 'Take over a claim held by another identity'
+complete -c vissue -n "__fish_vissue_using_subcommand claim" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand claim" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand note" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand note" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand note" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand note" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand append" -l text -d 'The text to append' -r
 complete -c vissue -n "__fish_vissue_using_subcommand append" -l file -d 'Read the text from a file; `-` reads stdin' -r
 complete -c vissue -n "__fish_vissue_using_subcommand append" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand append" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand append" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand append" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c vissue -n "__fish_vissue_using_subcommand claims" -l by -d 'Only claims held by this identity' -r
 complete -c vissue -n "__fish_vissue_using_subcommand claims" -s p -l project -d 'Only claims in this project' -r
 complete -c vissue -n "__fish_vissue_using_subcommand claims" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand claims" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand claims" -l json -d 'Machine-readable output'
+complete -c vissue -n "__fish_vissue_using_subcommand claims" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand claims" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand fold" -s p -l project -d 'Project the folded issues are created in. Auto-detected from .project-ctx.toml when omitted' -r
 complete -c vissue -n "__fish_vissue_using_subcommand fold" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand fold" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand fold" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand fold" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand agenda" -s d -l days -d 'Days ahead to include' -r
 complete -c vissue -n "__fish_vissue_using_subcommand agenda" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand agenda" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand agenda" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand agenda" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand agenda" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand hygiene" -l stale-days -d 'Days a claim may be held before it counts as stale' -r
 complete -c vissue -n "__fish_vissue_using_subcommand hygiene" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand hygiene" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand hygiene" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand hygiene" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand whoami" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand whoami" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand whoami" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand whoami" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand waiting-on" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand waiting-on" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand waiting-on" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand waiting-on" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand body-excerpt" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand body-excerpt" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand body-excerpt" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand body-excerpt" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand search" -s n -l limit -r
 complete -c vissue -n "__fish_vissue_using_subcommand search" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand search" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand search" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand search" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand children" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand children" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand children" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand children" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand ancestors" -s d -l depth -r
 complete -c vissue -n "__fish_vissue_using_subcommand ancestors" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand ancestors" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand ancestors" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand ancestors" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand impact" -s d -l depth -r
 complete -c vissue -n "__fish_vissue_using_subcommand impact" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand impact" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand impact" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand impact" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand related" -s d -l depth -r
 complete -c vissue -n "__fish_vissue_using_subcommand related" -s n -l limit -r
 complete -c vissue -n "__fish_vissue_using_subcommand related" -l format -d 'text or org; org emits links to the source headings' -r
 complete -c vissue -n "__fish_vissue_using_subcommand related" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand related" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand related" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand related" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand stale" -s d -l days -r
 complete -c vissue -n "__fish_vissue_using_subcommand stale" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand stale" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand stale" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand stale" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand stale" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand count" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand count" -s s -l state -r
 complete -c vissue -n "__fish_vissue_using_subcommand count" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand count" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand count" -s r -l ready -d 'Count only actionable issues'
+complete -c vissue -n "__fish_vissue_using_subcommand count" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand count" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand export" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand export" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand export" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand export" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand export" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand tree" -s f -l format -d 'ascii or dot' -r
 complete -c vissue -n "__fish_vissue_using_subcommand tree" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand tree" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand tree" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand tree" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand cycles" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand cycles" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand cycles" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand cycles" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand graph" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand graph" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand graph" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand graph" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand graph" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand refile" -l to -d 'Target project' -r
 complete -c vissue -n "__fish_vissue_using_subcommand refile" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand refile" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand refile" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand refile" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand backlinks" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand backlinks" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand backlinks" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand backlinks" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand roadmap" -s p -l project -r
 complete -c vissue -n "__fish_vissue_using_subcommand roadmap" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand roadmap" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand roadmap" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand roadmap" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand check" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand check" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand check" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand check" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand digest" -s p -l project -d 'Project to include; repeat for several. Omit for every project' -r
 complete -c vissue -n "__fish_vissue_using_subcommand digest" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand digest" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand digest" -l json -d 'Emit a JSON object instead of text'
 complete -c vissue -n "__fish_vissue_using_subcommand digest" -s q -l quiet -d 'Print only the combined digest'
+complete -c vissue -n "__fish_vissue_using_subcommand digest" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand digest" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand mirror" -s p -l project -d 'Project to include; repeat for several. Omit for every project' -r
 complete -c vissue -n "__fish_vissue_using_subcommand mirror" -s o -l out -d 'Destination file; `-` writes to standard output' -r
@@ -244,15 +279,18 @@ complete -c vissue -n "__fish_vissue_using_subcommand mirror" -s f -l format -d 
 complete -c vissue -n "__fish_vissue_using_subcommand mirror" -s s -l state -d 'Include only this state' -r
 complete -c vissue -n "__fish_vissue_using_subcommand mirror" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand mirror" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand mirror" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand mirror" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand events" -l since -d 'Only events newer than this sequence' -r
 complete -c vissue -n "__fish_vissue_using_subcommand events" -s n -l limit -d 'Maximum events returned' -r
 complete -c vissue -n "__fish_vissue_using_subcommand events" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand events" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand events" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand events" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand ping" -l detail -r
 complete -c vissue -n "__fish_vissue_using_subcommand ping" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand ping" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand ping" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand ping" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand wait" -l last -r
 complete -c vissue -n "__fish_vissue_using_subcommand wait" -l id -d 'Issue to watch when --until-terminal is set' -r
@@ -261,20 +299,25 @@ complete -c vissue -n "__fish_vissue_using_subcommand wait" -l timeout-ms -r
 complete -c vissue -n "__fish_vissue_using_subcommand wait" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand wait" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand wait" -l until-terminal -d 'Block until the issue is DONE or CANCELLED'
+complete -c vissue -n "__fish_vissue_using_subcommand wait" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand wait" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand gen" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand gen" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand gen" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand gen" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand projects" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand projects" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand projects" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand projects" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand identity" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand identity" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand identity" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand identity" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen_subcommand_from stop restart status help" -s s -l socket -d 'Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen_subcommand_from stop restart status help" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen_subcommand_from stop restart status help" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen_subcommand_from stop restart status help" -s d -l detach -d 'Detach after the socket accepts. The child is placed in its own process group (not a new session) and can still receive SIGHUP from the parent terminal'
+complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen_subcommand_from stop restart status help" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen_subcommand_from stop restart status help" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen_subcommand_from stop restart status help" -f -a "stop" -d 'Signal the owner (SIGTERM, then SIGKILL) and wait'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen_subcommand_from stop restart status help" -f -a "restart" -d 'Stop, then start detached'
@@ -283,15 +326,18 @@ complete -c vissue -n "__fish_vissue_using_subcommand serve; and not __fish_seen
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from stop" -s s -l socket -d 'Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from stop" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from stop" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from stop" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from stop" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from restart" -s s -l socket -d 'Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from restart" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from restart" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from restart" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from restart" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from status" -s s -l socket -d 'Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from status" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from status" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from status" -l json -d 'Machine-readable object'
+complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from status" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from status" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from help" -f -a "stop" -d 'Signal the owner (SIGTERM, then SIGKILL) and wait'
 complete -c vissue -n "__fish_vissue_using_subcommand serve; and __fish_seen_subcommand_from help" -f -a "restart" -d 'Stop, then start detached'
@@ -301,6 +347,7 @@ complete -c vissue -n "__fish_vissue_using_subcommand tui" -s s -l socket -d 'Co
 complete -c vissue -n "__fish_vissue_using_subcommand tui" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand tui" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand tui" -l offline -d 'Never attach, never spawn serve; CatalogService plus generation poll'
+complete -c vissue -n "__fish_vissue_using_subcommand tui" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand tui" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c vissue -n "__fish_vissue_using_subcommand hud" -l mode -d 'ready, list (all), claims, stale, or new. Used by `--rofi`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand hud" -s s -l socket -d 'Control socket path. Falls back to VISSUE_CONTROL_SOCKET, then $XDG_RUNTIME_DIR/vissue/control.sock, then ~/.vissue/run/control.sock' -r -F
@@ -312,17 +359,21 @@ complete -c vissue -n "__fish_vissue_using_subcommand hud" -l show -d 'Show a ru
 complete -c vissue -n "__fish_vissue_using_subcommand hud" -l hide -d 'Hide a running board, or dismiss a live rofi picker'
 complete -c vissue -n "__fish_vissue_using_subcommand hud" -l iced -d 'Use the iced board. Default when `--rofi` is absent'
 complete -c vissue -n "__fish_vissue_using_subcommand hud" -l rofi -d 'Use the rofi picker instead of the iced board'
+complete -c vissue -n "__fish_vissue_using_subcommand hud" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand hud" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c vissue -n "__fish_vissue_using_subcommand completions" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand completions" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand completions" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand completions" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c vissue -n "__fish_vissue_using_subcommand man" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand man" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
+complete -c vissue -n "__fish_vissue_using_subcommand man" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand man" -s h -l help -d 'Print help'
 complete -c vissue -n "__fish_vissue_using_subcommand keys" -l root -d 'Tracker root. Falls back to ISSUE_ROOT, VISSUE_ROOT, then the current directory' -r -F
 complete -c vissue -n "__fish_vissue_using_subcommand keys" -l prefix -d 'Directory under the root holding one subdirectory per project. Falls back to VISSUE_PREFIX, then `prefix` in vissue.toml, then `Software`' -r
 complete -c vissue -n "__fish_vissue_using_subcommand keys" -l check -d 'Load the overlay and exit 1 on conflict'
 complete -c vissue -n "__fish_vissue_using_subcommand keys" -l occupancy -d 'Print taken chords'
+complete -c vissue -n "__fish_vissue_using_subcommand keys" -l no-route -d 'Ignore `$VISSUE_CONFIG` / `~/.config/vissue/config.toml` and keep every verb on the process default layout'
 complete -c vissue -n "__fish_vissue_using_subcommand keys" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c vissue -n "__fish_vissue_using_subcommand help; and not __fish_seen_subcommand_from create q list show update resolve reject ready claim note append claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve tui hud completions man keys help" -f -a "create" -d 'Create an issue. Pass the body with --body or --body-file (`-` reads stdin); omit both to leave the body empty for a later edit'
 complete -c vissue -n "__fish_vissue_using_subcommand help; and not __fish_seen_subcommand_from create q list show update resolve reject ready claim note append claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve tui hud completions man keys help" -f -a "q" -d 'Quick capture: create and print only the id'

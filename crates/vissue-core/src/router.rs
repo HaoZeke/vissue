@@ -137,12 +137,12 @@ impl Router {
     fn from_config(default: Layout, parsed: UserConfig) -> Result<Self> {
         let default_key = layout_key(&default);
         let mut named = BTreeMap::new();
-        for (name, spec) in parsed.layouts {
-            let layout = Layout::new(expand_path(&spec.root)?, spec.prefix);
+        for (name, spec) in &parsed.layouts {
+            let layout = Layout::new(expand_path(&spec.root)?, spec.prefix.clone());
             if layout_key(&layout) == default_key {
                 continue;
             }
-            named.insert(name, layout);
+            named.insert(name.clone(), layout);
         }
         let mut routes = BTreeMap::new();
         for (key, spec) in parsed.routes {

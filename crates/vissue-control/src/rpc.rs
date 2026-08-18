@@ -260,6 +260,15 @@ pub fn error_from_core(err: &CoreError) -> JsonRpcError {
             message: err.to_string(),
             data: Some(json!({ "code": "not_found", "id": id })),
         },
+        CoreError::DuplicateId { id, paths } => JsonRpcError {
+            code: CONFLICT,
+            message: err.to_string(),
+            data: Some(json!({
+                "code": "duplicate_id",
+                "id": id,
+                "paths": paths,
+            })),
+        },
         CoreError::ClaimConflict { id, holder, .. } => JsonRpcError {
             code: CONFLICT,
             message: err.to_string(),
@@ -1330,6 +1339,16 @@ mod tests {
         });
         assert_eq!(err.code, INVALID_STATE);
         assert_eq!(err.data.unwrap()["code"], "invalid_state");
+
+        let err = error_from_core(&CoreError::DuplicateId {
+            id: "atlas-1a2b".into(),
+            paths: vec![
+                std::path::PathBuf::from("/a/issues.org"),
+                std::path::PathBuf::from("/b/issues.org"),
+            ],
+        });
+        assert_eq!(err.code, CONFLICT);
+        assert_eq!(err.data.unwrap()["code"], "duplicate_id");
     }
 
     #[test]

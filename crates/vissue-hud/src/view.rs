@@ -44,7 +44,7 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
         } else {
             pane = pane.push(task_board(palette, tea));
         }
-        if sections.is_empty() && palette.selected_id().is_some() {
+        if sections.is_empty() && palette.painted_id().is_some() {
             pane = pane.push(detail_panel(palette, tea));
         }
     }
@@ -256,7 +256,7 @@ fn task_board<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         tea,
         A11y::new("tasks", Role::List),
     );
-    if palette.selected_id().is_some() {
+    if palette.painted_id().is_some() {
         list_detail(palette, list, tea)
     } else {
         list
@@ -889,7 +889,7 @@ fn related_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         );
     }
     let mut col = column![].spacing(4);
-    let selected = palette.selected_id();
+    let selected = palette.painted_id();
     for hit in hits {
         let (priority, blocked, claimed) = palette
             .related_marks(&hit.id)

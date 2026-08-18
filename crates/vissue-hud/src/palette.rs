@@ -1005,6 +1005,15 @@ impl Palette {
         self.selected_item().map(|i| i.id.as_str())
     }
 
+    /// Issue the board is acting on: a held Tree or Related view, else the list cursor.
+    pub fn painted_id(&self) -> Option<&str> {
+        if self.viewing_held {
+            self.viewing.as_deref().or_else(|| self.selected_id())
+        } else {
+            self.selected_id()
+        }
+    }
+
     /// Index into [`Self::filtered_items`].
     pub fn selected_index(&self) -> usize {
         self.selected
@@ -1217,7 +1226,7 @@ impl Palette {
                 }
             }
             ActionId::ListDone => {
-                if let Some(id) = self.selected_id().map(str::to_string) {
+                if let Some(id) = self.painted_id().map(str::to_string) {
                     self.toggle_done(&id);
                 }
             }
@@ -1259,7 +1268,7 @@ impl Palette {
             }
             ActionId::Claim => self.claim_selected(),
             ActionId::Note => {
-                if self.selected_id().is_some() {
+                if self.painted_id().is_some() {
                     self.detail_tab = DetailTab::Notes;
                     self.refresh_detail();
                     self.note_draft = Some(String::new());
@@ -1289,7 +1298,7 @@ impl Palette {
                 self.focus = Focus::List;
             }
             PaletteKey::Enter => {
-                if let Some(id) = self.selected_id().map(str::to_string) {
+                if let Some(id) = self.painted_id().map(str::to_string) {
                     match self.backend.note(&id, &text) {
                         Ok(result) => {
                             self.message = result.report.trim().to_string();
@@ -1429,7 +1438,10 @@ impl Palette {
     }
 
     fn cycle_state(&mut self) {
-        let Some(state) = self.selected_item().map(|i| i.state.clone()) else {
+        let Some(id) = self.painted_id().map(str::to_string) else {
+            return;
+        };
+        let Some(state) = self.painted_state(&id).map(str::to_string) else {
             return;
         };
         let next = match state.as_str() {
@@ -1445,13 +1457,13 @@ impl Palette {
     }
 
     fn apply_state(&mut self, state: &str) {
-        let Some(id) = self.selected_id().map(str::to_string) else {
+        let Some(id) = self.painted_id().map(str::to_string) else {
             return;
         };
         match self.backend.update(UpdateReq {
-            id,
+            id: id.clone(),
             state: Some(state.to_string()),
-            if_state: self.selected_item().map(|i| i.state.clone()),
+            if_state: self.painted_state(&id).map(str::to_string),
             ..UpdateReq::default()
         }) {
             Ok(result) => {
@@ -1463,7 +1475,7 @@ impl Palette {
     }
 
     fn open_selected(&mut self) {
-        let Some(id) = self.selected_id().map(str::to_string) else {
+        let Some(id) = self.painted_id().map(str::to_string) else {
             return;
         };
         match self.backend.open(&id) {
@@ -1476,7 +1488,7 @@ impl Palette {
     }
 
     fn copy_selected(&mut self) {
-        let Some(id) = self.selected_id().map(str::to_string) else {
+        let Some(id) = self.painted_id().map(str::to_string) else {
             return;
         };
         self.set_clipboard(id);
@@ -1656,7 +1668,9 @@ impl Palette {
         }) {
             Ok(result) => {
                 self.message = result.report.trim().to_string();
-                self.tree_stale = true;
+                if !self.viewing_held {
+                    self.tree_stale = true;
+                }
                 let _ = self.reload();
             }
             Err(err) => self.message = err.to_string(),
@@ -1741,9 +1755,9 @@ impl Palette {
         self.focus = Focus::List;
     }
 
-    /// Load the on-disk excerpt for the selected issue.
+    /// Load the on-disk excerpt for the painted issue.
     pub fn show_excerpt(&mut self) {
-        let Some(id) = self.selected_id().map(str::to_string) else {
+        let Some(id) = self.painted_id().map(str::to_string) else {
             return;
         };
         match self.backend.excerpt(&id) {
@@ -1755,9 +1769,9 @@ impl Palette {
         }
     }
 
-    /// Claim the selected issue for [`Self::agent`].
+    /// Claim the painted issue for [`Self::agent`].
     pub fn claim_selected(&mut self) {
-        let Some(id) = self.selected_id().map(str::to_string) else {
+        let Some(id) = self.painted_id().map(str::to_string) else {
             return;
         };
         match self.backend.claim(&id, false) {
@@ -1840,7 +1854,9 @@ impl Palette {
             self.collapsed.remove(&p);
         }
         self.refresh_chip_counts(project);
-        self.tree_stale = true;
+        if !self.viewing_held {
+            self.tree_stale = true;
+        }
         self.refresh_detail();
         Ok(())
     }
@@ -2656,6 +2672,134 @@ mod tests {
             Some(child_id),
             "a tree pick should survive Enter cycling the side tabs"
         );
+        let _ = palette.reload();
+        assert_eq!(
+            palette.tree_rows()[0].issue_id,
+            "atlas-1a2b",
+            "reload must keep the tree rooted on the list parent"
+        );
+        assert_eq!(palette.tree_selected(), Some(child_id));
+    }
+
+    fn pick_off_filter_child(palette: &mut Palette) -> u64 {
+        palette.select_id("atlas-1a2b");
+        palette.set_query("manifest");
+        palette.set_detail_tab(DetailTab::Tree);
+        assert!(
+            palette
+                .filtered_items()
+                .iter()
+                .all(|item| item.id != "atlas-2c3d"),
+            "query should drop the child from the list"
+        );
+        let child_id = palette
+            .tree_rows()
+            .into_iter()
+            .find(|row| row.issue_id == "atlas-2c3d")
+            .expect("parent tree includes the child")
+            .tea_id;
+        palette.select_tree_node(child_id);
+        assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
+        assert_eq!(palette.painted_id(), Some("atlas-2c3d"));
+        child_id
+    }
+
+    #[test]
+    fn tree_pick_mutations_use_the_painted_child() {
+        let (_dir, layout) = writable();
+        let mut palette = open_atlas(layout, "hud-test");
+        pick_off_filter_child(&mut palette);
+        palette.handle_key(PaletteKey::Char('y'));
+        assert_eq!(palette.clipboard(), "atlas-2c3d");
+        palette.handle_key(PaletteKey::Char('n'));
+        for c in "from the child".chars() {
+            palette.handle_key(PaletteKey::Char(c));
+        }
+        palette.handle_key(PaletteKey::Enter);
+        let child = palette.backend().get("atlas-2c3d").unwrap();
+        assert!(
+            child
+                .logbook
+                .iter()
+                .any(|entry| entry.note.as_deref() == Some("from the child")),
+            "{:?}",
+            child.logbook
+        );
+        let parent = palette.backend().get("atlas-1a2b").unwrap();
+        assert!(
+            parent
+                .logbook
+                .iter()
+                .all(|entry| entry.note.as_deref() != Some("from the child")),
+            "{:?}",
+            parent.logbook
+        );
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "TODO");
+        palette.handle_key(PaletteKey::Space);
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "DONE");
+        palette.handle_key(PaletteKey::Space);
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "TODO");
+        palette.handle_key(PaletteKey::Char('s'));
+        assert_eq!(
+            palette.backend().get("atlas-2c3d").unwrap().state,
+            "STARTED"
+        );
+        palette.handle_key(PaletteKey::Char('c'));
+        assert_eq!(
+            palette
+                .backend()
+                .get("atlas-2c3d")
+                .unwrap()
+                .claimed_by
+                .as_deref(),
+            Some("hud-test")
+        );
+        assert_eq!(
+            palette
+                .backend()
+                .get("atlas-1a2b")
+                .unwrap()
+                .claimed_by
+                .as_deref(),
+            Some("fixture-agent")
+        );
+        assert_eq!(
+            palette.backend().get("atlas-1a2b").unwrap().state,
+            "STARTED"
+        );
+        palette.handle_key(PaletteKey::Char('D'));
+        palette.handle_key(PaletteKey::Char('y'));
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "DONE");
+        assert_eq!(
+            palette.backend().get("atlas-1a2b").unwrap().state,
+            "STARTED"
+        );
+        palette.handle_key(PaletteKey::Char('o'));
+        assert!(
+            palette.message().contains("atlas-2c3d"),
+            "{}",
+            palette.message()
+        );
+        assert_eq!(
+            palette.tree_rows()[0].issue_id,
+            "atlas-1a2b",
+            "mutations must keep the tree rooted on the list parent"
+        );
+    }
+
+    #[test]
+    fn empty_filter_keeps_painted_detail() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        pick_off_filter_child(&mut palette);
+        palette.set_query("zzzz-no-hit");
+        assert!(palette.filtered_items().is_empty());
+        assert!(palette.selected_id().is_none());
+        assert_eq!(palette.painted_id(), Some("atlas-2c3d"));
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Emit a summary table")
+        );
+        assert_eq!(palette.detail().map(|d| d.id.as_str()), Some("atlas-2c3d"));
     }
 
     #[test]

@@ -42,6 +42,10 @@ not a second reading list to copy.
 `Software` is the default prefix and is configurable. `<root>` comes from
 `--root`, the `VISSUE_ROOT` environment variable, or the current directory.
 
+A user-level `~/.config/vissue/config.toml` can send named projects to a
+different checkout. Those routes win over `--root`. `--no-route` keeps
+the process on a single layout. See the [reference](https://vissue.rgoswami.me/reference.html).
+
 ## A plan on the board
 
 A feature becomes one parent issue and five tagged children. This is the

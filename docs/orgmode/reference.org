@@ -223,7 +223,10 @@ On Windows only =tui --offline= runs.
 =vissue hud= opens on the project list. Opening a project shows Ready /
 List / Claims / Agenda for that project. Search is a field. The selected
 issue stays on screen, with properties above a wrapping body and tree,
-related, and notes as tabs.
+related, and notes as tabs. List titles wrap inside the pane. The tree
+tab expands or collapses the outline. Escape on the project list
+unmaps the overlay; =vissue hud --toggle= shows it again. Closing the
+mapped window quits.
 =--rofi= is the seat dmenu picker. Return opens the heading in
 =$EDITOR=. Alt+c claims. Alt+n notes. =--mode list|claims|stale|new=
 changes the picker list.

@@ -180,7 +180,10 @@ row. Chrome is
 [icedtea](https://crates.io/crates/icedtea) 0.11: chips, cards, markdown,
 the search field, and the type scale. The selected row keeps the issue
 visible (properties above a wrapping body) with tree / related / notes on the
-right. `n` opens the logbook and writes a note. Keys
+right. List titles wrap inside the pane. The tree tab expands or collapses
+the outline. Escape on the project list unmaps the overlay; `vissue hud
+--toggle` (or `--show` / `--hide`) talks to the running owner. Closing the
+mapped window quits. `n` opens the logbook and writes a note. Keys
 come from a catalog; `~/.config/vissue/keys.toml` (or
 `VISSUE_KEYS`) remaps them. `--rofi` is the seat dmenu picker.
 

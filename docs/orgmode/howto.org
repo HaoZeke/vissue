@@ -339,8 +339,11 @@ forest; List / Claims / Agenda then stay inside that project.
 Filters, search, and add sit on one row. =/= focuses search.
 Esc returns to the list. Ready and List nest children under =PARENT=.
 The selected row keeps the issue visible (properties above a wrapping
-body), with tree / related / notes on the right. =n= shows the logbook
-and writes a note. Keys are a catalog;
+body), with tree / related / notes on the right. List titles wrap
+inside the pane. The tree tab expands or collapses the outline.
+Escape on the project list unmaps the overlay; =vissue hud --toggle=
+shows it again. Closing the mapped window quits.
+=n= shows the logbook and writes a note. Keys are a catalog;
 =~/.config/vissue/keys.toml= remaps them; reserved =Esc=/=Enter=/=Tab=/=?=.
 =s= cycles TODO/STARTED/BLOCKED, =c= claims, =p= project, =D=/=X= close,
 =o= opens, =?= help, =a= adds. =Tab= or =1=--=4= switch panes.

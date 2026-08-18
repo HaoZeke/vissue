@@ -9,10 +9,7 @@ use std::process::Command;
 #[cfg(not(unix))]
 #[test]
 fn serve_is_unix_only() {
-    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
-        .arg("serve")
-        .output()
-        .expect("run vissue");
+    let out = vissue_cmd().arg("serve").output().expect("run vissue");
     assert!(!out.status.success());
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("Unix-only"),
@@ -25,8 +22,14 @@ fn fixture_root() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixture_vault")
 }
 
+fn vissue_cmd() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vissue"));
+    cmd.env("VISSUE_NO_ROUTE", "1");
+    cmd
+}
+
 fn vissue(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_vissue"))
+    vissue_cmd()
         .args(["--root", fixture_root().to_str().unwrap()])
         .args(args)
         .output()
@@ -91,10 +94,7 @@ fn an_id_quoted_in_a_report_does_not_resolve_a_broken_parent() {
     let own = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", dir.path().to_str().unwrap()];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
 
     own(&["create", "-p", "atlas", "The child", "-q"]);
@@ -218,7 +218,7 @@ fn hud_help_names_rofi_and_iced() {
 
 #[test]
 fn iced_hud_without_binary_exits_127() {
-    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let out = vissue_cmd()
         .args(["--root", fixture_root().to_str().unwrap(), "hud"])
         .env("VISSUE_HUD_BIN", "/nonexistent/vissue-hud")
         .env("PATH", "/nonexistent")
@@ -231,7 +231,7 @@ fn iced_hud_without_binary_exits_127() {
 
 #[test]
 fn hud_missing_override_bin_exits_127() {
-    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let out = vissue_cmd()
         .args(["--root", fixture_root().to_str().unwrap(), "hud", "--iced"])
         .env("VISSUE_HUD_BIN", "/nonexistent/vissue-hud")
         .output()
@@ -278,7 +278,7 @@ fn identity_reports_the_resolved_binary_root_and_prefix() {
 
 #[test]
 fn the_environment_can_name_the_claiming_identity() {
-    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let out = vissue_cmd()
         .args(["--root", fixture_root().to_str().unwrap()])
         .env("VISSUE_AGENT", "grind-worker-3")
         .arg("whoami")
@@ -295,7 +295,7 @@ fn a_create_and_update_cycle_works_in_a_temporary_root() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_str().unwrap();
     let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
+        vissue_cmd()
             .args(["--root", root])
             .args(args)
             .output()
@@ -328,7 +328,7 @@ fn a_create_and_update_cycle_works_in_a_temporary_root() {
 
 #[test]
 fn the_root_may_come_from_the_environment() {
-    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let out = vissue_cmd()
         .env("VISSUE_ROOT", fixture_root())
         .arg("projects")
         .output()
@@ -338,7 +338,7 @@ fn the_root_may_come_from_the_environment() {
 
 #[test]
 fn the_shared_issue_root_environment_is_supported() {
-    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let out = vissue_cmd()
         .env_remove("VISSUE_ROOT")
         .env("ISSUE_ROOT", fixture_root())
         .arg("projects")
@@ -408,10 +408,7 @@ fn the_read_only_command_surface_dispatches_against_the_fixture() {
     let own = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", dir.path().to_str().unwrap()];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
     assert_eq!(stdout(&own(&["gen"])), "0\n");
     assert!(
@@ -432,7 +429,7 @@ fn a_reader_that_closes_the_pipe_is_not_a_failure() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_str().unwrap().to_string();
     for i in 0..400 {
-        let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        let out = vissue_cmd()
             .args(["--root", &root, "q", "-p", "demo"])
             .arg(format!(
                 "issue {i} with a title long enough that four hundred of them exceed a pipe buffer"
@@ -442,7 +439,7 @@ fn a_reader_that_closes_the_pipe_is_not_a_failure() {
         assert!(out.status.success());
     }
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let mut child = vissue_cmd()
         .args(["--root", &root, "export"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -522,10 +519,7 @@ fn append_reads_a_file_and_stdin() {
     let mk = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root.to_str().unwrap()];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
     let id = String::from_utf8_lossy(
         &mk(&["create", "-p", "atlas", "--quiet", "Streaming exporter"]).stdout,
@@ -576,7 +570,7 @@ fn append_reads_a_file_and_stdin() {
 fn keys_prints_the_catalog_and_checks_an_overlay() {
     let dir = tempfile::tempdir().unwrap();
     let keys = |overlay: Option<&str>, args: &[&str]| -> std::process::Output {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_vissue"));
+        let mut cmd = vissue_cmd();
         cmd.args(["--root", fixture_root().to_str().unwrap(), "keys"]);
         cmd.args(args);
         match overlay {
@@ -655,7 +649,7 @@ fn the_iced_hud_is_given_the_root_prefix_and_flags() {
     fs::set_permissions(&staging, perm).unwrap();
     fs::rename(&staging, &fake).unwrap();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let out = vissue_cmd()
         .args([
             "--root",
             fixture_root().to_str().unwrap(),
@@ -692,7 +686,7 @@ fn a_body_can_be_piped_in() {
 
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("Software")).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let mut child = vissue_cmd()
         .args([
             "--root",
             dir.path().to_str().unwrap(),
@@ -718,7 +712,7 @@ fn a_body_can_be_piped_in() {
     assert!(out.status.success());
     let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
 
-    let shown = Command::new(env!("CARGO_BIN_EXE_vissue"))
+    let shown = vissue_cmd()
         .args(["--root", dir.path().to_str().unwrap(), "show", &id])
         .output()
         .unwrap();
@@ -794,10 +788,7 @@ fn the_change_stream_reports_and_blocks_the_way_a_poller_needs() {
     let run = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root.to_str().unwrap()];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
     let gen_now = |run: &dyn Fn(&[&str]) -> std::process::Output| -> u64 {
         stdout(&run(&["gen"])).trim().parse().expect("a generation")
@@ -898,10 +889,7 @@ fn mirror_check_reports_freshness_in_its_exit_code() {
     let run = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root.to_str().unwrap()];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
 
     let id = stdout(&run(&["create", "-p", "atlas", "--quiet", "first"]))
@@ -1007,10 +995,7 @@ fn a_project_comes_into_being_when_something_is_filed_there() {
     let run = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root.to_str().unwrap()];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
     let projects = |run: &dyn Fn(&[&str]) -> std::process::Output| -> Vec<String> {
         stdout(&run(&["projects"]))
@@ -1080,10 +1065,7 @@ fn a_blocker_ring_is_refused_and_a_planted_one_does_not_spin() {
     let run = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root.to_str().unwrap()];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
     let mk = |title: &str| {
         stdout(&run(&["create", "-p", "atlas", "--quiet", title]))
@@ -1176,7 +1158,7 @@ fn concurrent_writers_all_land() {
     let mut kids = Vec::with_capacity(WRITERS);
     for i in 0..WRITERS {
         kids.push(
-            Command::new(env!("CARGO_BIN_EXE_vissue"))
+            vissue_cmd()
                 .args([
                     "--root",
                     root.to_str().unwrap(),
@@ -1204,10 +1186,7 @@ fn concurrent_writers_all_land() {
     let run = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root.to_str().unwrap()];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
 
     // Every writer reported success, so every issue has to be there.
@@ -1322,10 +1301,7 @@ fn wait_until_terminal_reports_done_cancelled_or_timeout() {
     let own = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
     let id = stdout(&own(&["create", "-p", "atlas", "--quiet", "close me"]))
         .trim()
@@ -1394,10 +1370,7 @@ fn reject_redirects_to_an_existing_issue_or_a_new_one() {
     let own = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
 
     let src = stdout(&own(&["create", "-p", "atlas", "--quiet", "old plan"]))
@@ -1474,10 +1447,7 @@ fn update_if_state_refuses_a_stale_done_after_reject() {
     let own = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
     let src = stdout(&own(&["create", "-p", "atlas", "--quiet", "old"]))
         .trim()
@@ -1503,10 +1473,7 @@ fn update_if_gen_and_resolve_keep_the_first_terminal() {
     let own = |args: &[&str]| -> std::process::Output {
         let mut argv = vec!["--root", root];
         argv.extend_from_slice(args);
-        Command::new(env!("CARGO_BIN_EXE_vissue"))
-            .args(argv)
-            .output()
-            .unwrap()
+        vissue_cmd().args(argv).output().unwrap()
     };
     let id = stdout(&own(&["create", "-p", "atlas", "--quiet", "close me"]))
         .trim()
@@ -1538,4 +1505,77 @@ fn update_if_gen_and_resolve_keep_the_first_terminal() {
     let shown = stdout(&own(&["show", "--org", &id]));
     assert!(shown.contains("CANCELLED"), "{shown}");
     assert!(!shown.contains("SIBLING_TERMINAL"), "{shown}");
+}
+
+#[test]
+fn a_user_config_route_wins_over_an_explicit_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let work = tmp.path().join("work");
+    std::fs::create_dir_all(vault.join("Software")).unwrap();
+    std::fs::create_dir_all(work.join("Issues")).unwrap();
+    let cfg = tmp.path().join("config.toml");
+    std::fs::write(
+        &cfg,
+        format!(
+            "[layouts.work]\nroot = \"{}\"\nprefix = \"Issues\"\n\n[routes]\nparser = \"work\"\n",
+            work.display()
+        ),
+    )
+    .unwrap();
+
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .env_remove("VISSUE_NO_ROUTE")
+            .env("VISSUE_CONFIG", &cfg)
+            .args(["--root", vault.to_str().unwrap()])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let created = run(&["create", "-p", "parser", "--quiet", "routed ticket"]);
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let id = stdout(&created).trim().to_string();
+    assert!(id.starts_with("parser-"), "{id}");
+    assert!(
+        work.join("Issues/parser/issues.org").exists(),
+        "create must write the routed checkout"
+    );
+    assert!(
+        !vault.join("Software/parser/issues.org").exists(),
+        "create must not write the process-default checkout"
+    );
+
+    let shown = run(&["show", &id]);
+    assert!(
+        shown.status.success(),
+        "{}",
+        String::from_utf8_lossy(&shown.stderr)
+    );
+    assert!(
+        stdout(&shown).contains("routed ticket"),
+        "{}",
+        stdout(&shown)
+    );
+
+    let projects = stdout(&run(&["projects"]));
+    assert!(projects.contains("parser"), "{projects}");
+
+    let skipped = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .env("VISSUE_CONFIG", &cfg)
+        .args(["--root", vault.to_str().unwrap(), "--no-route"])
+        .args(["create", "-p", "parser", "--quiet", "unrouted ticket"])
+        .output()
+        .unwrap();
+    assert!(
+        skipped.status.success(),
+        "{}",
+        String::from_utf8_lossy(&skipped.stderr)
+    );
+    assert!(vault.join("Software/parser/issues.org").exists());
 }

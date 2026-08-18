@@ -20,6 +20,7 @@ pub mod ops;
 pub mod process_env;
 pub mod related;
 pub mod report;
+pub mod router;
 pub mod store;
 pub mod views;
 
@@ -27,4 +28,5 @@ pub use config::{DEFAULT_PREFIX, Layout, VissueConfig};
 pub use error::{Error, Result};
 pub use model::{IssueHeading, LogEntry, READY_STATES, TODO_HEADER, TODO_KEYWORDS};
 pub use ops::{CreateOpts, RejectOpts, UpdatePred};
+pub use router::{ProjectRef, RouteHit, Router};
 pub use store::IssueDoc;

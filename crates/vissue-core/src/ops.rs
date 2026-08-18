@@ -60,6 +60,9 @@ pub struct CreateOpts<'a> {
     pub quiet: bool,
     /// Body prose written under the properties drawer.
     pub body: Option<&'a str>,
+    /// Extra ids treated as taken when minting, so a twin file on another
+    /// layout cannot share a suffix with this create.
+    pub extra_ids: &'a [String],
 }
 
 /// Append a new TODO issue to the project's file and return the status text.
@@ -96,7 +99,9 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
 
     with_issues_lock(&path, || {
         let mut doc = IssueDoc::parse_file(&project, &path)?;
-        let id = generate_id(&project, &doc.known_ids(), cfg.issues.id_length)?;
+        let mut taken = doc.known_ids();
+        taken.extend(opts.extra_ids.iter().cloned());
+        let id = generate_id(&project, &taken, cfg.issues.id_length)?;
 
         let mut props = BTreeMap::new();
         props.insert("ID".into(), id.clone());

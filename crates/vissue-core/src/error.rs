@@ -13,6 +13,13 @@ pub enum Error {
         /// The id that was looked up.
         id: String,
     },
+    /// The same id exists under more than one distinct tracker layout.
+    DuplicateId {
+        /// The id that was found twice.
+        id: String,
+        /// The `issues.org` files that define it.
+        paths: Vec<std::path::PathBuf>,
+    },
     /// Another identity already holds the issue.
     ClaimConflict {
         /// The issue that is already claimed.
@@ -66,6 +73,14 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::IssueNotFound { id } => write!(f, "issue {id} not found"),
+            Error::DuplicateId { id, paths } => {
+                let listed = paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "id {id} is defined in more than one tracker: {listed}")
+            }
             Error::ClaimConflict {
                 id,
                 holder,

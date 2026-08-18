@@ -340,14 +340,12 @@ fn tree_twisty_mark(expanded: bool, dir: Direction) -> &'static str {
 
 fn tree_row<'a>(node: TreeRow<'a>, selected: bool, tea: Tokens) -> Element<'a, Message> {
     let twisty: Element<'a, Message> = if node.has_children {
-        let id = node.tea_id;
-        mouse_area(
-            text(tree_twisty_mark(node.expanded, tea.direction))
-                .size(tea.meta())
-                .color(tea.muted),
-        )
-        .on_press(Message::TreeToggle(id))
-        .into()
+        let mark = tree_twisty_mark(node.expanded, tea.direction);
+        button(text(mark).size(tea.meta()).color(tea.muted))
+            .padding((tea.density.gap() / 2.0).max(4.0))
+            .style(icedtea::style::button_style(tea, Variant::Ghost))
+            .on_press(Message::TreeToggle(node.tea_id))
+            .into()
     } else {
         Space::new().width(tree_twisty_width(tea)).into()
     };
@@ -395,6 +393,7 @@ fn tree_row<'a>(node: TreeRow<'a>, selected: bool, tea: Tokens) -> Element<'a, M
 
 fn task_row(item: &HudItem, selected: bool, tea: Tokens) -> Element<'_, Message> {
     let done = item.state == "DONE";
+    let can_toggle = matches!(item.state.as_str(), "TODO" | "DONE");
     let id = item.id.clone();
     let id_toggle = item.id.clone();
     let marks = issue_marks(
@@ -425,7 +424,7 @@ fn task_row(item: &HudItem, selected: bool, tea: Tokens) -> Element<'_, Message>
         done,
         move |_| Message::ToggleDone(id_toggle.clone()),
         tea,
-        A11y::new("done", Role::Checkbox),
+        A11y::new("done", Role::Checkbox).with_disabled(!can_toggle),
     );
     let title = text(item.title.clone())
         .size(tea.body())

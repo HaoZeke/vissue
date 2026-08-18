@@ -375,9 +375,10 @@ pub struct Palette {
     /// Issue id last passed to [`Self::fill_detail`]. The header follows this,
     /// not only the list cursor.
     viewing: Option<String>,
-    /// When true, keep [`Self::viewing`] through reload and tab changes
-    /// if that issue is not in the current list.
+    /// When true, keep [`Self::viewing`] through reload and tab changes.
     viewing_held: bool,
+    /// Rebuild the Tree tab on the next fill (list select or reload).
+    tree_stale: bool,
     issue_tree: Option<IssueTreeNode>,
     tree_ids: Vec<String>,
     tree_focus: Option<String>,
@@ -482,6 +483,7 @@ impl Palette {
             detail_body: String::new(),
             viewing: None,
             viewing_held: false,
+            tree_stale: false,
             issue_tree: None,
             tree_ids: Vec::new(),
             tree_focus: None,
@@ -1498,6 +1500,7 @@ impl Palette {
 
     fn follow_selection(&mut self) {
         self.viewing_held = false;
+        self.tree_stale = true;
         self.viewing = self.selected_id().map(str::to_string);
         self.refresh_detail();
     }
@@ -1531,7 +1534,8 @@ impl Palette {
         }
         match self.detail_tab {
             DetailTab::Tree => {
-                let keep = self.viewing_held && self.tree_ids.iter().any(|row| row == id);
+                let keep = !self.tree_stale && self.tree_ids.iter().any(|row| row == id);
+                self.tree_stale = false;
                 if !keep {
                     self.issue_tree = None;
                     self.tree_ids.clear();
@@ -1624,11 +1628,26 @@ impl Palette {
             self.message = format!("{id} is not on the board");
             return;
         };
-        if current == "CANCELLED" {
-            self.message = "CANCELLED; space toggles TODO/DONE".into();
-            return;
+        let next = match current.as_str() {
+            "TODO" => "DONE",
+            "DONE" => "TODO",
+            other => {
+                self.message = format!("{other}; space toggles TODO/DONE");
+                return;
+            }
+        };
+        if let Some(pos) = self
+            .filtered
+            .iter()
+            .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+        {
+            self.selected = pos;
+            if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
+                self.collapsed.remove(&p);
+            }
         }
-        let next = if current == "DONE" { "TODO" } else { "DONE" };
+        self.viewing = Some(id.to_string());
+        self.viewing_held = true;
         match self.backend.update(UpdateReq {
             id: id.to_string(),
             state: Some(next.to_string()),
@@ -1637,6 +1656,7 @@ impl Palette {
         }) {
             Ok(result) => {
                 self.message = result.report.trim().to_string();
+                self.tree_stale = true;
                 let _ = self.reload();
             }
             Err(err) => self.message = err.to_string(),
@@ -1750,12 +1770,14 @@ impl Palette {
     }
 
     /// Reload when serve revision or core generation advances.
+    ///
+    /// Peek only: a positive wait would sleep on the frame thread.
     pub fn poll_updates(&mut self) {
         let last = match self.backend.live() {
             vissue_tui::BackendKind::Control => self.backend.revision(),
             vissue_tui::BackendKind::Core => self.backend.generation(),
         };
-        if let Ok(next) = self.backend.wait(last, 1)
+        if let Ok(next) = self.backend.wait(last, 0)
             && next > last
         {
             let _ = self.reload();
@@ -1805,19 +1827,20 @@ impl Palette {
         } else {
             self.filtered = (0..self.items.len()).collect();
         }
-        self.selected = keep
-            .as_deref()
-            .and_then(|id| {
-                self.filtered
-                    .iter()
-                    .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
-            })
-            .unwrap_or_else(|| self.filtered.len().saturating_sub(1));
+        self.selected = match keep.as_deref() {
+            Some(id) => self
+                .filtered
+                .iter()
+                .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+                .unwrap_or_else(|| self.filtered.len().saturating_sub(1)),
+            None => 0,
+        };
         self.seed_collapse();
         if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
             self.collapsed.remove(&p);
         }
         self.refresh_chip_counts(project);
+        self.tree_stale = true;
         self.refresh_detail();
         Ok(())
     }
@@ -2488,6 +2511,13 @@ mod tests {
     }
 
     #[test]
+    fn entering_a_project_selects_the_first_row() {
+        let palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        assert_eq!(palette.selected_index(), 0);
+        assert!(palette.selected_id().is_some());
+    }
+
+    #[test]
     fn search_in_a_project_drops_hits_from_other_projects() {
         let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
         palette.set_filter(BoardFilter::Search);
@@ -2764,6 +2794,22 @@ mod tests {
             palette.tree_rows().len() < before,
             "collapse should hide children"
         );
+        assert!(!palette.tree_rows()[0].expanded);
+        palette.set_detail_tab(DetailTab::Related);
+        palette.set_detail_tab(DetailTab::Tree);
+        assert_eq!(
+            palette.tree_rows().len(),
+            1,
+            "a collapsed parent must stay collapsed after leaving the tree tab"
+        );
+        assert!(!palette.tree_rows()[0].expanded);
+        let tea_id = palette.tree_rows()[0].tea_id;
+        palette.select_tree_node(tea_id);
+        assert_eq!(
+            palette.tree_rows().len(),
+            1,
+            "picking a collapsed parent must not rebuild the tree open"
+        );
     }
 
     #[test]
@@ -2990,6 +3036,45 @@ mod tests {
     }
 
     #[test]
+    fn toggle_done_selects_the_clicked_row() {
+        let (_dir, layout) = writable();
+        let mut palette = open_atlas(layout, "hud-test");
+        palette.set_filter(BoardFilter::List);
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Notes);
+        palette.toggle_done("atlas-2c3d");
+        assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Emit a summary table"),
+            "the checkbox must load the row it flipped"
+        );
+        assert_eq!(palette.backend().get("atlas-2c3d").unwrap().state, "DONE");
+    }
+
+    #[test]
+    fn toggle_done_leaves_blocked_alone() {
+        let (_dir, layout) = writable();
+        let mut palette = open_atlas(layout, "hud-test");
+        palette.set_filter(BoardFilter::List);
+        palette.select_id("atlas-3e4f");
+        assert_eq!(
+            palette.backend().get("atlas-3e4f").unwrap().state,
+            "BLOCKED"
+        );
+        palette.toggle_done("atlas-3e4f");
+        assert_eq!(
+            palette.backend().get("atlas-3e4f").unwrap().state,
+            "BLOCKED"
+        );
+        assert!(
+            palette.message().contains("BLOCKED"),
+            "{}",
+            palette.message()
+        );
+    }
+
+    #[test]
     fn toggle_done_leaves_cancelled_alone() {
         let (_dir, layout) = writable();
         let mut palette = open_atlas(layout, "hud-test");
@@ -3159,6 +3244,17 @@ mod tests {
         assert!(palette.visible());
         palette.poll_updates();
         let _ = palette.status_line();
+    }
+
+    #[test]
+    fn poll_updates_does_not_block_the_frame() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        let start = std::time::Instant::now();
+        palette.poll_updates();
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(50),
+            "poll must not sleep the 200ms wait interval on the frame thread"
+        );
     }
 
     #[test]

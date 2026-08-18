@@ -267,7 +267,7 @@ impl Router {
                 key: key.clone(),
             });
         }
-        out.sort_by(|a, b| a.key.to_lowercase().cmp(&b.key.to_lowercase()));
+        out.sort_by_key(|a| a.key.to_lowercase());
         Ok(out)
     }
 
@@ -321,7 +321,7 @@ impl Router {
 
         match hits.len() {
             0 => Err(Error::IssueNotFound { id: id.to_string() }),
-            1 => Ok(hits.pop().expect("len is 1")),
+            1 => Ok(hits.remove(0)),
             _ => Err(Error::DuplicateId {
                 id: id.to_string(),
                 paths: hits.into_iter().map(|h| h.path).collect(),

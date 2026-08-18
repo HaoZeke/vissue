@@ -1730,9 +1730,11 @@ impl Palette {
             return;
         }
         let project = self.project.clone().or_else(|| {
-            self.selected_project_name()
-                .map(str::to_string)
-                .or_else(|| self.selected_item().map(|i| i.project.clone()))
+            if self.browsing() {
+                self.selected_project_name().map(str::to_string)
+            } else {
+                self.selected_item().map(|i| i.project.clone())
+            }
         });
         let Some(project) = project else {
             self.message = "no project to add into".into();
@@ -3206,6 +3208,26 @@ mod tests {
         assert!(atlas.contains("only atlas"), "{atlas}");
         let beacon = std::fs::read_to_string(layout.project_issues_path("beacon")).unwrap();
         assert!(!beacon.contains("only atlas"), "{beacon}");
+    }
+
+    #[test]
+    fn add_from_home_search_uses_the_hit_project() {
+        let (_dir, layout) = writable();
+        let mut palette = Palette::open_core(layout.clone(), "hud-test".into()).unwrap();
+        assert!(palette.browsing());
+        assert_eq!(palette.selected_project_name(), Some("atlas"));
+        palette.type_query("retry");
+        assert_eq!(palette.filter(), BoardFilter::Search);
+        assert!(palette.project().is_none());
+        let hit = palette.selected_item().expect("beacon hit");
+        assert_eq!(hit.project, "beacon");
+        assert_eq!(hit.id, "beacon-5j6k");
+        palette.set_add_draft("from a beacon hit");
+        palette.submit_add();
+        let beacon = std::fs::read_to_string(layout.project_issues_path("beacon")).unwrap();
+        assert!(beacon.contains("from a beacon hit"), "{beacon}");
+        let atlas = std::fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+        assert!(!atlas.contains("from a beacon hit"), "{atlas}");
     }
 
     #[test]

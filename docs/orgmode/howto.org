@@ -4,6 +4,29 @@
 One task per section. For the guided path through the basics, read
 [[file:getting-started.org][Getting started]] first.
 
+* Send a project to another checkout
+
+Put a route table in =~/.config/vissue/config.toml= so a process whose
+default root is one tracker can still write another.
+
+#+begin_src toml
+[layouts.work]
+root = "~/work-notes"
+prefix = "Issues"
+
+[routes]
+parser = "work"
+#+end_src
+
+#+begin_src console
+$ vissue create --project parser "Measure the cold-start path"
+$ vissue show parser-ab12
+$ vissue --no-route create --project parser "Stays on the default root"
+#+end_src
+
+=identity= appends one =route:= line per routed name. =projects= lists
+those names with the default-layout projects.
+
 * Filter and count
 
 =--project= (also =-p= or =-P=) and =--state= apply to =list=, =count=,

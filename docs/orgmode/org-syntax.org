@@ -206,9 +206,10 @@ is rewritten. =:OWNER:= is not a claim; =:CLAIMED_BY:= is.
 =:TYPE:=, =:PARENT:=, =:BLOCKED_BY:=, =:VISSUE_TAGS:=, =:CLAIMED_BY:=,
 =:CLAIMED_AT:=, =:FILES:=, =:VERIFY:=, =:DISCOVERED_FROM:=,
 =:PIVOTED_TO:=, =:SIBLING_TERMINAL:=. Type also lives on the heading
-as a tag (section 6). =:BLOCKED_BY:= is mirrored to =:BLOCKER:
-ids(...)= so GNU ELPA org-edna sees the same edge. An edna condition
-that is not =ids(...)= is left alone.
+as a tag (section 6). =:BLOCKED_BY:= is the vissue graph. =ready=
+also reads ids out of a =:BLOCKER:= org-edna form. A rewrite does
+not mint =ids(...)=; an edna condition that is already on the
+heading stays.
 
 =vissue normalize= rewrites a tracker onto this shape. =--dry-run=
 prints the files that would change.

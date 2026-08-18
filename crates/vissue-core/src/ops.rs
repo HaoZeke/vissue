@@ -1160,9 +1160,10 @@ fn first_existing_id_link(body: &str, known: &std::collections::HashSet<String>)
 
 /// Rewrite project files onto the Org / ELPA / vissue property split.
 ///
-/// Folds typos (`BLOCKEDBY`, drawer `TAGS`), mirrors `:BLOCKED_BY:` into
-/// org-edna `:BLOCKER: ids(...)` when that does not overwrite a condition,
-/// puts legal types on the heading, and inserts a missing `#+CATEGORY:`.
+/// Folds typos (`BLOCKEDBY`, drawer `TAGS`) and a bare `:BLOCKER:` id
+/// list into `:BLOCKED_BY:`. A real org-edna condition stays. Puts legal
+/// types on the heading and inserts a missing `#+CATEGORY:`. Does not
+/// mint `:BLOCKER: ids(...)`.
 ///
 /// # Errors
 ///
@@ -2126,7 +2127,10 @@ mod tests {
         assert!(after.contains(":TYPE:       bug"), "{after}");
         assert!(after.contains(":PARENT:"), "{after}");
         assert!(after.contains(":BLOCKED_BY:"), "{after}");
-        assert!(after.contains("ids(sample-bbbb)"), "{after}");
+        assert!(
+            !after.contains("ids(sample-bbbb)"),
+            "normalize must not mint edna ids(): {after}"
+        );
         assert!(after.contains("prev-sibling"), "{after}");
     }
 }

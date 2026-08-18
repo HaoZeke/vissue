@@ -1038,7 +1038,7 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
         if blocker_as_ids > 0 {
             writeln!(
                 out,
-                "[warn] {project}: {blocker_as_ids} heading(s) use :BLOCKER: as a bare id list; a rewrite mirrors them as org-edna ids(...)"
+                "[warn] {project}: {blocker_as_ids} heading(s) use :BLOCKER: as a bare id list; a rewrite folds them into :BLOCKED_BY:"
             )?;
             warnings += 1;
         }

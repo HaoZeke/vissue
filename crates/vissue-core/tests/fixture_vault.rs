@@ -381,12 +381,13 @@ fn cycles_ignores_a_shared_blocker_diamond() {
     // 1a2b and 2c3d both wait on 3e4f: a diamond, not a loop. The fixture's
     // 3e4f ships blocked by 1a2b, which would close a genuine loop here, so
     // that edge is cleared first.
-    doc.headings
+    let heading = doc
+        .headings
         .iter_mut()
         .find(|h| h.id == "atlas-3e4f")
-        .unwrap()
-        .properties
-        .remove("BLOCKED_BY");
+        .unwrap();
+    heading.properties.remove("BLOCKED_BY");
+    heading.properties.remove("BLOCKER");
     doc.headings
         .iter_mut()
         .find(|h| h.id == "atlas-1a2b")

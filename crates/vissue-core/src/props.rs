@@ -28,7 +28,7 @@ pub const EDNA_TRIGGER: &str = "TRIGGER";
 
 /// Parent in the vissue tree.
 pub const PARENT: &str = "PARENT";
-/// Partial-order blockers. Mirrored to `:BLOCKER: ids(...)` for org-edna.
+/// Partial-order blockers. Read-compatible with org-edna `:BLOCKER:`.
 pub const BLOCKED_BY: &str = "BLOCKED_BY";
 /// Tracker type (`bug`, `feature`, …). Also a heading tag when legal.
 pub const TYPE: &str = "TYPE";
@@ -101,9 +101,6 @@ pub fn insert(properties: &mut BTreeMap<String, String>, canonical: &str, value:
         }
     }
     properties.insert(canonical.to_string(), value);
-    if canonical == BLOCKED_BY {
-        sync_edna_blocker(properties);
-    }
 }
 
 /// Remove `canonical` and every alias of it.
@@ -114,13 +111,12 @@ pub fn remove(properties: &mut BTreeMap<String, String>, canonical: &str) {
             properties.remove(*alias);
         }
     }
-    if canonical == BLOCKED_BY {
-        sync_edna_blocker(properties);
-    }
 }
 
-/// Fold aliases, merge a bare `:BLOCKER:` id list, and mirror the graph
-/// into org-edna `ids(...)` when that does not overwrite a condition.
+/// Fold aliases and merge a bare `:BLOCKER:` id list into `:BLOCKED_BY:`.
+///
+/// A real org-edna condition (`prev-sibling`, `ids(...)`, `headings`,
+/// ...) stays on `:BLOCKER:`. vissue never writes that key.
 ///
 /// Returns how many keys moved or merged.
 pub fn canonicalize(properties: &mut BTreeMap<String, String>) -> usize {
@@ -152,46 +148,10 @@ pub fn canonicalize(properties: &mut BTreeMap<String, String>) -> usize {
         && !is_edna_blocker(&raw)
     {
         merge_id_valued(properties, BLOCKED_BY, &raw);
-        moved += 1;
-    }
-    if sync_edna_blocker(properties) {
+        properties.remove(EDNA_BLOCKER);
         moved += 1;
     }
     moved
-}
-
-/// Keep `:BLOCKER: ids(...)` in lockstep with `:BLOCKED_BY:` unless the
-/// heading already has an org-edna condition (`prev-sibling`, `headings`,
-/// …). Those stay untouched.
-fn sync_edna_blocker(properties: &mut BTreeMap<String, String>) -> bool {
-    let ids = properties
-        .get(BLOCKED_BY)
-        .map(|s| split_id_list(s))
-        .unwrap_or_default();
-    let current = properties.get(EDNA_BLOCKER).cloned();
-    if let Some(raw) = current.as_deref()
-        && is_edna_blocker(raw)
-        && !raw.trim().to_ascii_lowercase().starts_with("ids(")
-        && !raw.trim().to_ascii_lowercase().starts_with("id(")
-    {
-        return false;
-    }
-    if ids.is_empty() {
-        if current.as_deref().is_some_and(|raw| {
-            let lower = raw.trim().to_ascii_lowercase();
-            lower.starts_with("ids(") || lower.starts_with("id(") || !is_edna_blocker(raw)
-        }) {
-            properties.remove(EDNA_BLOCKER);
-            return true;
-        }
-        return false;
-    }
-    let mirrored = format!("ids({})", ids.join(" "));
-    if current.as_deref() == Some(mirrored.as_str()) {
-        return false;
-    }
-    properties.insert(EDNA_BLOCKER.to_string(), mirrored);
-    true
 }
 
 fn merge_id_valued(properties: &mut BTreeMap<String, String>, dest: &str, extra: &str) {
@@ -235,7 +195,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn canonicalize_folds_typos_and_mirrors_edna_ids() {
+    fn canonicalize_folds_typos_and_leaves_edna() {
         let mut props = BTreeMap::new();
         props.insert("BLOCKEDBY".into(), "a-1".into());
         props.insert(EDNA_BLOCKER.into(), "a-2".into());
@@ -243,10 +203,7 @@ mod tests {
         let moved = canonicalize(&mut props);
         assert!(moved >= 1, "{props:?}");
         assert_eq!(get(&props, BLOCKED_BY), Some("a-1 a-2"));
-        assert_eq!(
-            props.get(EDNA_BLOCKER).map(String::as_str),
-            Some("ids(a-1 a-2)")
-        );
+        assert!(!props.contains_key(EDNA_BLOCKER), "{props:?}");
         assert_eq!(get(&props, TYPE), Some("bug"));
         assert!(props.contains_key("TYPE"));
 
@@ -259,6 +216,16 @@ mod tests {
             Some("prev-sibling")
         );
         assert_eq!(get(&edna, BLOCKED_BY), Some("a-1"));
+
+        let mut minted = BTreeMap::new();
+        minted.insert(BLOCKED_BY.into(), "a-1".into());
+        minted.insert(EDNA_BLOCKER.into(), "ids(a-1)".into());
+        canonicalize(&mut minted);
+        assert_eq!(
+            minted.get(EDNA_BLOCKER).map(String::as_str),
+            Some("ids(a-1)")
+        );
+        assert_eq!(get(&minted, BLOCKED_BY), Some("a-1"));
     }
 
     #[test]
@@ -269,9 +236,9 @@ mod tests {
         insert(&mut props, BLOCKED_BY, "new".into());
         assert_eq!(get(&props, BLOCKED_BY), Some("new"));
         assert!(!props.contains_key("BLOCKEDBY"));
-        assert_eq!(
-            props.get(EDNA_BLOCKER).map(String::as_str),
-            Some("ids(new)")
+        assert!(
+            !props.contains_key(EDNA_BLOCKER),
+            "writing BLOCKED_BY must not mint BLOCKER: {props:?}"
         );
     }
 }

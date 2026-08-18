@@ -4,6 +4,11 @@ use chrono::Local;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+/// Planning-line keys (`CLOSED`, `SCHEDULED`, `DEADLINE`) and Org's tag
+/// character class. The property map still holds the dates internally;
+/// only the on-disk shape is Org's (manual 8.1, 6).
+pub use crate::org::{PLANNING_KEYS, is_org_tag_char};
+
 /// TODO keywords recognised on a heading, in org declaration order.
 pub const TODO_KEYWORDS: &[&str] = &["TODO", "STARTED", "BLOCKED", "DONE", "CANCELLED"];
 /// States an issue can be worked from once its blockers clear.
@@ -24,25 +29,10 @@ const DEFAULT_PROPERTY_ORDER: &[&str] = &[
     "VERIFY",
 ];
 
-/// Keys org keeps on the planning line under a heading rather than in the
-/// property drawer, in the order org itself writes them.
-///
-/// vissue holds them in the property map like any other field, because that
-/// is what every query and the JSONL export already read; only the on-disk
-/// shape is org's.
-pub const PLANNING_KEYS: &[&str] = &["CLOSED", "SCHEDULED", "DEADLINE"];
-
 /// Column org right-aligns headline tags to, matching the `org-tags-column`
 /// default. Writing them anywhere else makes the next Emacs edit realign the
 /// line and show up as a diff that changed nothing.
 const TAG_COLUMN: usize = 77;
-
-/// Whether `c` may appear in an Org tag. Org's own tag syntax is
-/// `[[:alnum:]_@#%]+`, so a vissue tag like `needs-review` is not one and
-/// stays in the `:TAGS:` property where it round-trips intact.
-pub fn is_org_tag_char(c: char) -> bool {
-    c.is_alphanumeric() || matches!(c, '_' | '@' | '#' | '%')
-}
 
 /// Split a trailing `:a:b:` tag run off a heading's text.
 ///
@@ -211,10 +201,19 @@ pub struct IssueHeading {
     /// round-trips as it was written; [`IssueHeading::tags`] reads both.
     #[serde(default)]
     pub org_tags: Vec<String>,
+    /// Trailing statistics cookies (`[2/5]`, `[40%]`), which Org keeps on
+    /// the headline after the title (manual 5.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub statistics: Option<String>,
     /// Drawer keys in on-disk order, so a rewrite leaves a hand-arranged
     /// drawer alone.
     #[serde(skip_serializing)]
     pub property_order: Vec<String>,
+    /// Drawers other than `:PROPERTIES:` and `:LOGBOOK:` that sat at the
+    /// drawer site. Written back after those two so a rewrite does not drop
+    /// a `:NOTES:` drawer someone put there.
+    #[serde(skip_serializing)]
+    pub extra_drawers: Vec<String>,
     /// Prose under the heading, without the property drawer or logbook.
     #[serde(skip_serializing)]
     pub body: String,
@@ -321,7 +320,13 @@ impl IssueHeading {
 
     /// Heading, planning line, drawers, and body as they are written to disk.
     pub fn render(&self) -> String {
-        let mut out = render_heading_line(&self.state, self.priority, &self.title, &self.org_tags);
+        let mut out = render_heading_line(
+            &self.state,
+            self.priority,
+            &self.title,
+            self.statistics.as_deref(),
+            &self.org_tags,
+        );
         if let Some(planning) = self.render_planning_line() {
             out.push_str(&planning);
         }
@@ -343,6 +348,12 @@ impl IssueHeading {
                 out.push('\n');
             }
             out.push_str(":END:\n");
+        }
+        for drawer in &self.extra_drawers {
+            out.push_str(drawer);
+            if !drawer.ends_with('\n') {
+                out.push('\n');
+            }
         }
         if !self.body.is_empty() {
             let body = escape_body_headlines(&self.body);
@@ -468,8 +479,18 @@ fn ends_the_issue(line: &str) -> bool {
     line.starts_with("* ")
 }
 
-fn render_heading_line(state: &str, priority: char, title: &str, org_tags: &[String]) -> String {
-    let stem = format!("* {} [#{}] {}", state, priority, title);
+fn render_heading_line(
+    state: &str,
+    priority: char,
+    title: &str,
+    statistics: Option<&str>,
+    org_tags: &[String],
+) -> String {
+    let mut stem = format!("* {} [#{}] {}", state, priority, title);
+    if let Some(cookie) = statistics {
+        stem.push(' ');
+        stem.push_str(cookie);
+    }
     format!("{}\n", align_tags(&stem, org_tags))
 }
 
@@ -515,7 +536,9 @@ mod tests {
             priority: 'A',
             properties: props,
             org_tags: Vec::new(),
+            statistics: None,
             property_order: vec!["ID".into(), "CREATED".into(), "TYPE".into()],
+            extra_drawers: Vec::new(),
             body: "Some body lines.\nWith multiple lines.".into(),
             logbook: Vec::new(),
             line_start: 4,

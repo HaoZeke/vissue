@@ -156,7 +156,9 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
             priority,
             properties: props,
             org_tags,
+            statistics: None,
             property_order: Vec::new(),
+            extra_drawers: Vec::new(),
             body: match opts.body {
                 Some(b) if !b.trim().is_empty() => format!("{}\n", b.trim_end()),
                 _ => String::new(),
@@ -749,14 +751,25 @@ pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<S
     }
     let mut entries: Vec<Entry> = Vec::new();
     let mut i = 0;
+    let mut nest = crate::org::BlockNest::new();
     while i < lines.len() {
+        if nest.observe(&lines[i]) {
+            i += 1;
+            continue;
+        }
         if let Some(title) = lines[i].strip_prefix("* TODO ") {
             let start = i + 1;
-            let end = lines[start..]
-                .iter()
-                .position(|l| l.starts_with("* "))
-                .map(|off| start + off)
-                .unwrap_or(lines.len());
+            let mut end_nest = crate::org::BlockNest::new();
+            let end = {
+                let mut j = start;
+                while j < lines.len() {
+                    if !end_nest.observe(&lines[j]) && lines[j].starts_with("* ") {
+                        break;
+                    }
+                    j += 1;
+                }
+                j
+            };
             let stamped = lines[start..end]
                 .iter()
                 .any(|l| l.trim_start().starts_with(":VISSUE_ID:"));
@@ -1030,7 +1043,9 @@ fn push_successor(
         priority: cfg.issues.default_priority,
         properties: props,
         org_tags: Vec::new(),
+        statistics: None,
         property_order: Vec::new(),
+        extra_drawers: Vec::new(),
         body: String::new(),
         logbook: Vec::new(),
         line_start: 0,

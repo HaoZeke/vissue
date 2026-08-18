@@ -90,27 +90,7 @@ fn add_evidence(candidate: &mut Candidate, score: f64, evidence: &str) {
 }
 
 pub(crate) fn org_link_targets(body: &str, known_ids: &HashSet<&str>) -> Vec<String> {
-    let mut targets = Vec::new();
-    let mut rest = body;
-    while let Some(start) = rest.find("[[") {
-        let after_start = &rest[start + 2..];
-        let Some(end) = after_start.find("]]") else {
-            break;
-        };
-        let raw = &after_start[..end];
-        let target = raw.split_once("][").map_or(raw, |(target, _)| target);
-        let target = target.trim();
-        let target = target.strip_prefix("id:").unwrap_or(target);
-        let target = target.rsplit_once("::").map_or(target, |(_, fragment)| {
-            fragment.strip_prefix('#').unwrap_or(fragment)
-        });
-        let target = target.strip_prefix('#').unwrap_or(target);
-        if known_ids.contains(target) {
-            targets.push(target.to_string());
-        }
-        rest = &after_start[end + 2..];
-    }
-    targets
+    crate::org::org_link_targets(body, known_ids)
 }
 
 fn org_link(id: &str) -> String {

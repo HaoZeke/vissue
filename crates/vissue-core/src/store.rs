@@ -12,8 +12,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::Layout;
-use crate::model::TODO_KEYWORDS;
 use crate::model::{IssueHeading, LogEntry, TODO_HEADER, parse_log_line, today_inactive_bracket};
+use crate::org::{
+    BlockNest, is_headline, is_issue_headline, is_planning_line, is_top_level_headline,
+    opens_a_drawer, parse_headline_bits, parse_planning_line, property_key_and_append,
+    split_statistics_cookies, todo_keywords_from_lines,
+};
 
 /// Process-local mutex per path, so concurrent async handlers in one process
 /// serialize even where an advisory file lock would not (same process, many
@@ -170,6 +174,10 @@ pub struct IssueDoc {
     pub preamble: String,
     /// Top-level issue headings, in file order.
     pub headings: Vec<IssueHeading>,
+    /// Org that follows each issue (COMMENT trees, notes headings). Same
+    /// length as [`Self::headings`] after a parse; a write pads missing
+    /// slots with the usual blank line.
+    after: Vec<String>,
 }
 
 impl IssueDoc {
@@ -180,6 +188,7 @@ impl IssueDoc {
             path,
             preamble: default_preamble(project),
             headings: Vec::new(),
+            after: Vec::new(),
         }
     }
 
@@ -201,12 +210,21 @@ impl IssueDoc {
     ///
     /// # Errors
     ///
-    /// Returns an error if a heading has an unknown TODO keyword or no `:ID:`.
+    /// Returns an error if an issue heading has no `:ID:`. A heading
+    /// whose first word is not a TODO keyword is Org around the issues,
+    /// not a failed parse.
     pub fn parse(project: &str, path: PathBuf, content: &str) -> Result<Self> {
         let lines: Vec<&str> = content.lines().collect();
+        let keywords = todo_keywords_from_lines(&lines);
+        let mut nest = BlockNest::new();
         let first_heading = lines
             .iter()
-            .position(|line| line.starts_with("* "))
+            .position(|line| {
+                if nest.observe(line) {
+                    return false;
+                }
+                is_issue_headline(line, &keywords)
+            })
             .unwrap_or(lines.len());
         let preamble = if first_heading == 0 {
             default_preamble(project)
@@ -214,22 +232,38 @@ impl IssueDoc {
             lines[..first_heading].join("\n").trim_end().to_string()
         };
         let mut headings = Vec::new();
+        let mut after = Vec::new();
         let mut i = first_heading;
         while i < lines.len() {
-            if lines[i].starts_with("* ") {
-                let (heading, end_idx) = parse_heading(&lines, i)
-                    .with_context(|| format!("at {}:{}", path.display(), i + 1))?;
-                headings.push(heading);
-                i = end_idx;
-            } else {
+            if !is_issue_headline(lines[i], &keywords) {
+                i += 1;
+                continue;
+            }
+            let (heading, body_end) = parse_heading(&lines, i, &keywords)
+                .with_context(|| format!("at {}:{}", path.display(), i + 1))?;
+            headings.push(heading);
+            i = body_end;
+            let inter_start = i;
+            let mut nest = BlockNest::new();
+            while i < lines.len() {
+                if !nest.observe(lines[i]) && is_issue_headline(lines[i], &keywords) {
+                    break;
+                }
                 i += 1;
             }
+            let raw = lines[inter_start..i].join("\n");
+            after.push(if raw.trim().is_empty() {
+                String::new()
+            } else {
+                raw.trim_start_matches('\n').to_string()
+            });
         }
         Ok(IssueDoc {
             project: project.to_string(),
             path,
             preamble,
             headings,
+            after,
         })
     }
 
@@ -252,9 +286,17 @@ impl IssueDoc {
         };
         out.push_str(preamble.trim_end());
         out.push_str("\n\n");
-        for h in &self.headings {
+        for (i, h) in self.headings.iter().enumerate() {
             out.push_str(&h.render());
             out.push('\n');
+            if let Some(extra) = self.after.get(i)
+                && !extra.is_empty()
+            {
+                out.push_str(extra);
+                if !extra.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
         }
         // A shared temporary name races: a peer renames it out from under this
         // writer and the rename fails with ENOENT.
@@ -323,45 +365,66 @@ impl IssueDoc {
             *slot = heading;
         } else {
             self.headings.push(heading);
+            self.after.push(String::new());
         }
     }
 
     /// Remove the heading with `id`, if it is in this document.
     pub fn remove(&mut self, id: &str) -> Option<IssueHeading> {
         let idx = self.headings.iter().position(|h| h.id == id)?;
-        Some(self.headings.remove(idx))
+        let heading = self.headings.remove(idx);
+        let extra = if idx < self.after.len() {
+            self.after.remove(idx)
+        } else {
+            String::new()
+        };
+        if !extra.trim().is_empty() {
+            if idx == 0 {
+                if !self.preamble.is_empty() && !self.preamble.ends_with('\n') {
+                    self.preamble.push('\n');
+                }
+                if !self.preamble.is_empty() {
+                    self.preamble.push('\n');
+                }
+                self.preamble.push_str(&extra);
+            } else if let Some(prev) = self.after.get_mut(idx - 1) {
+                if !prev.is_empty() && !prev.ends_with('\n') {
+                    prev.push('\n');
+                }
+                prev.push_str(&extra);
+            }
+        }
+        Some(heading)
     }
 }
 
-fn parse_heading(lines: &[&str], start: usize) -> Result<(IssueHeading, usize)> {
+fn parse_heading(
+    lines: &[&str],
+    start: usize,
+    keywords: &[String],
+) -> Result<(IssueHeading, usize)> {
     let header = lines[start];
     let stripped = header
         .strip_prefix("* ")
         .ok_or_else(|| anyhow!("not a heading"))?;
-
-    let trimmed = stripped.trim();
-    let (state, after) = trimmed
-        .split_once(' ')
-        .map(|(s, a)| (s.to_string(), a.trim_start()))
-        .unwrap_or((trimmed.to_string(), ""));
-    if !TODO_KEYWORDS.contains(&state.as_str()) {
-        return Err(anyhow!("unknown TODO keyword {:?}", state).into());
-    }
-
-    let (priority, heading_text) = match parse_priority_cookie(after) {
-        Some((p, rest)) => (p, rest.trim()),
-        None => ('C', after),
-    };
-    let (title, org_tags) = crate::model::split_headline_tags(heading_text);
+    let bits = parse_headline_bits(stripped, keywords);
+    let state = bits
+        .keyword
+        .ok_or_else(|| anyhow!("not an issue heading"))?
+        .to_string();
+    let priority = bits.priority.unwrap_or('C');
+    let (title_and_cookies, org_tags) = crate::model::split_headline_tags(bits.rest);
+    let (title, statistics) = split_statistics_cookies(&title_and_cookies);
 
     let mut properties = BTreeMap::new();
     let mut property_order = Vec::new();
     let mut logbook: Vec<LogEntry> = Vec::new();
+    let mut extra_drawers: Vec<String> = Vec::new();
     let mut i = start + 1;
 
     // Org writes DEADLINE, SCHEDULED, and CLOSED on a planning line between
-    // the heading and the drawer. Reading it is what keeps `C-c C-d` in Emacs
-    // from making the file unparseable here.
+    // the heading and the drawer. Several planning lines are legal; a blank
+    // or a keyword does not end the drawer site (manual 2.7, 8.1).
     while i < lines.len() {
         let found = parse_planning_line(lines[i]);
         if found.is_empty() {
@@ -376,45 +439,84 @@ fn parse_heading(lines: &[&str], start: usize) -> Result<(IssueHeading, usize)> 
         i += 1;
     }
 
-    let mut body_start = i;
-    if i < lines.len() && lines[i].trim() == ":PROPERTIES:" {
-        i += 1;
-        while i < lines.len() && lines[i].trim() != ":END:" {
-            let line = lines[i].trim();
-            if let Some(rest) = line.strip_prefix(':')
-                && let Some(idx) = rest.find(':')
-            {
-                let key = rest[..idx].to_string();
-                let val = rest[idx + 1..].trim().to_string();
-                if !property_order.contains(&key) {
-                    property_order.push(key.clone());
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        if trimmed.is_empty() {
+            i += 1;
+            continue;
+        }
+        if !opens_a_drawer(trimmed) {
+            break;
+        }
+        if trimmed.eq_ignore_ascii_case(":PROPERTIES:") {
+            i += 1;
+            while i < lines.len() && !lines[i].trim().eq_ignore_ascii_case(":END:") {
+                let line = lines[i].trim();
+                if let Some(rest) = line.strip_prefix(':')
+                    && let Some(idx) = rest.find(':')
+                {
+                    let raw_key = &rest[..idx];
+                    let (key, append) = property_key_and_append(raw_key);
+                    let val = rest[idx + 1..].trim().to_string();
+                    if append {
+                        properties
+                            .entry(key.to_string())
+                            .and_modify(|existing| {
+                                if !val.is_empty() {
+                                    if !existing.is_empty() {
+                                        existing.push(' ');
+                                    }
+                                    existing.push_str(&val);
+                                }
+                            })
+                            .or_insert(val);
+                    } else {
+                        properties.insert(key.to_string(), val);
+                    }
+                    if !property_order.iter().any(|k| k == key) {
+                        property_order.push(key.to_string());
+                    }
                 }
-                properties.insert(key, val);
+                i += 1;
             }
-            i += 1;
+            if i < lines.len() {
+                i += 1;
+            }
+            continue;
         }
-        if i < lines.len() {
+        if trimmed.eq_ignore_ascii_case(":LOGBOOK:") {
             i += 1;
+            while i < lines.len() && !lines[i].trim().eq_ignore_ascii_case(":END:") {
+                if !lines[i].trim().is_empty() {
+                    logbook.push(parse_log_line(lines[i]));
+                }
+                i += 1;
+            }
+            if i < lines.len() {
+                i += 1;
+            }
+            continue;
         }
-        body_start = i;
-    }
-
-    if i < lines.len() && lines[i].trim() == ":LOGBOOK:" {
+        let drawer_start = i;
         i += 1;
-        while i < lines.len() && lines[i].trim() != ":END:" {
-            if !lines[i].trim().is_empty() {
-                logbook.push(parse_log_line(lines[i]));
-            }
+        while i < lines.len() && !lines[i].trim().eq_ignore_ascii_case(":END:") {
             i += 1;
         }
         if i < lines.len() {
             i += 1;
         }
-        body_start = i;
+        let mut drawer = lines[drawer_start..i].join("\n");
+        drawer.push('\n');
+        extra_drawers.push(drawer);
     }
 
+    let body_start = i;
     let mut body_end = body_start;
-    while body_end < lines.len() && !lines[body_end].starts_with("* ") {
+    let mut nest = BlockNest::new();
+    while body_end < lines.len() {
+        if !nest.observe(lines[body_end]) && is_top_level_headline(lines[body_end]) {
+            break;
+        }
         body_end += 1;
     }
     let body = lines[body_start..body_end]
@@ -446,7 +548,9 @@ fn parse_heading(lines: &[&str], start: usize) -> Result<(IssueHeading, usize)> 
             priority,
             properties,
             org_tags,
+            statistics,
             property_order,
+            extra_drawers,
             body,
             logbook,
             line_start: start + 1,
@@ -454,52 +558,6 @@ fn parse_heading(lines: &[&str], start: usize) -> Result<(IssueHeading, usize)> 
         },
         body_end,
     ))
-}
-
-/// Read an Org planning line into its `KEY -> timestamp` pairs.
-///
-/// Org packs several onto one line, as `CLOSED: [...] SCHEDULED: <...>`, and
-/// a line holding anything else is not a planning line at all.
-fn parse_planning_line(line: &str) -> Vec<(String, String)> {
-    let mut rest = line.trim();
-    let mut found = Vec::new();
-    while !rest.is_empty() {
-        let Some(key) = crate::model::PLANNING_KEYS
-            .iter()
-            .find(|key| rest.starts_with(&format!("{key}:")))
-        else {
-            return Vec::new();
-        };
-        let after = rest[key.len() + 1..].trim_start();
-        let close = match after.chars().next() {
-            Some('<') => '>',
-            Some('[') => ']',
-            _ => return Vec::new(),
-        };
-        let Some(end) = after.find(close) else {
-            return Vec::new();
-        };
-        found.push((key.to_string(), after[..=end].to_string()));
-        rest = after[end + 1..].trim_start();
-    }
-    found
-}
-
-/// Split a leading `[#A]` cookie off a heading, returning the cookie character
-/// and the rest of the line. Any other shape yields `None`, so a title that
-/// merely opens with a bracket keeps its text.
-///
-/// The cookie character is taken as a character, not a byte: an issues.org is
-/// hand-editable, and `[#<multibyte>]` is text a person can type.
-fn parse_priority_cookie(after: &str) -> Option<(char, &str)> {
-    let rest = after.strip_prefix("[#")?;
-    let mut chars = rest.char_indices();
-    let (_, priority) = chars.next()?;
-    let (close, bracket) = chars.next()?;
-    if bracket != ']' {
-        return None;
-    }
-    Some((priority, &rest[close + 1..]))
 }
 
 /// The header a fresh project file gets.
@@ -801,6 +859,7 @@ fn org_ids(content: &str) -> impl Iterator<Item = &str> {
     // Org takes a planning line on the line under the headline and nowhere
     // else, so prose opening on `DEADLINE:` further down is prose.
     let mut under_headline = false;
+    let mut nest = BlockNest::new();
 
     content.lines().filter_map(move |line| {
         let trimmed = line.trim();
@@ -817,6 +876,14 @@ fn org_ids(content: &str) -> impl Iterator<Item = &str> {
             if drawer_is_properties {
                 return org_id_property_value(line);
             }
+            return None;
+        }
+
+        // Greater and dynamic blocks are literal. A quoted headline or
+        // drawer inside one does not define an id (manual 2.8, 16.2).
+        if nest.observe(line) {
+            at_drawer_site = false;
+            under_headline = false;
             return None;
         }
 
@@ -849,27 +916,6 @@ fn org_ids(content: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-/// A line org reads as a headline: leading stars, then a space.
-fn is_headline(line: &str) -> bool {
-    let stars = line.len() - line.trim_start_matches('*').len();
-    stars > 0 && line[stars..].starts_with(' ')
-}
-
-/// `:NAME:` alone on a line, which is how every drawer opens.
-fn opens_a_drawer(trimmed: &str) -> bool {
-    trimmed.len() > 2
-        && trimmed.starts_with(':')
-        && trimmed.ends_with(':')
-        && !trimmed.eq_ignore_ascii_case(":END:")
-        && !trimmed[1..trimmed.len() - 1].contains(char::is_whitespace)
-}
-
-fn is_planning_line(trimmed: &str) -> bool {
-    crate::model::PLANNING_KEYS
-        .iter()
-        .any(|key| trimmed.starts_with(key) && trimmed[key.len()..].starts_with(':'))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -887,7 +933,9 @@ mod tests {
             priority: 'A',
             properties: props,
             org_tags: Vec::new(),
+            statistics: None,
             property_order: vec!["ID".into(), "CREATED".into(), "TYPE".into()],
+            extra_drawers: Vec::new(),
             body: "Some body lines.\nWith multiple lines.".into(),
             logbook: Vec::new(),
             line_start: 4,
@@ -1049,6 +1097,7 @@ mod tests {
             path: path.clone(),
             preamble: default_preamble("sample"),
             headings: vec![sample_heading()],
+            after: vec![String::new()],
         }
         .write()
         .unwrap();
@@ -1319,5 +1368,232 @@ mod tests {
         assert!(is_headline("*** deeper"));
         assert!(!is_headline("**bold** at the start of a line"));
         assert!(!is_headline("not a headline"));
+    }
+
+    #[test]
+    fn a_source_block_does_not_split_an_issue() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Real issue\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n\n",
+            "Quoted tracker:\n",
+            "#+BEGIN_SRC org\n",
+            "* TODO quoted\n",
+            ":PROPERTIES:\n",
+            ":ID:         ghost-9999\n",
+            ":END:\n",
+            "#+END_SRC\n\n",
+            "Still the same issue.\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(
+            doc.headings.len(),
+            1,
+            "{:?}",
+            doc.headings.iter().map(|h| &h.id).collect::<Vec<_>>()
+        );
+        assert_eq!(doc.headings[0].id, "x-aaaa");
+        assert!(
+            doc.headings[0].body.contains("* TODO quoted"),
+            "{}",
+            doc.headings[0].body
+        );
+        assert!(doc.headings[0].body.contains("Still the same issue."));
+    }
+
+    #[test]
+    fn org_ids_ignore_a_drawer_inside_a_block() {
+        let text = concat!(
+            "#+BEGIN_SRC org\n",
+            "* TODO quoted\n",
+            ":PROPERTIES:\n",
+            ":ID:         ghost-9999\n",
+            ":END:\n",
+            "#+END_SRC\n",
+            "* TODO a title\n",
+            ":PROPERTIES:\n",
+            ":ID:         atlas-1a2b\n",
+            ":END:\n",
+        );
+        assert_eq!(ids(text), ["atlas-1a2b"]);
+    }
+
+    #[test]
+    fn a_timestamp_range_on_the_planning_line_parses() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Sprint\n",
+            "SCHEDULED: <2026-09-01 Tue>--<2026-09-08 Tue> DEADLINE: <2026-09-15 Mon +1w>\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings[0].id, "x-aaaa");
+        assert_eq!(
+            doc.headings[0].scheduled(),
+            Some("<2026-09-01 Tue>--<2026-09-08 Tue>")
+        );
+        assert_eq!(doc.headings[0].deadline(), Some("<2026-09-15 Mon +1w>"));
+    }
+
+    #[test]
+    fn a_repeater_and_warning_on_the_planning_line_parse() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Weekly\n",
+            "DEADLINE: <2026-09-01 Tue +1w -2d>\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings[0].deadline(), Some("<2026-09-01 Tue +1w -2d>"));
+        let rendered = doc.headings[0].render();
+        assert!(
+            rendered.contains("DEADLINE: <2026-09-01 Tue +1w -2d>"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn a_logbook_before_properties_still_parses() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Clocked\n",
+            ":LOGBOOK:\n",
+            "CLOCK: [2026-08-18 Tue 10:00]--[2026-08-18 Tue 11:00] =>  1:00\n",
+            ":END:\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings[0].id, "x-aaaa");
+        assert_eq!(doc.headings[0].logbook.len(), 1);
+        assert!(doc.headings[0].logbook[0].raw.is_some());
+    }
+
+    #[test]
+    fn other_drawers_at_the_drawer_site_do_not_hide_the_id() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Notes drawer\n",
+            ":NOTES:\n",
+            "hand written\n",
+            ":END:\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n\n",
+            "Body stays.\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings[0].id, "x-aaaa");
+        assert_eq!(doc.headings[0].body, "Body stays.");
+        let rendered = doc.headings[0].render();
+        assert!(rendered.contains(":NOTES:"), "{rendered}");
+        assert!(rendered.contains("hand written"), "{rendered}");
+    }
+
+    #[test]
+    fn a_comment_heading_is_not_an_issue() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* COMMENT Archived discussion\n",
+            ":PROPERTIES:\n",
+            ":ID:         ghost-old\n",
+            ":END:\n\n",
+            "* TODO [#A] Live\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings.len(), 1);
+        assert_eq!(doc.headings[0].id, "x-aaaa");
+        assert!(doc.preamble.contains("COMMENT Archived"));
+    }
+
+    #[test]
+    fn a_section_heading_round_trips() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] First\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n\n",
+            "First body.\n\n",
+            "* Notes\n",
+            "Hand-written section.\n\n",
+            "* TODO [#B] Second\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-bbbb\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings.len(), 2);
+        assert_eq!(doc.headings[0].body, "First body.");
+        assert!(doc.after[0].contains("* Notes"));
+        assert!(doc.after[0].contains("Hand-written section."));
+        let rendered = doc.headings[0].render();
+        let mut file = String::from("#+TITLE: x issues\n\n");
+        file.push_str(&rendered);
+        file.push('\n');
+        file.push_str(&doc.after[0]);
+        file.push_str(&doc.headings[1].render());
+        let again = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), &file).unwrap();
+        assert_eq!(again.headings.len(), 2);
+        assert!(again.after[0].contains("* Notes"));
+    }
+
+    #[test]
+    fn a_file_local_todo_keyword_is_an_issue() {
+        let content = concat!(
+            "#+TITLE: x issues\n",
+            "#+TODO: TODO WAIT | DONE\n\n",
+            "* WAIT [#B] Parked\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings.len(), 1);
+        assert_eq!(doc.headings[0].state, "WAIT");
+        assert_eq!(doc.headings[0].id, "x-aaaa");
+    }
+
+    #[test]
+    fn a_statistics_cookie_is_not_the_title() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Break it down [2/5]           :plan:\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings[0].title, "Break it down");
+        assert_eq!(doc.headings[0].statistics.as_deref(), Some("[2/5]"));
+        assert_eq!(doc.headings[0].org_tags, vec!["plan"]);
+        let line = doc.headings[0].render().lines().next().unwrap().to_string();
+        assert!(line.contains("[2/5]"), "{line:?}");
+        assert!(line.contains(":plan:"), "{line:?}");
+    }
+
+    #[test]
+    fn a_property_plus_appends() {
+        let content = concat!(
+            "#+TITLE: x issues\n\n",
+            "* TODO [#A] Blocked\n",
+            ":PROPERTIES:\n",
+            ":ID:         x-aaaa\n",
+            ":BLOCKED_BY: x-bbbb\n",
+            ":BLOCKED_BY+: x-cccc\n",
+            ":END:\n",
+        );
+        let doc = IssueDoc::parse("x", PathBuf::from("/tmp/x.org"), content).unwrap();
+        assert_eq!(doc.headings[0].blocked_by(), vec!["x-bbbb", "x-cccc"]);
     }
 }

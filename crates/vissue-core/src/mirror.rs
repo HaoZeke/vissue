@@ -533,10 +533,16 @@ mod tests {
     fn the_mirror_reparses_as_issue_headings() {
         let (_dir, layout) = seeded_layout();
         let text = render(&layout, &[], Format::Org, None).unwrap();
-        // Level-two mirror headings are not top-level issues, so a reparse of
-        // the projection finds the project headings and no issue bodies.
-        let doc = IssueDoc::parse("mirror", std::path::PathBuf::from("/tmp/m.org"), &text);
-        assert!(doc.is_err(), "project headings carry no :ID: property");
+        // Level-one project names are Org sections, not issues. Level-two
+        // issue headings stay in that section's body. A reparse must not
+        // fail the file for a missing :ID: on the project heading.
+        let doc = IssueDoc::parse("mirror", std::path::PathBuf::from("/tmp/m.org"), &text)
+            .expect("a mirror is legal Org");
+        assert!(
+            doc.headings.is_empty(),
+            "project headings are sections, not issues: {:?}",
+            doc.headings.iter().map(|h| &h.id).collect::<Vec<_>>()
+        );
     }
 
     #[test]

@@ -8,6 +8,9 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 bin=${1:-${VISSUE_BIN:-$repo_root/target/release/vissue}}
+# A user-level route table would send `demo` at the live vault. This script
+# owns a scratch tracker and must stay on --root.
+export VISSUE_NO_ROUTE=1
 
 command -v emacs >/dev/null || {
   echo "org interop needs emacs on PATH" >&2

@@ -344,7 +344,7 @@ _vissue() {
 
     case "${cmd}" in
         vissue)
-            opts="-h -V --root --prefix --help --version create q list show update resolve reject ready claim note append claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve tui hud completions man keys help"
+            opts="-h -V --root --prefix --no-route --help --version create q list show update resolve reject ready claim note append claims fold agenda hygiene whoami waiting-on body-excerpt search children ancestors impact related stale count export tree cycles graph refile backlinks roadmap check digest mirror events ping wait gen projects identity serve tui hud completions man keys help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -366,7 +366,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__agenda)
-            opts="-d -p -h --days --project --root --prefix --help"
+            opts="-d -p -h --days --project --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -404,7 +404,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__ancestors)
-            opts="-d -h --depth --root --prefix --help"
+            opts="-d -h --depth --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -434,7 +434,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__append)
-            opts="-h --text --file --root --prefix --help"
+            opts="-h --text --file --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -464,7 +464,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__backlinks)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -486,7 +486,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__body__subcmd__excerpt)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -508,7 +508,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__check)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -530,7 +530,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__children)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -552,7 +552,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__claim)
-            opts="-h --force --root --prefix --help"
+            opts="-h --force --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -574,7 +574,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__claims)
-            opts="-p -h --by --project --json --root --prefix --help"
+            opts="-p -h --by --project --json --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -608,7 +608,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__completions)
-            opts="-h --root --prefix --help bash elvish fish powershell zsh"
+            opts="-h --root --prefix --no-route --help bash elvish fish powershell zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -630,7 +630,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__count)
-            opts="-p -s -r -h --project --state --ready --root --prefix --help"
+            opts="-p -s -r -h --project --state --ready --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -668,7 +668,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__create)
-            opts="-p -t -q -h --project --priority --type --deadline --scheduled --tags --parent --quiet --body --body-file --root --prefix --help"
+            opts="-p -t -q -h --project --priority --type --deadline --scheduled --tags --parent --quiet --body --body-file --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -734,7 +734,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__cycles)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -756,7 +756,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__digest)
-            opts="-p -q -h --project --json --quiet --root --prefix --help"
+            opts="-p -q -h --project --json --quiet --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -786,7 +786,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__events)
-            opts="-n -h --since --limit --root --prefix --help"
+            opts="-n -h --since --limit --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -820,7 +820,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__export)
-            opts="-p -h --project --root --prefix --help"
+            opts="-p -h --project --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -850,7 +850,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__fold)
-            opts="-p -h --project --root --prefix --help"
+            opts="-p -h --project --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -880,7 +880,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__gen)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -902,7 +902,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__graph)
-            opts="-p -h --project --root --prefix --help"
+            opts="-p -h --project --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1660,7 +1660,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__hud)
-            opts="-s -h --mode --offline --toggle --show --hide --iced --rofi --socket --root --prefix --help"
+            opts="-s -h --mode --offline --toggle --show --hide --iced --rofi --socket --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1694,7 +1694,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__hygiene)
-            opts="-h --stale-days --root --prefix --help"
+            opts="-h --stale-days --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1720,7 +1720,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__identity)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1742,7 +1742,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__impact)
-            opts="-d -h --depth --root --prefix --help"
+            opts="-d -h --depth --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1772,7 +1772,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__keys)
-            opts="-h --check --occupancy --root --prefix --help"
+            opts="-h --check --occupancy --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1794,7 +1794,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__list)
-            opts="-p -s -h --project --state --json --root --prefix --help"
+            opts="-p -s -h --project --state --json --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1832,7 +1832,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__man)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1854,7 +1854,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__mirror)
-            opts="-p -o -f -s -h --project --out --check --format --state --root --prefix --help"
+            opts="-p -o -f -s -h --project --out --check --format --state --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1912,7 +1912,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__note)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1934,7 +1934,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__ping)
-            opts="-h --detail --root --prefix --help"
+            opts="-h --detail --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1960,7 +1960,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__projects)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1982,7 +1982,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__q)
-            opts="-p -t -h --project --type --parent --root --prefix --help"
+            opts="-p -t -h --project --type --parent --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2024,7 +2024,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__ready)
-            opts="-p -h --project --json --root --prefix --help"
+            opts="-p -h --project --json --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2054,7 +2054,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__refile)
-            opts="-h --to --root --prefix --help"
+            opts="-h --to --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2080,7 +2080,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__reject)
-            opts="-p -h --to --project --reason --root --prefix --help"
+            opts="-p -h --to --project --reason --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2118,7 +2118,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__related)
-            opts="-d -n -h --depth --limit --format --root --prefix --help"
+            opts="-d -n -h --depth --limit --format --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2160,7 +2160,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__resolve)
-            opts="-s -h --state --root --prefix --help"
+            opts="-s -h --state --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2190,7 +2190,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__roadmap)
-            opts="-p -h --project --root --prefix --help"
+            opts="-p -h --project --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2220,7 +2220,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__search)
-            opts="-n -h --limit --root --prefix --help"
+            opts="-n -h --limit --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2250,7 +2250,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__serve)
-            opts="-d -s -h --detach --socket --root --prefix --help stop restart status help"
+            opts="-d -s -h --detach --socket --root --prefix --no-route --help stop restart status help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2350,7 +2350,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__serve__subcmd__restart)
-            opts="-s -h --socket --root --prefix --help"
+            opts="-s -h --socket --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2380,7 +2380,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__serve__subcmd__status)
-            opts="-s -h --json --socket --root --prefix --help"
+            opts="-s -h --json --socket --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2410,7 +2410,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__serve__subcmd__stop)
-            opts="-s -h --socket --root --prefix --help"
+            opts="-s -h --socket --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2440,7 +2440,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__show)
-            opts="-h --json --org --root --prefix --help"
+            opts="-h --json --org --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2462,7 +2462,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__stale)
-            opts="-d -p -h --days --project --root --prefix --help"
+            opts="-d -p -h --days --project --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2500,7 +2500,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__tree)
-            opts="-f -h --format --root --prefix --help"
+            opts="-f -h --format --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2530,7 +2530,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__tui)
-            opts="-s -h --offline --socket --root --prefix --help"
+            opts="-s -h --offline --socket --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2560,7 +2560,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__update)
-            opts="-s -h --state --priority --block --unblock --if-state --if-gen --root --prefix --help"
+            opts="-s -h --state --priority --block --unblock --if-state --if-gen --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2610,7 +2610,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__wait)
-            opts="-h --last --id --until-terminal --poll-ms --timeout-ms --root --prefix --help"
+            opts="-h --last --id --until-terminal --poll-ms --timeout-ms --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2648,7 +2648,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__waiting__subcmd__on)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2670,7 +2670,7 @@ _vissue() {
             return 0
             ;;
         vissue__subcmd__whoami)
-            opts="-h --root --prefix --help"
+            opts="-h --root --prefix --no-route --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

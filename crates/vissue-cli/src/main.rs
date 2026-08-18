@@ -457,7 +457,7 @@ enum Command {
         #[arg(short = 's', long)]
         socket: Option<PathBuf>,
     },
-    /// Task board. Default execs `vissue-hud` (Ready / Mine / Upcoming / All).
+    /// Task board. Default execs `vissue-hud`. Home is the project list.
     ///
     /// `--rofi` is the seat dmenu picker: Return opens the heading in
     /// `$EDITOR`, Alt+c claims, Alt+n notes.

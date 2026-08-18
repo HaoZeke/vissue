@@ -1,6 +1,6 @@
 [package]
 name = "vissue-hud"
-description = "Summonable iced task board over ready, mine, upcoming, and all"
+description = "Summonable icedtea task board. Home is the project list."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

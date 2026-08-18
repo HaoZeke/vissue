@@ -308,14 +308,13 @@ $ vissue tui
 $ vissue tui --offline
 #+end_src
 
-Panes: Ready, List, Claims, Agenda. Search is the field on the action
-row. The selected row keeps the issue visible (properties above a wrapping
-body), with tree / related / notes on the right. Keys (also on =?=):
+Panes: Ready, List, Claims, Agenda, Search. Detail tabs on the selected
+row: show, excerpt, tree, related. Keys (also on =?=):
 
 | Key | Action |
 |-----+--------|
 | =j=/=k=, arrows | Move |
-| =Tab= / 1-4 | Pane |
+| =Tab= / 1-5 | Pane |
 | =Enter= | Focus detail |
 | =p= | Project filter |
 | =/= | Search |

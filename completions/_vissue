@@ -964,7 +964,7 @@ _vissue_commands() {
 'identity:Print the resolved binary, root, and prefix' \
 'serve:Own the per-user Unix control socket' \
 'tui:Interactive board over ready, list, claims, agenda, and search' \
-'hud:Task board. Default execs \`vissue-hud\` (Ready / Mine / Upcoming / All)' \
+'hud:Task board. Default execs \`vissue-hud\`. Home is the project list' \
 'completions:Write a shell completion script to stdout' \
 'man:Write the roff manual page to stdout' \
 'keys:Print the HUD key catalog, or check a keys.toml overlay' \
@@ -1113,7 +1113,7 @@ _vissue__subcmd__help_commands() {
 'identity:Print the resolved binary, root, and prefix' \
 'serve:Own the per-user Unix control socket' \
 'tui:Interactive board over ready, list, claims, agenda, and search' \
-'hud:Task board. Default execs \`vissue-hud\` (Ready / Mine / Upcoming / All)' \
+'hud:Task board. Default execs \`vissue-hud\`. Home is the project list' \
 'completions:Write a shell completion script to stdout' \
 'man:Write the roff manual page to stdout' \
 'keys:Print the HUD key catalog, or check a keys.toml overlay' \

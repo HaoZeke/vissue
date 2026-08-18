@@ -11,7 +11,7 @@ use crate::summon::{self, SummonAction};
 /// Env override for the HUD binary the launcher execs.
 pub const HUD_BIN_ENV: &str = "VISSUE_HUD_BIN";
 
-/// Summonable palette over ready and search.
+/// Summonable overlay. Home is the project list.
 #[derive(Debug, Clone, Parser)]
 #[command(name = "vissue-hud", version, about = "Summonable vissue task board")]
 pub struct HudCli {

@@ -843,11 +843,28 @@ pub fn fold(layout: &Layout, inbox: &std::path::Path, project: &str) -> Result<S
 /// Returns an error if `id` is not in the corpus, `to_project` cannot be
 /// resolved, or either file cannot be locked or rewritten.
 pub fn refile(layout: &Layout, id: &str, to_project: &str) -> Result<String> {
-    let to_project = resolve_existing_project_case(layout, to_project)?;
-    let target_path = layout.project_issues_path(&to_project);
+    refile_to(layout, id, layout, to_project)
+}
+
+/// Move one issue's heading onto a destination that may live on another
+/// tracker layout. A router resolves the destination project name before
+/// calling this, so a routed name lands on its own checkout instead of
+/// growing a shadow directory under the source root.
+///
+/// # Errors
+///
+/// Same as [`refile`].
+pub fn refile_to(
+    layout: &Layout,
+    id: &str,
+    dst_layout: &Layout,
+    to_project: &str,
+) -> Result<String> {
+    let to_project = resolve_existing_project_case(dst_layout, to_project)?;
+    let target_path = dst_layout.project_issues_path(&to_project);
     let (_heading, src_path, src_project) =
         find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
-    if src_project == to_project {
+    if src_path == target_path {
         return Ok(format!("{id} already in {to_project}; nothing to do\n"));
     }
     with_issues_locks(&[&src_path, &target_path], || {
@@ -881,6 +898,11 @@ pub struct RejectOpts<'a> {
     pub title: Option<&'a str>,
     /// Prose appended to the cancelled source.
     pub reason: Option<&'a str>,
+    /// Tracker that holds the destination. `None` keeps the source's.
+    pub dst_layout: Option<&'a Layout>,
+    /// Ids treated as taken when minting a successor, so a twin file on
+    /// another layout cannot share a suffix with it.
+    pub dst_extra_ids: &'a [String],
 }
 
 /// Cancel `src` and point it at a successor in one graph edit.
@@ -902,11 +924,15 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
             id: src.to_string(),
         })?;
 
+    let dst_layout = opts.dst_layout.unwrap_or(layout);
     let existing_dst = if let Some(to) = opts.to {
         if to == src {
             return Err(anyhow!("reject destination cannot be the source {src}").into());
         }
-        Some(find_by_id(layout, to)?.ok_or_else(|| Error::IssueNotFound { id: to.to_string() })?)
+        Some(
+            find_by_id(dst_layout, to)?
+                .ok_or_else(|| Error::IssueNotFound { id: to.to_string() })?,
+        )
     } else {
         None
     };
@@ -919,9 +945,9 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
     let dst_project = if let Some((_, _, ref project)) = existing_dst {
         project.clone()
     } else {
-        resolve_existing_project_case(layout, opts.project.unwrap_or(&src_project))?
+        resolve_existing_project_case(dst_layout, opts.project.unwrap_or(&src_project))?
     };
-    let dst_path = layout.project_issues_path(&dst_project);
+    let dst_path = dst_layout.project_issues_path(&dst_project);
     let dst_title = opts.title.unwrap_or(src0.title.as_str());
     let cfg = VissueConfig::load(layout)?;
 
@@ -929,7 +955,7 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
         if src_path == dst_path {
             let mut doc = IssueDoc::parse_file(&src_project, &src_path)?;
             let dst_id = if creating {
-                push_successor(&mut doc, &dst_project, dst_title, src, &cfg)?
+                push_successor(&mut doc, &dst_project, dst_title, src, &cfg, opts.dst_extra_ids)?
             } else {
                 let to = reject_to(opts)?;
                 set_discovered_from_if_empty(&mut doc, to, src)?;
@@ -943,7 +969,14 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
             let mut src_doc = IssueDoc::parse_file(&src_project, &src_path)?;
             let mut dst_doc = IssueDoc::parse_file(&dst_project, &dst_path)?;
             let dst_id = if creating {
-                push_successor(&mut dst_doc, &dst_project, dst_title, src, &cfg)?
+                push_successor(
+                    &mut dst_doc,
+                    &dst_project,
+                    dst_title,
+                    src,
+                    &cfg,
+                    opts.dst_extra_ids,
+                )?
             } else {
                 let to = reject_to(opts)?;
                 set_discovered_from_if_empty(&mut dst_doc, to, src)?;
@@ -974,8 +1007,11 @@ fn push_successor(
     title: &str,
     src: &str,
     cfg: &VissueConfig,
+    extra_ids: &[String],
 ) -> Result<String> {
-    let id = generate_id(project, &doc.known_ids(), cfg.issues.id_length)?;
+    let mut taken = doc.known_ids();
+    taken.extend(extra_ids.iter().cloned());
+    let id = generate_id(project, &taken, cfg.issues.id_length)?;
     let mut props = BTreeMap::new();
     props.insert("ID".into(), id.clone());
     props.insert("CREATED".into(), today_inactive_bracket());
@@ -1476,6 +1512,69 @@ mod tests {
         assert_eq!(again, "folded 0 (nothing unstamped)\n");
         let doc2 = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
         assert_eq!(doc2.headings.len(), doc.headings.len());
+    }
+
+    #[test]
+    fn refile_to_moves_across_two_layouts_and_leaves_no_shadow() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let dst_dir = tempfile::tempdir().unwrap();
+        let src_layout = fresh_layout(src_dir.path());
+        let dst_layout = fresh_layout(dst_dir.path());
+        create(&src_layout, "misc", "wrong board", CreateOpts::default()).unwrap();
+        let id = IssueDoc::parse_file("misc", &src_layout.project_issues_path("misc"))
+            .unwrap()
+            .headings[0]
+            .id
+            .clone();
+
+        let out = refile_to(&src_layout, &id, &dst_layout, "surf").unwrap();
+        assert!(out.contains("misc -> surf"), "{out}");
+
+        // The heading is on the destination tracker, and the source root has
+        // no `surf` directory standing in for it.
+        let moved = IssueDoc::parse_file("surf", &dst_layout.project_issues_path("surf")).unwrap();
+        assert_eq!(moved.headings.len(), 1);
+        assert_eq!(moved.headings[0].id, id);
+        assert!(!src_layout.project_issues_path("surf").exists());
+        let left = IssueDoc::parse_file("misc", &src_layout.project_issues_path("misc")).unwrap();
+        assert!(left.headings.is_empty());
+    }
+
+    #[test]
+    fn reject_creates_the_successor_on_the_destination_layout() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let dst_dir = tempfile::tempdir().unwrap();
+        let src_layout = fresh_layout(src_dir.path());
+        let dst_layout = fresh_layout(dst_dir.path());
+        create(&src_layout, "misc", "old approach", CreateOpts::default()).unwrap();
+        let src = IssueDoc::parse_file("misc", &src_layout.project_issues_path("misc"))
+            .unwrap()
+            .headings[0]
+            .id
+            .clone();
+
+        // A twin id the destination file does not hold yet: the successor
+        // must not mint it, because the routed board already uses it.
+        let taken = vec!["surf-aaaa".to_string()];
+        let out = reject(
+            &src_layout,
+            &src,
+            RejectOpts {
+                project: Some("surf"),
+                title: Some("new approach"),
+                dst_layout: Some(&dst_layout),
+                dst_extra_ids: &taken,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert!(!src_layout.project_issues_path("surf").exists());
+        let made = IssueDoc::parse_file("surf", &dst_layout.project_issues_path("surf")).unwrap();
+        assert_eq!(made.headings.len(), 1);
+        assert_ne!(made.headings[0].id, "surf-aaaa");
+        assert!(out.contains(&made.headings[0].id), "{out}");
+        assert_eq!(issue_at(&src_layout, "misc", &src).state, "CANCELLED");
     }
 
     #[test]

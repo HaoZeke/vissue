@@ -21,6 +21,13 @@ pub struct VissueServer {
     router: Router,
 }
 
+/// Where a `reject` should put its successor.
+struct RejectDest {
+    layout: Layout,
+    project: Option<String>,
+    extra_ids: Vec<String>,
+}
+
 fn text<E: std::fmt::Display>(result: Result<String, E>) -> Result<CallToolResult, McpError> {
     match result {
         Ok(s) => Ok(CallToolResult::success(vec![Content::text(s)])),
@@ -60,6 +67,38 @@ impl VissueServer {
 
     fn layout_for_id(&self, id: &str) -> vissue_core::Result<Layout> {
         Ok(self.router.find_by_id(id)?.layout)
+    }
+
+    /// `to` names an existing heading, so its own layout wins. Otherwise the
+    /// create project is routed, which keeps a bounce onto a routed name off
+    /// the server's own root.
+    fn reject_destination(
+        &self,
+        src: &Layout,
+        to: Option<&str>,
+        project: Option<&str>,
+    ) -> vissue_core::Result<RejectDest> {
+        if let Some(to) = to {
+            return Ok(RejectDest {
+                layout: self.layout_for_id(to)?,
+                project: project.map(str::to_string),
+                extra_ids: Vec::new(),
+            });
+        }
+        let Some(project) = project else {
+            return Ok(RejectDest {
+                layout: src.clone(),
+                project: None,
+                extra_ids: Vec::new(),
+            });
+        };
+        let pref = self.router.route(project);
+        let extra_ids = self.router.extra_ids_for(&pref.dir)?;
+        Ok(RejectDest {
+            layout: pref.layout,
+            project: Some(pref.dir),
+            extra_ids,
+        })
     }
 
     #[tool(description = "List the projects that hold an issues.org under the tracker root.")]
@@ -137,14 +176,17 @@ impl VissueServer {
         Parameters(args): Parameters<RejectArgs>,
     ) -> Result<CallToolResult, McpError> {
         text(self.layout_for_id(&args.issue_id).and_then(|layout| {
+            let dest = self.reject_destination(&layout, args.to.as_deref(), args.project.as_deref())?;
             ops::reject(
                 &layout,
                 &args.issue_id,
                 RejectOpts {
                     to: args.to.as_deref(),
-                    project: args.project.as_deref(),
+                    project: dest.project.as_deref(),
                     title: args.title.as_deref(),
                     reason: args.reason.as_deref(),
+                    dst_layout: Some(&dest.layout),
+                    dst_extra_ids: &dest.extra_ids,
                 },
             )
         }))
@@ -531,10 +573,10 @@ impl VissueServer {
         &self,
         Parameters(args): Parameters<RefileArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(
-            self.layout_for_id(&args.issue_id)
-                .and_then(|layout| ops::refile(&layout, &args.issue_id, &args.to)),
-        )
+        text(self.layout_for_id(&args.issue_id).and_then(|layout| {
+            let dest = self.router.route(&args.to);
+            ops::refile_to(&layout, &args.issue_id, &dest.layout, &dest.dir)
+        }))
     }
 
     #[tool(

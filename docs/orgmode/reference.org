@@ -140,6 +140,17 @@ and mints =solver-xxxx= ids. =show= and =claim= search every distinct
 layout. Unscoped =list= / =projects= hide a default-layout directory
 whose name is an identity route key, and they show alias keys.
 
+Destinations are routed too. =refile --to parser= and =reject --project
+parser= put the heading on the routed layout rather than growing a
+=parser= directory under the default root, and a successor minted by
+=reject= avoids ids the routed board already holds.
+
+The route table is a client-side map, so it belongs to the process that
+reads it. =vissue serve= and the clients that talk to it -- the TUI and
+the HUD -- act on the single layout the server was started with. Run one
+server per tracker rather than expecting a routed view through the
+socket.
+
 * Environment
 
 | Variable         | Meaning                                                     |

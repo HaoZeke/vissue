@@ -588,6 +588,45 @@ fn layout_for_id(router: &Router, id: &str) -> Result<Layout> {
     Ok(router.find_by_id(id)?.layout)
 }
 
+/// Where a `reject` should put its successor.
+struct RejectDest {
+    layout: Layout,
+    project: Option<String>,
+    extra_ids: Vec<String>,
+}
+
+/// `--to` names an existing heading, so its own layout wins. Otherwise the
+/// create project is routed, which is what keeps a bounce onto a routed name
+/// off the source root.
+fn reject_destination(
+    router: &Router,
+    src: &Layout,
+    to: Option<&str>,
+    project: Option<&str>,
+) -> Result<RejectDest> {
+    if let Some(to) = to {
+        return Ok(RejectDest {
+            layout: layout_for_id(router, to)?,
+            project: project.map(str::to_string),
+            extra_ids: Vec::new(),
+        });
+    }
+    let Some(project) = project else {
+        return Ok(RejectDest {
+            layout: src.clone(),
+            project: None,
+            extra_ids: Vec::new(),
+        });
+    };
+    let pref = router.route(project);
+    let extra_ids = router.extra_ids_for(&pref.dir)?;
+    Ok(RejectDest {
+        layout: pref.layout,
+        project: Some(pref.dir),
+        extra_ids,
+    })
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let router = build_router(&cli)?;
@@ -725,6 +764,7 @@ fn run() -> Result<()> {
             reason,
         } => {
             let found = layout_for_id(&router, &id)?;
+            let dst = reject_destination(&router, &found, to.as_deref(), project.as_deref())?;
             emit!(
                 "{}",
                 ops::reject(
@@ -732,9 +772,11 @@ fn run() -> Result<()> {
                     &id,
                     RejectOpts {
                         to: to.as_deref(),
-                        project: project.as_deref(),
+                        project: dst.project.as_deref(),
                         title: title.as_deref(),
                         reason: reason.as_deref(),
+                        dst_layout: Some(&dst.layout),
+                        dst_extra_ids: &dst.extra_ids,
                     },
                 )?
             )
@@ -840,7 +882,11 @@ fn run() -> Result<()> {
         Command::Graph { project } => emit!("{}", graph_routed(&router, project.as_deref())?),
         Command::Refile { id, to } => {
             let found = layout_for_id(&router, &id)?;
-            emit!("{}", ops::refile(&found, &id, &to)?)
+            let dest = router.route(&to);
+            emit!(
+                "{}",
+                ops::refile_to(&found, &id, &dest.layout, &dest.dir)?
+            )
         }
         Command::Backlinks { id } => {
             let found = layout_for_id(&router, &id)?;

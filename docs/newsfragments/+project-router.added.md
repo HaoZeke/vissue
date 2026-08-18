@@ -6,3 +6,7 @@ every verb on the process default. `projects` and `identity` list the
 routed names; `show` and `claim` find an id on any configured layout.
 `vissue.el` still parses the original `identity` and `projects` lines;
 route lines are appended.
+
+`refile` and `reject` route their destination as well, so a bounce onto a
+routed name lands on that name's tracker. `serve`, and the TUI and HUD
+that talk to it, stay on the single layout the server was started with.

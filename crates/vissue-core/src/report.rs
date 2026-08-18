@@ -957,7 +957,10 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
         }
         let mut type_not_tagged = 0usize;
         let mut priority_in_drawer = 0usize;
-        let mut blocker_alias = 0usize;
+        let mut blockedby_typo = 0usize;
+        let mut blocker_as_ids = 0usize;
+        let mut computed_specials = 0usize;
+        let mut bad_effort = 0usize;
         for h in &doc.headings {
             if let Some(kind) = h.properties.get("TYPE") {
                 let kind = kind.trim();
@@ -971,8 +974,24 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             if h.properties.contains_key("PRIORITY") {
                 priority_in_drawer += 1;
             }
-            if h.properties.contains_key("BLOCKER") || h.properties.contains_key("BLOCKEDBY") {
-                blocker_alias += 1;
+            if h.properties.contains_key("BLOCKEDBY") {
+                blockedby_typo += 1;
+            }
+            if let Some(raw) = h.properties.get("BLOCKER")
+                && !crate::org::is_edna_blocker(raw)
+            {
+                blocker_as_ids += 1;
+            }
+            if crate::org::COMPUTED_SPECIALS
+                .iter()
+                .any(|k| *k != "PRIORITY" && h.properties.contains_key(*k))
+            {
+                computed_specials += 1;
+            }
+            if let Some(effort) = h.effort()
+                && !crate::org::is_org_effort(effort)
+            {
+                bad_effort += 1;
             }
         }
         if type_not_tagged > 0 {
@@ -989,10 +1008,31 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             )?;
             warnings += 1;
         }
-        if blocker_alias > 0 {
+        if blockedby_typo > 0 {
             writeln!(
                 out,
-                "[warn] {project}: {blocker_alias} heading(s) use :BLOCKER: or :BLOCKEDBY: instead of :BLOCKED_BY:"
+                "[warn] {project}: {blockedby_typo} heading(s) use :BLOCKEDBY: instead of :BLOCKED_BY:"
+            )?;
+            warnings += 1;
+        }
+        if blocker_as_ids > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {blocker_as_ids} heading(s) use :BLOCKER: as an id list; GNU ELPA org-edna uses that name for conditions. A rewrite moves the ids to :BLOCKED_BY:"
+            )?;
+            warnings += 1;
+        }
+        if computed_specials > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {computed_specials} heading(s) set a computed Org special (TODO/ITEM/TAGS/...) in the drawer; Org ignores it"
+            )?;
+            warnings += 1;
+        }
+        if bad_effort > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {bad_effort} heading(s) have an Effort value Org will not parse"
             )?;
             warnings += 1;
         }

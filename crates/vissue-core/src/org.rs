@@ -651,6 +651,194 @@ pub fn settle_heading_classifiers(
             properties.insert(crate::model::TAGS_PROPERTY.to_string(), kept.join(","));
         }
     }
+    settle_blocker_aliases(properties);
+}
+
+/// Org specials that are computed. Writing them in a drawer does not
+/// set them; Org reads the headline, the planning line, or the clock.
+pub const COMPUTED_SPECIALS: &[&str] = &[
+    "ALLTAGS",
+    "BLOCKED",
+    "CLOCKSUM",
+    "CLOCKSUM_T",
+    "FILE",
+    "ITEM",
+    "PRIORITY",
+    "TAGS",
+    "TIMESTAMP",
+    "TIMESTAMP_IA",
+    "TODO",
+];
+
+/// Org specials a heading may set. `CATEGORY` and `ARCHIVE` are the
+/// ones the agenda actually honours from the drawer.
+pub const SETTABLE_SPECIALS: &[&str] = &[
+    "ARCHIVE",
+    "CATEGORY",
+    "COLUMNS",
+    "COOKIE_DATA",
+    "LOGGING",
+    "ORDERED",
+    "STYLE",
+];
+
+/// Words org-edna and org-depend put in `:BLOCKER:` / `:TRIGGER:`.
+const EDNA_ATOMS: &[&str] = &[
+    "ancestors",
+    "chain-siblings",
+    "children",
+    "descendants",
+    "file-progress",
+    "first-child",
+    "has-property",
+    "heading",
+    "headings",
+    "id",
+    "ids",
+    "last-child",
+    "match",
+    "next-sibling",
+    "olp",
+    "parent",
+    "prev-sibling",
+    "previous-sibling",
+    "relatives",
+    "rest-of-siblings",
+    "siblings",
+    "todo-state",
+    "todo-state!",
+];
+
+/// Split a BLOCKED_BY-style id list: commas and whitespace both separate.
+pub fn split_id_list(raw: &str) -> Vec<String> {
+    raw.split(|c: char| c == ',' || c.is_whitespace())
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Whether a `:BLOCKER:` value is org-edna / org-depend syntax, not a
+/// list of issue ids. GNU ELPA org-edna is the maintained package;
+/// org-depend in org-contrib is the older one. Both own this name.
+pub fn is_edna_blocker(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    if trimmed.contains('(') {
+        return true;
+    }
+    trimmed.split_whitespace().any(|tok| {
+        let atom = tok.trim_end_matches('!');
+        EDNA_ATOMS
+            .iter()
+            .any(|known| atom.eq_ignore_ascii_case(known))
+    })
+}
+
+/// Issue ids mentioned in an org-edna `ids(...)` / `id(...)` form.
+pub fn edna_blocker_ids(raw: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut rest = raw;
+    while let Some(start) = rest.find('(') {
+        let Some(end) = rest[start + 1..].find(')') else {
+            break;
+        };
+        let inner = &rest[start + 1..start + 1 + end];
+        for id in split_id_list(inner) {
+            if !id.contains('"') && !ids.iter().any(|seen| seen == &id) {
+                ids.push(id);
+            }
+        }
+        rest = &rest[start + 1 + end + 1..];
+    }
+    ids
+}
+
+/// Every blocker id a heading declares: `:BLOCKED_BY:`, a typo
+/// `:BLOCKEDBY:`, a `:BLOCKER:` that is just ids, and `ids(...)` inside
+/// an org-edna form.
+pub fn blocker_ids_from_properties(
+    properties: &std::collections::BTreeMap<String, String>,
+) -> Vec<String> {
+    let mut ids = Vec::new();
+    for key in ["BLOCKED_BY", "BLOCKEDBY"] {
+        if let Some(raw) = properties.get(key) {
+            for id in split_id_list(raw) {
+                if !ids.iter().any(|seen| seen == &id) {
+                    ids.push(id);
+                }
+            }
+        }
+    }
+    if let Some(raw) = properties.get("BLOCKER") {
+        let extra = if is_edna_blocker(raw) {
+            edna_blocker_ids(raw)
+        } else {
+            split_id_list(raw)
+        };
+        for id in extra {
+            if !ids.iter().any(|seen| seen == &id) {
+                ids.push(id);
+            }
+        }
+    }
+    ids
+}
+
+fn settle_blocker_aliases(properties: &mut std::collections::BTreeMap<String, String>) {
+    let mut extra = Vec::new();
+    if let Some(raw) = properties.remove("BLOCKEDBY") {
+        extra.extend(split_id_list(&raw));
+    }
+    if let Some(raw) = properties.get("BLOCKER").cloned()
+        && !is_edna_blocker(&raw)
+    {
+        extra.extend(split_id_list(&raw));
+        properties.remove("BLOCKER");
+    }
+    if extra.is_empty() {
+        return;
+    }
+    let mut ids = properties
+        .get("BLOCKED_BY")
+        .map(|s| split_id_list(s))
+        .unwrap_or_default();
+    for id in extra {
+        if !ids.iter().any(|seen| seen == &id) {
+            ids.push(id);
+        }
+    }
+    properties.insert("BLOCKED_BY".to_string(), ids.join(" "));
+}
+
+/// Effort value Org's column view and agenda effort filter read.
+/// `org-effort-property` defaults to `Effort`.
+pub fn effort_from_properties(
+    properties: &std::collections::BTreeMap<String, String>,
+) -> Option<&str> {
+    properties
+        .get("Effort")
+        .or_else(|| properties.get("EFFORT"))
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+}
+
+/// A duration Org accepts for Effort: `1:30`, `2h`, `3d`, `0:10`.
+pub fn is_org_effort(raw: &str) -> bool {
+    let s = raw.trim();
+    if s.is_empty() {
+        return false;
+    }
+    if let Some((h, m)) = s.split_once(':') {
+        return !h.is_empty()
+            && h.chars().all(|c| c.is_ascii_digit())
+            && !m.is_empty()
+            && m.chars().all(|c| c.is_ascii_digit());
+    }
+    let (num, unit) = s.split_at(
+        s.find(|c: char| !c.is_ascii_digit() && c != '.')
+            .unwrap_or(s.len()),
+    );
+    !num.is_empty() && matches!(unit, "h" | "d" | "m" | "w" | "min" | "")
 }
 
 fn strip_file_keyword<'a>(trimmed: &'a str, name: &str) -> Option<&'a str> {
@@ -1072,6 +1260,50 @@ mod tests {
         assert!(out.contains("#+FILETAGS: :issues:demo:"), "{out}");
         assert!(out.find("#+TITLE:").unwrap() < out.find("#+CATEGORY:").unwrap());
         assert_eq!(ensure_org_preamble(&out, "demo"), out);
+    }
+
+    #[test]
+    fn edna_blocker_is_not_an_id_list() {
+        assert!(is_edna_blocker("prev-sibling"));
+        assert!(is_edna_blocker("ids(atlas-1a2b atlas-3e4f)"));
+        assert!(is_edna_blocker("headings(\"Ship it\")"));
+        assert!(!is_edna_blocker("atlas-1a2b"));
+        assert!(!is_edna_blocker("atlas-1a2b beacon-5j6k"));
+        assert_eq!(
+            edna_blocker_ids("ids(atlas-1a2b atlas-3e4f) next-sibling"),
+            vec!["atlas-1a2b", "atlas-3e4f"]
+        );
+        let mut props = std::collections::BTreeMap::new();
+        props.insert("BLOCKER".into(), "atlas-1a2b atlas-3e4f".into());
+        assert_eq!(
+            blocker_ids_from_properties(&props),
+            vec!["atlas-1a2b", "atlas-3e4f"]
+        );
+        settle_heading_classifiers(&mut Vec::new(), &mut props);
+        assert_eq!(
+            props.get("BLOCKED_BY").map(String::as_str),
+            Some("atlas-1a2b atlas-3e4f")
+        );
+        assert!(!props.contains_key("BLOCKER"));
+        let mut edna = std::collections::BTreeMap::new();
+        edna.insert("BLOCKER".into(), "prev-sibling".into());
+        settle_heading_classifiers(&mut Vec::new(), &mut edna);
+        assert_eq!(
+            edna.get("BLOCKER").map(String::as_str),
+            Some("prev-sibling")
+        );
+        assert!(!edna.contains_key("BLOCKED_BY"));
+    }
+
+    #[test]
+    fn effort_accepts_org_durations() {
+        assert!(is_org_effort("1:30"));
+        assert!(is_org_effort("2h"));
+        assert!(is_org_effort("20d"));
+        assert!(!is_org_effort("soon"));
+        let mut props = std::collections::BTreeMap::new();
+        props.insert("Effort".into(), "2h".into());
+        assert_eq!(effort_from_properties(&props), Some("2h"));
     }
 
     #[test]

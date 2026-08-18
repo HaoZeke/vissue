@@ -226,18 +226,19 @@ pub struct IssueHeading {
 }
 
 impl IssueHeading {
-    /// Ids listed in `:BLOCKED_BY:`. Commas and whitespace both separate, so
-    /// values written by hand or by an importer parse the same way.
+    /// Ids this heading waits on.
+    ///
+    /// `:BLOCKED_BY:` is the vissue form. `:BLOCKEDBY:` is a typo for that.
+    /// `:BLOCKER:` is GNU ELPA org-edna (and org-depend in org-contrib):
+    /// an `ids(...)` form or a bare id list both count; `prev-sibling` and
+    /// the rest of the condition language do not.
     pub fn blocked_by(&self) -> Vec<String> {
-        self.properties
-            .get("BLOCKED_BY")
-            .map(|s| {
-                s.split(|c: char| c == ',' || c.is_whitespace())
-                    .map(|x| x.trim().to_string())
-                    .filter(|x| !x.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default()
+        crate::org::blocker_ids_from_properties(&self.properties)
+    }
+
+    /// Org Effort estimate (`Effort` or `EFFORT`), when set.
+    pub fn effort(&self) -> Option<&str> {
+        crate::org::effort_from_properties(&self.properties)
     }
 
     /// Every tag on the issue: the `:VISSUE_TAGS:` property and the heading's
@@ -555,6 +556,18 @@ mod tests {
             h.properties.insert("BLOCKED_BY".into(), raw.into());
             assert_eq!(h.blocked_by(), vec!["A-1", "B-2", "C-3"], "raw = {raw:?}");
         }
+    }
+
+    #[test]
+    fn blocked_by_reads_a_blocker_id_list_and_edna_ids() {
+        let mut h = sample_heading();
+        h.properties.insert("BLOCKER".into(), "A-1 B-2".into());
+        assert_eq!(h.blocked_by(), vec!["A-1", "B-2"]);
+        h.properties
+            .insert("BLOCKER".into(), "ids(A-1) prev-sibling".into());
+        assert_eq!(h.blocked_by(), vec!["A-1"]);
+        h.properties.insert("BLOCKER".into(), "prev-sibling".into());
+        assert!(h.blocked_by().is_empty());
     }
 
     #[test]

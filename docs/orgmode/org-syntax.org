@@ -143,12 +143,70 @@ the same two tags and =search= would stop meaning anything.
 * 7 Properties and Columns
 
 =:NAME: value= in a =:PROPERTIES:= drawer. =:NAME+: value= appends.
-=:ID:= is required on an issue. Special property names Org reserves
-(=TAGS=, =DEADLINE=, =SCHEDULED=, =CLOSED=) are not written into the
-drawer; dates live on the planning line. Column view, property
-inheritance, and =#+PROPERTY:= file-level inheritance are not
-interpreted. A property drawer further down the entry, past body
-text, is an ordinary drawer and does not define an id.
+=:ID:= is required on an issue. A property drawer further down the
+entry, past body text, is an ordinary drawer and does not define an
+id. Column view and =#+PROPERTY:= inheritance are not interpreted.
+
+The names that matter are the ones Org and ELPA already own. A vault
+pass found =:BLOCKER:= used as an id list (GrokOS, ridley) and no
+=Effort= anywhere. =:BLOCKER:= is not a vissue typo for
+=:BLOCKED_BY:= when it is org-edna.
+
+** Org specials (manual 7.2)
+
+Computed: Org fills these from the headline, the planning line, or
+the clock. Writing them in the drawer does nothing, and =org-lint=
+says so for the reserved ones.
+
+| Name | Where Org reads it |
+|------+--------------------|
+| =TODO= | The TODO keyword |
+| =PRIORITY= | The =[#A]= cookie |
+| =TAGS= / =ALLTAGS= | The heading tag run |
+| =DEADLINE= =SCHEDULED= =CLOSED= | The planning line |
+| =ITEM= =FILE= | The headline / the file |
+| =BLOCKED= =CLOCKSUM= =CLOCKSUM_T= | Children / clock |
+| =TIMESTAMP= =TIMESTAMP_IA= | The first bare stamp |
+
+Settable: a heading may put these in the drawer and Org honours them.
+
+| Name | Meaning |
+|------+---------|
+| =CATEGORY= | Agenda label for this heading only (11.4.1) |
+| =ARCHIVE= | Archive location |
+| =ORDERED= | =org-enforce-todo-dependencies= |
+| =STYLE= | =habit= for org-habit |
+| =LOGGING= =COOKIE_DATA= =COLUMNS= | Logging, cookies, column format |
+
+** Org-native user properties
+
+| Name | Package / core | vissue |
+|------+----------------+--------|
+| =ID= | org-id | Required |
+| =CUSTOM_ID= | org-id, export | Preserved |
+| =Effort= / =EFFORT= | effort estimates, column view, agenda effort filter | Read; =check= rejects a value Org will not parse |
+| =CREATED= | org-expiry, capture | Set on create |
+| =LOCATION= | iCalendar export | Preserved |
+| =DIR= / =ATTACH_DIR= | attachments | Preserved |
+
+** ELPA / NonGNU / contrib
+
+| Name | Package | What it is |
+|------+---------+------------|
+| =BLOCKER= =TRIGGER= | GNU ELPA *org-edna* (maintained). org-depend in org-contrib is the older copy. | Condition language: =ids(a b)=, =prev-sibling=, =headings("...")=. =ready= takes ids out of =ids(...)= or a bare id list. A rewrite moves a bare id list to =:BLOCKED_BY:= so it does not collide with edna. An edna form stays. |
+| =ORG_GTD= =TRIGGER= =CATEGORY= | org-gtd (MELPA) | GTD bucket and area of focus. Preserved. |
+| =CREATED= =EXPIRY= | org-expiry (org-contrib) | =CREATED= is already the vissue stamp. |
+| =STYLE= | org-habit (Org core) | =habit= |
+
+=:BLOCKED_BY:= remains the vissue graph. =:BLOCKEDBY:= is a typo and
+is rewritten. =:OWNER:= is not a claim; =:CLAIMED_BY:= is.
+
+** vissue-owned
+
+=:TYPE:=, =:PARENT:=, =:VISSUE_TAGS:=, =:CLAIMED_BY:=, =:CLAIMED_AT:=,
+=:FILES:=, =:VERIFY:=, =:DISCOVERED_FROM:=, =:PIVOTED_TO:=,
+=:SIBLING_TERMINAL:=. Type also lives on the heading as a tag
+(section 6).
 
 * 8 Dates and Times
 

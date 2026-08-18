@@ -42,8 +42,10 @@ pub enum Message {
     Tick,
     /// Latest iced window id, once the shell reports one.
     WindowId(Option<window::Id>),
-    /// Window close or compositor delete: leave the process.
+    /// Window close request: leave the process while mapped.
     Close,
+    /// Compositor deleted the surface: exit if mapped, clear if hidden.
+    Closed,
     /// Switch the list filter chip.
     Filter(BoardFilter),
     /// Select the row with this issue id.
@@ -104,6 +106,9 @@ pub struct HudApp {
     /// Overlay state the view reads.
     pub palette: Palette,
     window_id: Option<window::Id>,
+    /// Reserved id for an in-flight `window::open`. Late completions
+    /// after hide must not restore a closed surface.
+    opening: Option<window::Id>,
     /// Remaining Sway IPC attempts after a show. Zero when placed or
     /// Sway is absent.
     place_tries: u8,
@@ -114,6 +119,7 @@ impl HudApp {
         Self {
             palette,
             window_id: None,
+            opening: None,
             place_tries: 0,
         }
     }
@@ -126,6 +132,10 @@ impl HudApp {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::WindowId(id) => {
+                if id != self.opening {
+                    return Task::none();
+                }
+                self.opening = None;
                 self.window_id = id;
                 if self.palette.visible() {
                     self.place_tries = 20;
@@ -149,6 +159,15 @@ impl HudApp {
                 if self.close_exits() {
                     iced::exit()
                 } else {
+                    Task::none()
+                }
+            }
+            Message::Closed => {
+                self.opening = None;
+                if self.close_exits() {
+                    iced::exit()
+                } else {
+                    self.window_id = None;
                     Task::none()
                 }
             }
@@ -278,10 +297,11 @@ impl HudApp {
     }
 
     fn sync_window(&mut self) -> Task<Message> {
-        match overlay_action(self.palette.visible(), self.window_id.is_some()) {
+        match overlay_action(self.palette.visible(), self.mapped()) {
             OverlayAction::Open => self.open_window(),
             OverlayAction::Close => {
                 self.place_tries = 0;
+                self.opening = None;
                 match self.window_id.take() {
                     Some(id) => window::close(id),
                     None => Task::none(),
@@ -300,7 +320,12 @@ impl HudApp {
         self.place_tries = 20;
         let (id, open) = window::open(board_window());
         self.window_id = Some(id);
+        self.opening = Some(id);
         open.map(|id| Message::WindowId(Some(id)))
+    }
+
+    fn mapped(&self) -> bool {
+        self.window_id.is_some()
     }
 
     fn try_place(&mut self) {
@@ -416,6 +441,7 @@ fn subscription(_app: &HudApp) -> Subscription<Message> {
                 map_key(key)
             }
             Event::Window(window::Event::CloseRequested) => Some(Message::Close),
+            Event::Window(window::Event::Closed) => Some(Message::Closed),
             _ => None,
         }),
         time::every(Duration::from_millis(50)).map(|_| Message::Tick),
@@ -461,14 +487,18 @@ mod tests {
     use super::*;
     use vissue_core::config::{DEFAULT_PREFIX, Layout};
 
-    #[test]
-    fn a_hidden_overlay_does_not_quit_on_window_close() {
+    fn empty_app() -> (tempfile::TempDir, HudApp) {
         let dir = tempfile::tempdir().expect("tempdir");
         let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
         std::fs::create_dir_all(layout.projects_dir()).expect("projects dir");
         let mut palette = Palette::open_core(layout, "close".into()).expect("open");
         palette.show();
-        let mut app = HudApp::from_palette(palette);
+        (dir, HudApp::from_palette(palette))
+    }
+
+    #[test]
+    fn a_hidden_overlay_does_not_quit_on_window_close() {
+        let (_dir, mut app) = empty_app();
         assert!(app.close_exits());
         app.palette.hide();
         assert!(!app.close_exits());
@@ -484,7 +514,48 @@ mod tests {
         let prod = src.split("#[cfg(test)]").next().unwrap();
         assert!(prod.contains("window::close"));
         assert!(prod.contains("iced::daemon"));
+        assert!(prod.contains("window::Event::Closed"));
         assert!(!prod.contains("Mode::Hidden"));
         assert!(!prod.contains("set_mode"));
+    }
+
+    #[test]
+    fn a_stale_window_id_after_hide_does_not_count_as_mapped() {
+        let (_dir, mut app) = empty_app();
+        let id = window::Id::unique();
+        app.opening = Some(id);
+        let _ = app.update(Message::WindowId(Some(id)));
+        assert!(app.mapped());
+        app.palette.hide();
+        let _ = app.sync_window();
+        assert!(!app.mapped());
+        let _ = app.update(Message::WindowId(Some(id)));
+        assert!(
+            !app.mapped(),
+            "a late open completion must not restore a closed surface"
+        );
+        app.palette.show();
+        assert_eq!(
+            overlay_action(app.palette.visible(), app.mapped()),
+            OverlayAction::Open
+        );
+    }
+
+    #[test]
+    fn closed_while_hidden_clears_mapped_state() {
+        let (_dir, mut app) = empty_app();
+        let id = window::Id::unique();
+        app.opening = Some(id);
+        let _ = app.update(Message::WindowId(Some(id)));
+        assert!(app.mapped());
+        app.palette.hide();
+        assert!(!app.close_exits());
+        let _ = app.update(Message::Closed);
+        assert!(!app.mapped());
+        app.palette.show();
+        assert_eq!(
+            overlay_action(app.palette.visible(), app.mapped()),
+            OverlayAction::Open
+        );
     }
 }

@@ -387,7 +387,7 @@ pub struct Palette {
     help_md: icedtea::widget::MarkdownDoc,
     project: Option<String>,
     projects: Vec<String>,
-    confirm: Option<ConfirmKind>,
+    confirm: Option<Confirm>,
     clipboard: String,
     ready_count: usize,
     list_count: usize,
@@ -440,6 +440,13 @@ impl ConfirmKind {
             Self::Cancelled => "CANCELLED",
         }
     }
+}
+
+/// Pending D/X confirm. The id and painted state are taken when confirm starts.
+struct Confirm {
+    kind: ConfirmKind,
+    id: String,
+    if_state: String,
 }
 
 impl Palette {
@@ -608,7 +615,7 @@ impl Palette {
 
     /// Pending DONE/CANCELLED confirmation.
     pub fn confirm(&self) -> Option<ConfirmKind> {
-        self.confirm
+        self.confirm.as_ref().map(|confirm| confirm.kind)
     }
 
     /// Last id or URL copied with `y` or a markdown click.
@@ -1276,8 +1283,8 @@ impl Palette {
                 }
             }
             ActionId::StateCycle => self.cycle_state(),
-            ActionId::ConfirmDone => self.confirm = Some(ConfirmKind::Done),
-            ActionId::ConfirmCancel => self.confirm = Some(ConfirmKind::Cancelled),
+            ActionId::ConfirmDone => self.start_confirm(ConfirmKind::Done),
+            ActionId::ConfirmCancel => self.start_confirm(ConfirmKind::Cancelled),
             ActionId::Open => self.open_selected(),
             ActionId::CopyId => self.copy_selected(),
             ActionId::Reload => {
@@ -1391,17 +1398,50 @@ impl Palette {
         let _ = self.reload();
     }
 
+    fn start_confirm(&mut self, kind: ConfirmKind) {
+        let Some(id) = self.painted_id().map(str::to_string) else {
+            return;
+        };
+        let Some(if_state) = self.painted_state(&id).map(str::to_string) else {
+            return;
+        };
+        match (kind, if_state.as_str()) {
+            (ConfirmKind::Done, "CANCELLED") | (ConfirmKind::Cancelled, "DONE") => {
+                self.message = format!("{if_state}; D/X confirm a live heading");
+                return;
+            }
+            (ConfirmKind::Done, "DONE") | (ConfirmKind::Cancelled, "CANCELLED") => return,
+            _ => {}
+        }
+        self.confirm = Some(Confirm { kind, id, if_state });
+    }
+
     fn handle_confirm_key(&mut self, key: PaletteKey) {
         match key {
             PaletteKey::Char('y') | PaletteKey::Char('Y') | PaletteKey::Enter => {
-                if let Some(kind) = self.confirm.take() {
-                    self.apply_state(kind.state());
+                if let Some(confirm) = self.confirm.take() {
+                    self.apply_confirm(confirm);
                 }
             }
             PaletteKey::Esc | PaletteKey::Char('n') | PaletteKey::Char('N') => {
                 self.confirm = None;
             }
             _ => {}
+        }
+    }
+
+    fn apply_confirm(&mut self, confirm: Confirm) {
+        match self.backend.update(UpdateReq {
+            id: confirm.id,
+            state: Some(confirm.kind.state().to_string()),
+            if_state: Some(confirm.if_state),
+            ..UpdateReq::default()
+        }) {
+            Ok(result) => {
+                self.message = result.report.trim().to_string();
+                let _ = self.reload();
+            }
+            Err(err) => self.message = err.to_string(),
         }
     }
 
@@ -3234,6 +3274,70 @@ mod tests {
             palette.message().contains("CANCELLED"),
             "{}",
             palette.message()
+        );
+    }
+
+    #[test]
+    fn confirm_after_reject_on_ready_leaves_neighbors() {
+        let (_dir, layout) = writable();
+        let mut palette = open_atlas(layout, "hud-test");
+        let first = palette.selected_id().expect("a row").to_string();
+        assert_eq!(first, "atlas-1a2b");
+        let first_state = palette.backend().get(&first).unwrap().state;
+        assert_eq!(first_state, "STARTED");
+        palette.handle_key(PaletteKey::Char('D'));
+        assert_eq!(palette.confirm(), Some(ConfirmKind::Done));
+        palette
+            .backend()
+            .update(UpdateReq {
+                id: first.clone(),
+                state: Some("CANCELLED".into()),
+                if_state: Some(first_state),
+                ..UpdateReq::default()
+            })
+            .expect("reject");
+        let _ = palette.reload();
+        assert!(
+            palette.filtered_items().iter().all(|item| item.id != first),
+            "cancelled heading should leave Ready"
+        );
+        let neighbor = palette.selected_id().expect("neighbor").to_string();
+        assert_ne!(neighbor, first);
+        let neighbor_state = palette.backend().get(&neighbor).unwrap().state;
+        palette.handle_key(PaletteKey::Char('y'));
+        assert_eq!(
+            palette.backend().get(&neighbor).unwrap().state,
+            neighbor_state,
+            "yes must not close the Ready neighbor"
+        );
+        let rejected = palette.backend().get(&first).unwrap();
+        assert_eq!(rejected.state, "CANCELLED");
+        assert!(
+            !rejected.properties.contains_key("SIBLING_TERMINAL"),
+            "{:?}",
+            rejected.properties
+        );
+    }
+
+    #[test]
+    fn confirm_done_on_cancelled_refuses() {
+        let (_dir, layout) = writable();
+        let mut palette = open_atlas(layout, "hud-test");
+        let id = palette.selected_id().expect("a row").to_string();
+        palette.handle_key(PaletteKey::Char('X'));
+        palette.handle_key(PaletteKey::Enter);
+        assert_eq!(palette.backend().get(&id).unwrap().state, "CANCELLED");
+        palette.set_filter(BoardFilter::List);
+        palette.select_id(&id);
+        palette.handle_key(PaletteKey::Char('D'));
+        assert!(palette.confirm().is_none());
+        palette.handle_key(PaletteKey::Char('y'));
+        let shown = palette.backend().get(&id).unwrap();
+        assert_eq!(shown.state, "CANCELLED");
+        assert!(
+            !shown.properties.contains_key("SIBLING_TERMINAL"),
+            "{:?}",
+            shown.properties
         );
     }
 

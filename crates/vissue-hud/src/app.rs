@@ -304,7 +304,10 @@ pub fn board_window() -> window::Settings {
         .overlay()
         .size(HUD_W, HUD_H)
         .min_size(360.0, 420.0);
-    icedtea::app::bootstrap(&boot).window
+    let mut win = icedtea::app::bootstrap(&boot).window;
+    // Overlay default swallows the compositor close. A mapped board exits.
+    win.exit_on_close_request = true;
+    win
 }
 
 /// First paint via core, attach unless `--offline`, then the iced loop.

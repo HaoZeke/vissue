@@ -6,6 +6,44 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.5.0](https://github.com/HaoZeke/vissue/releases/tag/v0.5.0) - 2026-08-18
+
+### Added
+
+- A user-level `~/.config/vissue/config.toml` can send named projects to
+  another checkout. A route wins over `--root` and `VISSUE_ROOT`, so a
+  process whose default root is one tracker can still create and show
+  issues that live on another. `--no-route` and `VISSUE_NO_ROUTE=1` keep
+  every verb on the process default. `projects` and `identity` list the
+  routed names; `show` and `claim` find an id on any configured layout.
+  `vissue.el` still parses the original `identity` and `projects` lines;
+  route lines are appended.
+
+  `refile` and `reject` route their destination as well, so a bounce onto a
+  routed name lands on that name's tracker. `serve`, and the TUI and HUD
+  that talk to it, stay on the single layout the server was started with.
+- `vissue hud` is an overlay. On Sway it floats and centers itself over
+  the compositor IPC socket. No Sway include or `for_window` rule.
+- `vissue reject` closes a heading as CANCELLED and writes a successor
+  edge (`PIVOTED_TO` / `DISCOVERED_FROM`) in one edit, so a bounce is a
+  walkable wire rather than a body mention. `vissue wait --id --until-terminal`
+  blocks until that id is DONE or CANCELLED (exit 2 on timeout). State
+  changes emit a `state_change` event that names the id.
+- `vissue update --if-state` / `--if-gen` refuse a write when the heading
+  or corpus moved since the caller last read it. Disagreeing terminals
+  keep the first close and record `:SIBLING_TERMINAL:`; `vissue resolve`
+  picks one. `vissue check` warns on a DONE that reads as a reject and on
+  a body `[[id:]]` with no successor edge.
+
+### Fixed
+
+- A freshly started `serve` owner is now waited on for 15 seconds rather than
+  5, and `VISSUE_ACCEPT_TIMEOUT_MS` overrides that. A cold start binds its
+  socket only after building a runtime and loading the tracker, so a loaded
+  machine could reach the old deadline and be reported as a spawn failure.
+  The HUD's detach path reads the same deadline.
+
+
 ## [0.4.1](https://github.com/HaoZeke/vissue/releases/tag/v0.4.1) - 2026-08-16
 
 ### Fixed

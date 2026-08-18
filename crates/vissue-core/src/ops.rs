@@ -112,8 +112,17 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
         {
             props.insert("DISCOVERED_FROM".into(), origin);
         }
+        let mut org_tags: Vec<String> = Vec::new();
         if let Some(t) = opts.issue_type {
             props.insert("TYPE".into(), t.into());
+            // Type is an Org tag when the character class allows it, so
+            // agenda tag search and C-c \ see `bug` / `feature` / `task`.
+            if t.chars().all(crate::model::is_org_tag_char)
+                && !t.is_empty()
+                && !org_tags.iter().any(|seen| seen == t)
+            {
+                org_tags.push(t.to_string());
+            }
         }
         if let Some(d) = opts.deadline {
             validate_org_date(d)?;
@@ -126,7 +135,6 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
         // A tag Org can hold goes on the heading, where Org's own tag search
         // and agenda read it. One Org would not accept, `needs-review` say,
         // stays in the property so it survives instead of becoming title text.
-        let mut org_tags: Vec<String> = Vec::new();
         if let Some(tags) = opts.tags {
             let mut property_tags: Vec<String> = Vec::new();
             for tag in tags.split([',', ':']).map(str::trim) {
@@ -1377,6 +1385,29 @@ mod tests {
     }
 
     #[test]
+    fn create_puts_a_legal_type_on_the_heading() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(
+            &layout,
+            "sample",
+            "a bug",
+            CreateOpts {
+                issue_type: Some("bug"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let h = &doc.headings[0];
+        assert_eq!(h.properties.get("TYPE").map(String::as_str), Some("bug"));
+        assert_eq!(h.org_tags, vec!["bug"]);
+        let written = std::fs::read_to_string(layout.project_issues_path("sample")).unwrap();
+        assert!(written.contains("#+CATEGORY: sample"), "{written}");
+        assert!(written.contains(":bug:"), "{written}");
+    }
+
+    #[test]
     fn resolve_project_needs_a_name_from_somewhere() {
         let dir = tempfile::tempdir().unwrap();
         let layout = fresh_layout(dir.path());
@@ -1970,5 +2001,31 @@ mod tests {
             report.text
         );
         assert!(report.warnings >= 2, "{}", report.text);
+    }
+
+    #[test]
+    fn check_names_a_file_missing_category_and_a_type_not_on_the_heading() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        let path = layout.project_issues_path("sample");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "#+TITLE: sample issues\n#+TODO: TODO STARTED BLOCKED | DONE CANCELLED\n\n* TODO [#A] Untagged type\n:PROPERTIES:\n:ID:         sample-aaaa\n:TYPE:       bug\n:END:\n",
+        )
+        .unwrap();
+        let report = crate::report::check(&layout).unwrap();
+        assert!(
+            report.text.contains("sample: preamble has no #+CATEGORY:"),
+            "{}",
+            report.text
+        );
+        assert!(
+            report
+                .text
+                .contains("have :TYPE: that is a legal Org tag but is not on the heading"),
+            "{}",
+            report.text
+        );
     }
 }

@@ -14,9 +14,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::config::Layout;
 use crate::model::{IssueHeading, LogEntry, TODO_HEADER, parse_log_line, today_inactive_bracket};
 use crate::org::{
-    OrgScan, is_headline, is_issue_headline, is_planning_line, is_top_level_headline,
-    opens_a_drawer, parse_headline_bits, parse_planning_line, property_key_and_append,
-    split_statistics_cookies, todo_keywords_from_lines,
+    OrgScan, ensure_org_preamble, is_headline, is_issue_headline, is_planning_line,
+    is_top_level_headline, opens_a_drawer, parse_headline_bits, parse_planning_line,
+    property_key_and_append, split_statistics_cookies, todo_keywords_from_lines,
 };
 
 /// Process-local mutex per path, so concurrent async handlers in one process
@@ -282,7 +282,7 @@ impl IssueDoc {
         let preamble = if self.preamble.trim().is_empty() {
             default_preamble(&self.project)
         } else {
-            self.preamble.clone()
+            ensure_org_preamble(&self.preamble, &self.project)
         };
         out.push_str(preamble.trim_end());
         out.push_str("\n\n");
@@ -1053,9 +1053,10 @@ mod tests {
         assert_eq!(h.tags(), vec!["needs-review", "perf"]);
         let rendered = h.render();
         assert!(
-            rendered.contains(":VISSUE_TAGS: needs-review,perf"),
+            rendered.contains(":VISSUE_TAGS: needs-review"),
             "{rendered}"
         );
+        assert!(rendered.contains(":perf:"), "{rendered}");
         assert!(!rendered.contains(":TAGS:"), "{rendered}");
     }
 
@@ -1122,6 +1123,7 @@ mod tests {
         let written = fs::read_to_string(&path).unwrap();
 
         assert!(written.contains("#+FILETAGS: :issues:sample:"), "{written}");
+        assert!(written.contains("#+CATEGORY: sample"), "{written}");
         assert!(written.contains("#+STATUS: Active"), "{written}");
         assert!(
             written.find(":TYPE:").unwrap() < written.find(":PARENT:").unwrap(),

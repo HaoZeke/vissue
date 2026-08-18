@@ -320,12 +320,15 @@ impl IssueHeading {
 
     /// Heading, planning line, drawers, and body as they are written to disk.
     pub fn render(&self) -> String {
+        let mut org_tags = self.org_tags.clone();
+        let mut properties = self.properties.clone();
+        crate::org::settle_heading_classifiers(&mut org_tags, &mut properties);
         let mut out = render_heading_line(
             &self.state,
             self.priority,
             &self.title,
             self.statistics.as_deref(),
-            &self.org_tags,
+            &org_tags,
         );
         if let Some(planning) = self.render_planning_line() {
             out.push_str(&planning);
@@ -336,7 +339,7 @@ impl IssueHeading {
             if key == "ID" || PLANNING_KEYS.contains(&key.as_str()) {
                 continue;
             }
-            if let Some(val) = self.properties.get(&key) {
+            if let Some(val) = properties.get(&key) {
                 out.push_str(&render_property(&key, val));
             }
         }
@@ -528,7 +531,6 @@ mod tests {
         let mut props = BTreeMap::new();
         props.insert("ID".into(), "sample-abc1".into());
         props.insert("CREATED".into(), "[2026-04-25 Sat]".into());
-        props.insert("TYPE".into(), "feature".into());
         IssueHeading {
             id: "sample-abc1".into(),
             title: "Add a thing".into(),
@@ -537,7 +539,7 @@ mod tests {
             properties: props,
             org_tags: Vec::new(),
             statistics: None,
-            property_order: vec!["ID".into(), "CREATED".into(), "TYPE".into()],
+            property_order: vec!["ID".into(), "CREATED".into()],
             extra_drawers: Vec::new(),
             body: "Some body lines.\nWith multiple lines.".into(),
             logbook: Vec::new(),

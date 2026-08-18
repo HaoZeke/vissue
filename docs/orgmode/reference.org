@@ -53,8 +53,12 @@ defaulting to =C=.
 
 =:ID:= is required and generated. =:CREATED:= is set on create. =:PARENT:=,
 =:BLOCKED_BY:=, =:VISSUE_TAGS:=, =:TYPE:=, =:CLAIMED_BY:=, =:CLAIMED_AT:=,
-and =:DISCOVERED_FROM:= are read by the query verbs. Any other property is
-preserved untouched, in the order it appears on disk.
+and =:DISCOVERED_FROM:= are read by the query verbs. =:TYPE:= is also
+written as a heading tag when Org's tag character class allows it, which
+is the form tag search sees. Any other property is preserved untouched,
+in the order it appears on disk. =check= names a file whose preamble
+has no =#+CATEGORY:=, and a project whose types never made it onto the
+heading.
 
 =:BLOCKED_BY:= accepts commas, whitespace, or both. =:PARENT:= may name
 another issue or any Org heading with an =:ID:= under the tracker prefix, so a
@@ -69,9 +73,10 @@ reads them from there and nowhere else.
 | Field                       | Written as                                                          | What it gives                             |
 |-----------------------------+---------------------------------------------------------------------+-------------------------------------------|
 | Deadline, scheduled, closed | The planning line under the heading                                 | =org-agenda= shows the issue              |
-| Tags Org can hold           | The heading's own =:tag:tag:= run                                   | Org tag search and =C-c \= match          |
+| Type and tags Org can hold  | The heading's own =:bug:parser:= run                                | Tag search and =C-c \= match              |
 | Identity                    | =:ID:=                                                              | =id:= links resolve through =org-id=      |
 | Project                     | =#+CATEGORY:= in the preamble                                       | The agenda labels rows by project         |
+| Workstream override         | =:CATEGORY:= on that heading only                                   | That row's agenda label, not the file's   |
 
 A tag Org will not accept in a heading, =needs-review= say, stays in
 =:VISSUE_TAGS:= and still answers =search= and =related=. =create --tags=

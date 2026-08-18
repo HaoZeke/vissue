@@ -17,7 +17,7 @@ SCHEDULED: <2026-02-10 Tue>
 
 Scope: the backoff table and what a caller sees on the final failure.
 
-* CANCELLED [#C] Drop the legacy exporter
+* CANCELLED [#C] Drop the legacy exporter                             :chore:
 :PROPERTIES:
 :ID:         beacon-6m7n
 :CREATED:    [2026-01-21 Wed]

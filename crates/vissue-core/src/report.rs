@@ -13,7 +13,7 @@ use crate::config::Layout;
 use crate::graph::DependencyGraph;
 use crate::model::{IssueHeading, READY_STATES};
 pub use crate::related::related;
-use crate::store::{find_by_id, find_org_ids, list_projects, load_all, project_selected};
+use crate::store::{IssueDoc, find_by_id, find_org_ids, list_projects, load_all, project_selected};
 use crate::views::{IssueRec, IssueRow, ListQuery};
 
 struct GraphIndex<'a> {
@@ -938,6 +938,63 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                 h.id, prev.0, project
             )?;
             errors += 1;
+        }
+    }
+
+    for project in list_projects(layout)? {
+        let path = layout.project_issues_path(&project);
+        let doc = IssueDoc::parse_file(&project, &path)?;
+        if !crate::org::preamble_has_keyword(&doc.preamble, "CATEGORY") {
+            writeln!(
+                out,
+                "[warn] {project}: preamble has no #+CATEGORY: (org-agenda labels every row \"issues\")"
+            )?;
+            warnings += 1;
+        }
+        if !crate::org::preamble_has_keyword(&doc.preamble, "FILETAGS") {
+            writeln!(out, "[warn] {project}: preamble has no #+FILETAGS:")?;
+            warnings += 1;
+        }
+        let mut type_not_tagged = 0usize;
+        let mut priority_in_drawer = 0usize;
+        let mut blocker_alias = 0usize;
+        for h in &doc.headings {
+            if let Some(kind) = h.properties.get("TYPE") {
+                let kind = kind.trim();
+                if !kind.is_empty()
+                    && kind.chars().all(crate::model::is_org_tag_char)
+                    && !h.org_tags.iter().any(|t| t == kind)
+                {
+                    type_not_tagged += 1;
+                }
+            }
+            if h.properties.contains_key("PRIORITY") {
+                priority_in_drawer += 1;
+            }
+            if h.properties.contains_key("BLOCKER") || h.properties.contains_key("BLOCKEDBY") {
+                blocker_alias += 1;
+            }
+        }
+        if type_not_tagged > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {type_not_tagged} heading(s) have :TYPE: that is a legal Org tag but is not on the heading"
+            )?;
+            warnings += 1;
+        }
+        if priority_in_drawer > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {priority_in_drawer} heading(s) put :PRIORITY: in the drawer; Org reads the [#A] cookie"
+            )?;
+            warnings += 1;
+        }
+        if blocker_alias > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {blocker_alias} heading(s) use :BLOCKER: or :BLOCKEDBY: instead of :BLOCKED_BY:"
+            )?;
+            warnings += 1;
         }
     }
 

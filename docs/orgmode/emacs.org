@@ -13,9 +13,10 @@ back.
 | Field                       | Written as                                        | What Org does with it        |
 |-----------------------------+---------------------------------------------------+------------------------------|
 | Deadline, scheduled, closed | The planning line under the heading                | =org-agenda= lists the issue |
-| Tags Org can hold           | The heading's own =:tag:tag:= run, aligned to =org-tags-column= | Tag search matches |
+| Type and tags Org can hold  | The heading's own =:bug:parser:= run, aligned to =org-tags-column= | Tag search matches |
 | Identity                    | =:ID:=                                            | =org-id= resolves an =id:= link |
 | Project                     | =#+CATEGORY:= in the preamble                     | The agenda labels rows by project |
+| Workstream override         | =:CATEGORY:= on that heading only                 | That row's agenda label |
 | Keyword cycle               | File-local =#+TODO:= (TODO STARTED BLOCKED, then DONE CANCELLED) | =C-c C-t= walks that sequence |
 | Closed / cancelled          | The TODO keyword (=DONE=, =CANCELLED=)            | =C-c C-t=                       |
 | Bounce / successor          | =:PIVOTED_TO:= / =:DISCOVERED_FROM:=              | Ordinary properties; =id:= links |

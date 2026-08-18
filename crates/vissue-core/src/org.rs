@@ -577,6 +577,82 @@ pub fn filetags_from_preamble(preamble: &str) -> Vec<String> {
     tags
 }
 
+/// Whether the preamble already carries `#+NAME:`.
+pub fn preamble_has_keyword(preamble: &str, name: &str) -> bool {
+    preamble
+        .lines()
+        .any(|line| strip_file_keyword(line.trim(), name).is_some())
+}
+
+/// Insert `#+CATEGORY:` and `#+FILETAGS:` when a hand-started file never
+/// grew them. Org takes the category from the file name otherwise, and
+/// every project's file is `issues.org`.
+pub fn ensure_org_preamble(preamble: &str, project: &str) -> String {
+    if preamble.trim().is_empty() {
+        return preamble.to_string();
+    }
+    let mut lines: Vec<String> = preamble.lines().map(str::to_string).collect();
+    let insert_at = lines
+        .iter()
+        .position(|line| strip_file_keyword(line.trim(), "TITLE").is_some())
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let mut extra = Vec::new();
+    if !preamble_has_keyword(preamble, "CATEGORY") {
+        extra.push(format!("#+CATEGORY: {project}"));
+    }
+    if !preamble_has_keyword(preamble, "FILETAGS") {
+        extra.push(format!("#+FILETAGS: :issues:{project}:"));
+    }
+    if extra.is_empty() {
+        return preamble.to_string();
+    }
+    for (offset, line) in extra.into_iter().enumerate() {
+        lines.insert(insert_at + offset, line);
+    }
+    lines.join("\n")
+}
+
+/// Move classifiers Org can hold onto the heading: a legal `:TYPE:` and
+/// any legal token in `:VISSUE_TAGS:`. Hyphenated leftovers stay in the
+/// property. `:TYPE:` itself is kept so export and `--type` filters still
+/// read it.
+pub fn settle_heading_classifiers(
+    org_tags: &mut Vec<String>,
+    properties: &mut std::collections::BTreeMap<String, String>,
+) {
+    fn push_tag(org_tags: &mut Vec<String>, tag: &str) {
+        if !tag.is_empty()
+            && tag.chars().all(is_org_tag_char)
+            && !org_tags.iter().any(|seen| seen == tag)
+        {
+            org_tags.push(tag.to_string());
+        }
+    }
+    if let Some(kind) = properties.get("TYPE") {
+        push_tag(org_tags, kind.trim());
+    }
+    if let Some(raw) = properties.get(crate::model::TAGS_PROPERTY).cloned() {
+        let mut kept = Vec::new();
+        for tag in raw
+            .split([',', ':'])
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+        {
+            if tag.chars().all(is_org_tag_char) {
+                push_tag(org_tags, tag);
+            } else {
+                kept.push(tag.to_string());
+            }
+        }
+        if kept.is_empty() {
+            properties.remove(crate::model::TAGS_PROPERTY);
+        } else {
+            properties.insert(crate::model::TAGS_PROPERTY.to_string(), kept.join(","));
+        }
+    }
+}
+
 fn strip_file_keyword<'a>(trimmed: &'a str, name: &str) -> Option<&'a str> {
     let rest = trimmed.strip_prefix("#+")?;
     let (key, value) = rest.split_once(':')?;
@@ -986,6 +1062,31 @@ mod tests {
             filetags_from_preamble("#+FILETAGS: :issues:parser:\n"),
             vec!["issues", "parser"]
         );
+    }
+
+    #[test]
+    fn ensure_org_preamble_inserts_category_and_filetags() {
+        let raw = "#+TITLE: demo issues\n#+TODO: TODO | DONE";
+        let out = ensure_org_preamble(raw, "demo");
+        assert!(out.contains("#+CATEGORY: demo"), "{out}");
+        assert!(out.contains("#+FILETAGS: :issues:demo:"), "{out}");
+        assert!(out.find("#+TITLE:").unwrap() < out.find("#+CATEGORY:").unwrap());
+        assert_eq!(ensure_org_preamble(&out, "demo"), out);
+    }
+
+    #[test]
+    fn settle_moves_legal_type_and_tags_onto_the_heading() {
+        let mut tags = Vec::new();
+        let mut props = std::collections::BTreeMap::new();
+        props.insert("TYPE".into(), "bug".into());
+        props.insert("VISSUE_TAGS".into(), "perf,needs-review".into());
+        settle_heading_classifiers(&mut tags, &mut props);
+        assert_eq!(tags, vec!["bug", "perf"]);
+        assert_eq!(
+            props.get("VISSUE_TAGS").map(String::as_str),
+            Some("needs-review")
+        );
+        assert_eq!(props.get("TYPE").map(String::as_str), Some("bug"));
     }
 
     #[test]

@@ -116,12 +116,29 @@ the tracker. =:BLOCKED_BY:= is.
 
 * 6 Tags
 
-Org tags are =[[:alnum:]_@#%]+=, right-aligned to column 77. A tag
-that character class rejects (=needs-review=) stays in
-=:VISSUE_TAGS:=. =#+FILETAGS:= is written on a fresh file and parsed
-for documentation; it is not copied onto every heading, because every
-issue in the file would then share the same two tags and =search=
-would stop meaning anything.
+This is the classifier Org can search. A vault audit of 5k headings
+found 37 with a tag run and 5k with =:TYPE:= in the drawer. That is
+the wrong shape: Org tag search and the agenda never see a drawer
+type.
+
+Write the type and every legal token on the heading:
+
+: * TODO [#A] Ship the parser                                     :bug:parser:
+
+Org tags are =[[:alnum:]_@#%]+=, right-aligned to column 77. =bug=,
+=feature=, =task=, =chore=, =plan=, =docs=, =perf= are all legal.
+=create --type bug= writes both =:TYPE: bug= (so export still has a
+type field) and =:bug:= on the heading. A rewrite of an older heading
+does the same.
+
+A token that character class rejects (=needs-review=) stays in
+=:VISSUE_TAGS:=. Never =:TAGS:= in the drawer: Org reserves that name
+for the headline run, ignores the drawer, and =org-lint= says so.
+
+=#+FILETAGS:= is =:issues:project:= on a fresh file, and a write
+inserts it when a hand-started file never grew one. It is not copied
+onto every heading, because then every issue in the file would share
+the same two tags and =search= would stop meaning anything.
 
 * 7 Properties and Columns
 
@@ -160,11 +177,28 @@ configuration. An =[[attachment:...]]= link is body text.
 
 * 11 Agenda Views
 
-The file is a legal agenda file: =#+CATEGORY:= names the project so a
-multi-file agenda does not label every row =issues=, planning dates
-feed the weekly view, and headline tags feed tag search. Custom
-agenda commands, column view in the agenda, and stuck-project
-recipes are Emacs configuration.
+The file is a legal agenda file. Custom agenda commands, column view
+in the agenda, and stuck-project recipes are Emacs configuration.
+
+** 11.4.1 Categories
+
+Org's category is the agenda's left-hand label. It comes from, in
+order: a =:CATEGORY:= property on the heading, =#+CATEGORY:= in the
+preamble, then the file name. Every project's file is =issues.org=, so
+a file with no =#+CATEGORY:= labels every row =issues=.
+
+A vault pass over 119 project files found =#+CATEGORY:= on two of
+them. That is why a multi-project agenda is unreadable. A fresh file
+gets =#+CATEGORY: project=. A write of an older file inserts the line
+when it is missing. =check= names a file that still lacks it.
+
+=:CATEGORY:= on a single heading is the Org-legal override for a
+workstream that should not inherit the file category. Do not copy the
+project name onto every heading; that is what the preamble line is.
+=TYPE= is not a category. Put =bug= / =feature= / =task= on the
+heading as a tag (section 6).
+
+Planning dates feed the weekly view. Headline tags feed =C-c \=.
 
 * 12 Markup for Rich Contents
 

@@ -6,7 +6,7 @@
 #+STATUS: Active
 #+TODO: TODO STARTED BLOCKED | DONE CANCELLED
 
-* STARTED [#A] Parse the manifest header                        :parser:core:
+* STARTED [#A] Parse the manifest header                :parser:core:feature:
 :PROPERTIES:
 :ID:         atlas-1a2b
 :CREATED:    [2026-01-12 Mon]
@@ -22,7 +22,7 @@ CLOCK: [2026-01-14 Wed 09:12]--[2026-01-14 Wed 10:42] =>  1:30
 Scope: read the header block before the first record.
 Done-when: a malformed header names the offending line number.
 
-* BLOCKED [#A] Publish the release notes
+* BLOCKED [#A] Publish the release notes                               :task:
 DEADLINE: <2026-03-01 Sun>
 :PROPERTIES:
 :ID:         atlas-3e4f
@@ -36,7 +36,7 @@ DEADLINE: <2026-03-01 Sun>
 
 Waits on the parser landing, because the notes quote its error text.
 
-* TODO [#B] Emit a summary table                                  :reporting:
+* TODO [#B] Emit a summary table                          :reporting:feature:
 :PROPERTIES:
 :ID:         atlas-2c3d
 :CREATED:    [2026-01-16 Fri]
@@ -46,7 +46,7 @@ Waits on the parser landing, because the notes quote its error text.
 
 Scope: one row per parsed record, counts only.
 
-* DONE [#C] Rename the config key
+* DONE [#C] Rename the config key                                     :chore:
 :PROPERTIES:
 :ID:         atlas-4g5h
 :CREATED:    [2026-01-05 Mon]

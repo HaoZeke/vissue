@@ -6,6 +6,7 @@
 
 pub mod attach;
 pub mod cli;
+pub(crate) mod dates;
 pub mod detach;
 pub mod fuzzy;
 pub mod keys;

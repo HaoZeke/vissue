@@ -122,17 +122,11 @@ fn the_number_keys_choose_the_pane() {
         ('3', BoardFilter::Claims),
         ('4', BoardFilter::Agenda),
         ('1', BoardFilter::Ready),
-        ('5', BoardFilter::Search),
     ] {
         palette.handle_key(PaletteKey::Char(key));
         assert_eq!(palette.filter(), filter, "{key} chose the wrong pane");
     }
-    // The search pane hands typing to the query, so a digit is text there
-    // rather than another pane key.
-    assert_eq!(palette.focus(), Focus::Search);
-    palette.handle_key(PaletteKey::Char('1'));
-    assert_eq!(palette.filter(), BoardFilter::Search);
-    assert_eq!(palette.query(), "1");
+    assert_eq!(palette.focus(), Focus::List);
 }
 
 #[test]
@@ -237,11 +231,31 @@ fn p_cycles_through_the_projects_and_back_to_all() {
 }
 
 #[test]
+fn search_inside_a_project_keeps_other_projects_out() {
+    let (_dir, mut palette) = open();
+    press(&mut palette, "/retry");
+    assert_eq!(palette.filter(), BoardFilter::Ready);
+    let shown = titles(&palette);
+    assert!(
+        shown.iter().all(|t| !t.to_lowercase().contains("retry")),
+        "atlas search leaked another project: {shown:?}"
+    );
+
+    palette.set_query("");
+    press(&mut palette, "summary");
+    let shown = titles(&palette);
+    assert!(
+        shown.iter().any(|t| t.contains("Emit a summary")),
+        "{shown:?}"
+    );
+}
+
+#[test]
 fn slash_opens_search_and_typing_narrows_the_rows() {
     let (_dir, mut palette) = open();
     press(&mut palette, "/");
     assert_eq!(palette.focus(), Focus::Search);
-    assert_eq!(palette.filter(), BoardFilter::Search);
+    assert_eq!(palette.filter(), BoardFilter::Ready);
 
     let typed = "summary";
     press(&mut palette, typed);
@@ -471,9 +485,9 @@ fn question_mark_opens_help_and_three_keys_close_it() {
 }
 
 #[test]
-fn enter_cycles_the_detail_tabs_and_escape_resets_them() {
+fn enter_cycles_the_side_tabs() {
     let (_dir, mut palette) = open();
-    assert_eq!(palette.detail_tab(), DetailTab::Show);
+    assert_eq!(palette.detail_tab(), DetailTab::Tree);
 
     let mut seen = vec![palette.detail_tab()];
     for _ in 0..DetailTab::ALL.len() {
@@ -483,15 +497,7 @@ fn enter_cycles_the_detail_tabs_and_escape_resets_them() {
     for tab in DetailTab::ALL {
         assert!(seen.contains(&tab), "{tab:?} never came up: {seen:?}");
     }
-
-    palette.set_detail_tab(DetailTab::Tree);
-    assert_eq!(palette.detail_tab(), DetailTab::Tree);
-    palette.handle_key(PaletteKey::Esc);
-    assert_eq!(
-        palette.detail_tab(),
-        DetailTab::Show,
-        "escape resets the pane before it does anything else"
-    );
+    assert_eq!(seen.last().copied(), Some(DetailTab::Tree));
 }
 
 #[test]
@@ -580,14 +586,16 @@ fn the_pane_labels_and_the_tab_labels_are_all_distinct() {
     tabs.dedup();
     assert_eq!(tabs.len(), count, "two detail tabs share a label");
 
-    // Cycling a pane visits all of them before repeating.
+    // Cycling a pane visits the chips before repeating. Search is the
+    // search field, not a stop on Tab.
     let mut seen = vec![BoardFilter::Ready];
     let mut cur = BoardFilter::Ready;
-    for _ in 0..panes.len() {
+    for _ in 0..BoardFilter::CHIPS.len() {
         cur = cur.next();
         seen.push(cur);
     }
-    for pane in panes {
+    for (pane, _) in BoardFilter::CHIPS {
         assert!(seen.contains(&pane), "{pane:?} is unreachable by cycling");
     }
+    assert!(!seen.contains(&BoardFilter::Search));
 }

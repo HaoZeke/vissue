@@ -180,6 +180,20 @@ impl BoardBackend for CoreBackend {
         self.mut_result(report, &req.id)
     }
 
+    fn create(&self, project: &str, title: &str) -> Result<MutResult, Error> {
+        let report = ops::create(
+            &self.layout,
+            project,
+            title,
+            ops::CreateOpts {
+                quiet: true,
+                ..ops::CreateOpts::default()
+            },
+        )?;
+        let id = report.split_whitespace().next().unwrap_or("").to_string();
+        self.mut_result(report, &id)
+    }
+
     fn open(&self, id: &str) -> Result<IssueDetail, Error> {
         self.get(id)
     }

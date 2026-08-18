@@ -1,7 +1,7 @@
 //! Seat mocha as icedtea tokens. Type scale is icedtea's.
 
 use iced::Color;
-use icedtea::theme::{Tokens, mix};
+use icedtea::theme::Tokens;
 
 /// Body size in pixels (`icedtea::typo::BODY`).
 pub use icedtea::typo::BODY as SIZE_BODY;
@@ -42,22 +42,28 @@ pub const GREEN: Color = Color::from_rgb8(0xa6, 0xe3, 0xa1);
 pub const YELLOW: Color = Color::from_rgb8(0xf9, 0xe2, 0xaf);
 
 /// Mocha mapped onto icedtea's semantic tokens.
+///
+/// Start from the catalog mocha, then set the seat colors. icedtea
+/// rebuilds the scheme from those aliases.
 pub fn tokens() -> Tokens {
-    Tokens {
-        canvas: BASE,
-        surface: SURFACE0,
-        panel: MANTLE,
-        text: TEXT,
-        muted: SUBTEXT,
-        primary: BLUE,
-        accent: PEACH,
-        success: GREEN,
-        warning: YELLOW,
-        danger: RED,
-        border: OVERLAY1,
-        selection: mix(BLUE, BASE, 0.28),
-        selection_text: TEXT,
-    }
+    let mut tok = icedtea::theme::named("catppuccin-mocha").tokens;
+    tok.accent = PEACH;
+    tok.success = GREEN;
+    tok.warning = YELLOW;
+    tok.danger = RED;
+    icedtea::theme::apply_os_chrome(
+        tok,
+        true,
+        icedtea::theme::OsChrome {
+            primary: Some(BLUE),
+            canvas: Some(BASE),
+            surface: Some(SURFACE0),
+            panel: Some(MANTLE),
+            text: Some(TEXT),
+            muted: Some(SUBTEXT),
+            border: Some(OVERLAY1),
+        },
+    )
 }
 
 /// iced [`Theme`](iced::Theme) from the mocha tokens.
@@ -97,7 +103,7 @@ mod tests {
         assert_eq!(t.danger, RED);
         assert_eq!(t.success, GREEN);
         assert_eq!(t.border, OVERLAY1);
-        assert_eq!(t.selection, mix(BLUE, BASE, 0.28));
+        assert_eq!(t.selection, icedtea::theme::mix(BLUE, BASE, 0.28));
         let _ = theme();
     }
 

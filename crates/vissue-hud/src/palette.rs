@@ -3,13 +3,13 @@
 use std::path::Path;
 
 use vissue_core::config::Layout;
-use vissue_core::ops::{self, CreateOpts};
 use vissue_core::views::{Excerpt, IssueDetail, IssueRow, ListQuery, SearchHit};
 use vissue_tui::CoreBackend;
 use vissue_tui::attach::{AttachHooks, AttachOutcome, ServeStatus};
 use vissue_tui::backend::{BoardBackend, UpdateReq};
 
 use crate::attach;
+use crate::dates::format_org_stamps;
 use crate::fuzzy::rank_indices;
 use crate::keys::{ActionId, KeyMap};
 use crate::summon::{SummonAction, SummonRequest};
@@ -21,10 +21,10 @@ Home is the project list. Enter opens one.
 Esc from a project returns to that list.
 
 j/k, arrows   move
-Tab, 1-5      pane (Ready List Claims Agenda Search)
+Tab, 1-4      pane (Ready List Claims Agenda)
 Enter         open project / cycle detail
 p             next project
-/             search
+/             search this project
 a             add a task
 c             claim
 n             note
@@ -71,13 +71,21 @@ pub enum BoardFilter {
 }
 
 impl BoardFilter {
-    /// Chip order with labels.
+    /// Chip order with labels. Search is the search field, not a chip.
     pub const ALL: [(Self, &'static str); 5] = [
         (Self::Ready, "Ready"),
         (Self::List, "List"),
         (Self::Claims, "Claims"),
         (Self::Agenda, "Agenda"),
         (Self::Search, "Search"),
+    ];
+
+    /// Visible filter chips. Search lives in the search field.
+    pub const CHIPS: [(Self, &'static str); 4] = [
+        (Self::Ready, "Ready"),
+        (Self::List, "List"),
+        (Self::Claims, "Claims"),
+        (Self::Agenda, "Agenda"),
     ];
 
     /// Chip label drawn on the board.
@@ -91,20 +99,19 @@ impl BoardFilter {
         }
     }
 
-    /// Next filter in chip order.
+    /// Next filter in chip order. Search is not in the cycle.
     pub fn next(self) -> Self {
-        let i = Self::ALL.iter().position(|(p, _)| *p == self).unwrap_or(0);
-        Self::ALL[(i + 1) % Self::ALL.len()].0
+        let i = Self::CHIPS
+            .iter()
+            .position(|(p, _)| *p == self)
+            .unwrap_or(0);
+        Self::CHIPS[(i + 1) % Self::CHIPS.len()].0
     }
 }
 
-/// Detail card. Same tabs as the terminal board.
+/// Optional pane on the right of the always-visible issue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DetailTab {
-    /// Metadata from `issue/get`.
-    Show,
-    /// On-disk heading range.
-    Excerpt,
     /// Parent and child tree.
     Tree,
     /// Related-issue hits.
@@ -115,19 +122,11 @@ pub enum DetailTab {
 
 impl DetailTab {
     /// Tab order cycled by Enter on a selected row.
-    pub const ALL: [Self; 5] = [
-        Self::Show,
-        Self::Excerpt,
-        Self::Tree,
-        Self::Related,
-        Self::Notes,
-    ];
+    pub const ALL: [Self; 3] = [Self::Tree, Self::Related, Self::Notes];
 
-    /// Tab label drawn on the detail card.
+    /// Tab label drawn on the right-hand pane.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Show => "show",
-            Self::Excerpt => "excerpt",
             Self::Tree => "tree",
             Self::Related => "related",
             Self::Notes => "notes",
@@ -194,6 +193,62 @@ pub struct ProjectCard {
     pub name: String,
     /// Ready-queue count for this project.
     pub ready: usize,
+    /// Ready count as list meta (`caught up`, `1 ready`, `N ready`).
+    pub blurb: String,
+}
+
+impl ProjectCard {
+    fn new(name: String, ready: usize) -> Self {
+        let blurb = match ready {
+            0 => "caught up".to_string(),
+            1 => "1 ready".to_string(),
+            n => format!("{n} ready"),
+        };
+        Self { name, ready, blurb }
+    }
+}
+
+/// Home project cards, ready-count descending.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProjectList {
+    cards: Vec<ProjectCard>,
+}
+
+impl ProjectList {
+    fn from_cards(mut cards: Vec<ProjectCard>) -> Self {
+        cards.sort_by(|a, b| b.ready.cmp(&a.ready).then_with(|| a.name.cmp(&b.name)));
+        Self { cards }
+    }
+
+    fn as_slice(&self) -> &[ProjectCard] {
+        &self.cards
+    }
+
+    fn is_empty(&self) -> bool {
+        self.cards.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.cards.len()
+    }
+}
+
+impl icedtea::collection::ListModel for ProjectList {
+    fn len(&self) -> usize {
+        self.cards.len()
+    }
+
+    fn id(&self, index: usize) -> u64 {
+        index as u64
+    }
+
+    fn title(&self, index: usize) -> &str {
+        &self.cards[index].name
+    }
+
+    fn meta(&self, index: usize) -> Option<&str> {
+        Some(&self.cards[index].blurb)
+    }
 }
 
 impl HudItem {
@@ -317,7 +372,18 @@ pub struct Palette {
     focus: Focus,
     detail_tab: DetailTab,
     detail_body: String,
-    detail_md: Option<icedtea::widget::MarkdownDoc>,
+    /// Issue id last passed to [`Self::fill_detail`]. The header follows this,
+    /// not only the list cursor.
+    viewing: Option<String>,
+    /// When true, keep [`Self::viewing`] through reload and tab changes
+    /// if that issue is not in the current list.
+    viewing_held: bool,
+    issue_tree: Option<IssueTreeNode>,
+    tree_ids: Vec<String>,
+    tree_focus: Option<String>,
+    related_hits: Vec<vissue_core::views::RelatedHit>,
+    related_marks: std::collections::BTreeMap<String, (String, bool, bool)>,
+    help_md: icedtea::widget::MarkdownDoc,
     project: Option<String>,
     projects: Vec<String>,
     confirm: Option<ConfirmKind>,
@@ -333,8 +399,14 @@ pub struct Palette {
     leader_at: Option<std::time::Instant>,
     collapsed: std::collections::BTreeSet<String>,
     collapse_seeded: bool,
-    project_cards: Vec<ProjectCard>,
+    project_cards: ProjectList,
     project_sel: usize,
+    project_selection: icedtea::collection::Selection,
+    project_window: icedtea::collection::VisibleWindow,
+    detail_split: icedtea::layout::SplitState,
+    sash_drag: icedtea::layout::SashDrag,
+    window_h: f32,
+    selectables: icedtea::field::Selectables,
 }
 
 impl std::fmt::Debug for Palette {
@@ -406,9 +478,16 @@ impl Palette {
             add_draft: String::new(),
             filter: BoardFilter::Ready,
             focus: Focus::List,
-            detail_tab: DetailTab::Show,
+            detail_tab: DetailTab::Tree,
             detail_body: String::new(),
-            detail_md: None,
+            viewing: None,
+            viewing_held: false,
+            issue_tree: None,
+            tree_ids: Vec::new(),
+            tree_focus: None,
+            related_hits: Vec::new(),
+            related_marks: std::collections::BTreeMap::new(),
+            help_md: icedtea::widget::parse(HELP),
             project: None,
             projects,
             confirm: None,
@@ -424,8 +503,14 @@ impl Palette {
             leader_at: None,
             collapsed: std::collections::BTreeSet::new(),
             collapse_seeded: false,
-            project_cards: Vec::new(),
+            project_cards: ProjectList::default(),
             project_sel: 0,
+            project_selection: icedtea::collection::Selection::None,
+            project_window: icedtea::collection::VisibleWindow::new(480.0),
+            detail_split: icedtea::layout::SplitState::new(icedtea::layout::Axis::Vertical, 0.68),
+            sash_drag: icedtea::layout::SashDrag::default(),
+            window_h: 760.0,
+            selectables: icedtea::field::Selectables::new(),
         };
         #[cfg(not(test))]
         {
@@ -536,14 +621,224 @@ impl Palette {
         self.clipboard = text;
     }
 
-    /// Parsed markdown for the detail card, if any.
-    pub fn detail_md(&self) -> Option<&icedtea::widget::MarkdownDoc> {
-        self.detail_md.as_ref()
+    /// Issue the detail header paints: the id last loaded into the pane.
+    pub fn header_issue(&self) -> Option<HeaderIssue<'_>> {
+        let id = self.viewing.as_deref().or_else(|| self.selected_id())?;
+        if let Some(item) = self.items.iter().find(|item| item.id == id) {
+            return Some(HeaderIssue {
+                priority: item.priority.as_str(),
+                state: item.state.as_str(),
+                title: item.title.as_str(),
+                project: item.project.as_str(),
+                blocked: !item.blocked_by.is_empty(),
+                claimed: item.claimed_by.is_some(),
+            });
+        }
+        let detail = self.detail.as_ref().filter(|d| d.id == id)?;
+        Some(HeaderIssue {
+            priority: detail.priority.as_str(),
+            state: detail.state.as_str(),
+            title: detail.title.as_str(),
+            project: detail.project.as_str(),
+            blocked: !detail.blocked_by.is_empty(),
+            claimed: detail.claimed_by.is_some(),
+        })
     }
 
     /// Help overlay body.
     pub fn help_text(&self) -> &'static str {
         HELP
+    }
+
+    /// Parsed help markdown. Same source as [`Self::help_text`].
+    pub fn help_md(&self) -> &icedtea::widget::MarkdownDoc {
+        &self.help_md
+    }
+
+    /// Related-tab hits for the focused issue.
+    pub fn related_hits(&self) -> &[vissue_core::views::RelatedHit] {
+        &self.related_hits
+    }
+
+    /// Priority, blocked, and claimed for a related hit, if loaded.
+    pub fn related_marks(&self, id: &str) -> Option<(&str, bool, bool)> {
+        self.related_marks
+            .get(id)
+            .map(|(p, b, c)| (p.as_str(), *b, *c))
+    }
+
+    /// Label and bind id for each Excerpt field row, in paint order.
+    pub fn excerpt_form(&self) -> Vec<(String, String)> {
+        let Some(detail) = self.detail.as_ref() else {
+            return Vec::new();
+        };
+        excerpt_form(detail)
+            .into_iter()
+            .map(|row| (row.id, row.label))
+            .collect()
+    }
+
+    /// Label gutter that fits the longest Excerpt field name.
+    pub fn excerpt_label_width(&self) -> f32 {
+        excerpt_columns(&self.detail.as_ref().map(excerpt_form).unwrap_or_default()).0
+    }
+
+    /// Pixel width that fits the Excerpt label/value table.
+    pub fn excerpt_table_width(&self) -> f32 {
+        excerpt_columns(&self.detail.as_ref().map(excerpt_form).unwrap_or_default()).1
+    }
+
+    /// Flattened Tree-tab rows, if a tree is loaded.
+    pub fn tree_rows(&self) -> Vec<TreeRow<'_>> {
+        let Some(root) = &self.issue_tree else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        flatten_issue_tree(root, 0, &mut out);
+        out
+    }
+
+    /// Row in the current pane with this issue id, if loaded.
+    pub fn item_by_id(&self, id: &str) -> Option<&HudItem> {
+        self.items.iter().find(|item| item.id == id)
+    }
+
+    /// Node id for the focused issue, if that node is in the tree.
+    pub fn tree_selected(&self) -> Option<u64> {
+        let id = self.tree_focus.as_deref().or_else(|| self.selected_id())?;
+        self.tree_ids
+            .iter()
+            .position(|row| row == id)
+            .map(|i| i as u64)
+    }
+
+    /// Expand or collapse a Tree-tab node.
+    pub fn toggle_tree_node(&mut self, id: u64) {
+        if let Some(tree) = &mut self.issue_tree {
+            toggle_issue_tree(tree, id);
+        }
+    }
+
+    /// Highlight a Tree-tab node without leaving the current tree.
+    pub fn select_tree_node(&mut self, id: u64) {
+        let Some(issue) = self.tree_ids.get(id as usize).cloned() else {
+            return;
+        };
+        self.tree_focus = Some(issue);
+    }
+
+    /// Select `id` as the board row and load it into the issue pane.
+    ///
+    /// Call this when the user follows a Tree or Related hit. If `id` is
+    /// already in the current list, only the selection changes. If it is
+    /// not, the board opens that issue's project on List.
+    pub fn open_issue(&mut self, id: &str) {
+        self.viewing_held = true;
+        self.tree_focus = Some(id.to_string());
+        if self.selected_id() == Some(id) {
+            self.refresh_detail();
+            return;
+        }
+        if self
+            .filtered
+            .iter()
+            .any(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+        {
+            if let Some(pos) = self
+                .filtered
+                .iter()
+                .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+            {
+                self.selected = pos;
+                if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
+                    self.collapsed.remove(&p);
+                }
+            }
+            self.viewing = Some(id.to_string());
+            self.refresh_detail();
+            return;
+        }
+        let project = match self.backend.get(id) {
+            Ok(detail) => detail.project,
+            Err(err) => {
+                self.message = err.to_string();
+                return;
+            }
+        };
+        self.project = Some(project);
+        self.query.clear();
+        self.selected = 0;
+        self.collapse_seeded = false;
+        self.collapsed.clear();
+        self.filter = BoardFilter::List;
+        self.focus = Focus::List;
+        self.backend.invalidate_since();
+        let _ = self.reload();
+        if let Some(pos) = self
+            .filtered
+            .iter()
+            .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+        {
+            self.selected = pos;
+            if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
+                self.collapsed.remove(&p);
+            }
+            self.viewing = Some(id.to_string());
+            self.refresh_detail();
+        } else {
+            self.fill_detail(Some(id));
+        }
+    }
+
+    /// Selection the home project list paints.
+    pub fn project_selection(&self) -> &icedtea::collection::Selection {
+        &self.project_selection
+    }
+
+    /// Scroll window the home project list paints.
+    pub fn project_window(&self) -> icedtea::collection::VisibleWindow {
+        self.project_window
+    }
+
+    /// Store the home project list scroll window.
+    pub fn set_project_window(&mut self, window: icedtea::collection::VisibleWindow) {
+        self.project_window = window;
+    }
+
+    /// List/detail split the board paints.
+    pub fn detail_split(&self) -> icedtea::layout::SplitState {
+        self.detail_split
+    }
+
+    /// Height the list/detail split is laid out against.
+    pub fn split_total(&self) -> f32 {
+        let mut chrome = 14.0 * 2.0 + 36.0 + 40.0 + 20.0;
+        if self.note_draft.is_some() {
+            chrome += 48.0;
+        }
+        if self.confirm.is_some() {
+            chrome += 36.0;
+        }
+        if !self.message.is_empty() {
+            chrome += 36.0;
+        }
+        (self.window_h - chrome).max(220.0)
+    }
+
+    /// Remember the window height so the sash drag matches the painted split.
+    pub fn set_window_height(&mut self, height: f32) {
+        self.window_h = height.max(1.0);
+    }
+
+    /// Drag the list/detail sash.
+    pub fn apply_sash(&mut self, event: icedtea::layout::SashEvent) {
+        let total = self.split_total();
+        let _ = self.sash_drag.apply(
+            &mut self.detail_split,
+            event,
+            total,
+            icedtea::i18n::Direction::Ltr,
+        );
     }
 
     /// Home screen: no project open, Ready/List would otherwise dump the vault.
@@ -553,6 +848,11 @@ impl Palette {
 
     /// Home project cards, ready-count descending.
     pub fn project_cards(&self) -> &[ProjectCard] {
+        self.project_cards.as_slice()
+    }
+
+    /// Home list model for [`icedtea::widget::list_view`].
+    pub fn project_list(&self) -> &ProjectList {
         &self.project_cards
     }
 
@@ -564,6 +864,7 @@ impl Palette {
     /// Name of the selected home project card, if any.
     pub fn selected_project_name(&self) -> Option<&str> {
         self.project_cards
+            .as_slice()
             .get(self.project_sel)
             .map(|c| c.name.as_str())
     }
@@ -577,6 +878,8 @@ impl Palette {
         self.collapsed.clear();
         self.filter = BoardFilter::Ready;
         self.focus = Focus::List;
+        self.viewing = None;
+        self.viewing_held = false;
         self.backend.invalidate_since();
         let _ = self.reload();
     }
@@ -592,6 +895,8 @@ impl Palette {
         self.detail = None;
         self.excerpt = None;
         self.detail_body.clear();
+        self.viewing = None;
+        self.viewing_held = false;
         self.backend.invalidate_since();
         let _ = self.reload();
     }
@@ -743,6 +1048,32 @@ impl Palette {
         let _ = self.reload();
     }
 
+    /// Search field text. An empty home search returns to the project list.
+    pub fn type_query(&mut self, query: impl Into<String>) {
+        let query = query.into();
+        if query.is_empty() && self.project.is_none() && self.filter == BoardFilter::Search {
+            self.query.clear();
+            self.set_filter(BoardFilter::Ready);
+            return;
+        }
+        if self.browsing() && !query.is_empty() {
+            self.focus_search();
+        } else {
+            self.focus_query();
+        }
+        self.set_query(query);
+    }
+
+    fn painted_state(&self, id: &str) -> Option<&str> {
+        if let Some(item) = self.item_by_id(id) {
+            return Some(item.state.as_str());
+        }
+        self.detail
+            .as_ref()
+            .filter(|detail| detail.id == id)
+            .map(|detail| detail.state.as_str())
+    }
+
     /// Map the overlay window.
     pub fn show(&mut self) {
         self.visible = true;
@@ -833,11 +1164,7 @@ impl Palette {
         }
         match key {
             PaletteKey::Esc => {
-                if self.detail_tab != DetailTab::Show || self.excerpt.is_some() {
-                    self.detail_tab = DetailTab::Show;
-                    self.excerpt = None;
-                    self.refresh_detail();
-                } else if self.project.is_some() {
+                if self.project.is_some() {
                     self.leave_project();
                 } else if !matches!(self.filter, BoardFilter::Ready) {
                     self.set_filter(BoardFilter::Ready);
@@ -898,8 +1225,12 @@ impl Palette {
             }
             ActionId::ProjectCycle => self.cycle_project(),
             ActionId::Search => {
-                self.set_filter(BoardFilter::Search);
-                self.focus_search();
+                if self.project.is_some() {
+                    self.focus_query();
+                } else {
+                    self.set_filter(BoardFilter::Search);
+                    self.focus_search();
+                }
             }
             ActionId::Add => {
                 if self.browsing()
@@ -1135,45 +1466,134 @@ impl Palette {
     }
 
     fn refresh_detail(&mut self) {
-        let Some(id) = self.selected_id().map(str::to_string) else {
+        let hold = self.viewing_held
+            && self
+                .viewing
+                .as_deref()
+                .is_some_and(|id| !self.id_in_filter(id));
+        let id = if hold {
+            self.viewing.clone()
+        } else {
+            self.selected_id().map(str::to_string)
+        };
+        self.fill_detail(id.as_deref());
+        if !self
+            .tree_ids
+            .iter()
+            .any(|row| Some(row.as_str()) == self.tree_focus.as_deref())
+        {
+            self.tree_focus = id;
+        }
+    }
+
+    fn id_in_filter(&self, id: &str) -> bool {
+        self.filtered
+            .iter()
+            .any(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+    }
+
+    fn follow_selection(&mut self) {
+        self.viewing_held = false;
+        self.viewing = self.selected_id().map(str::to_string);
+        self.refresh_detail();
+    }
+
+    fn fill_detail(&mut self, id: Option<&str>) {
+        self.viewing = id.map(str::to_string);
+        let Some(id) = id else {
             self.detail = None;
             self.excerpt = None;
             self.detail_body.clear();
-            self.detail_md = None;
+            self.issue_tree = None;
+            self.tree_ids.clear();
+            self.related_hits.clear();
+            self.related_marks.clear();
             return;
         };
-        match self.detail_tab {
-            DetailTab::Show => match self.backend.get(&id) {
-                Ok(detail) => {
-                    self.detail_body = format_show(&detail);
-                    self.detail = Some(detail);
+        match self.backend.excerpt(id) {
+            Ok(excerpt) => {
+                self.detail_body = excerpt.text.clone();
+                self.excerpt = Some(excerpt);
+                match self.backend.get(id) {
+                    Ok(detail) => self.detail = Some(detail),
+                    Err(err) => self.detail_body = err.to_string(),
                 }
-                Err(err) => self.detail_body = err.to_string(),
-            },
-            DetailTab::Excerpt => match self.backend.excerpt(&id) {
-                Ok(excerpt) => {
-                    self.detail_body = excerpt.text.clone();
-                    self.excerpt = Some(excerpt);
-                }
-                Err(err) => self.detail_body = err.to_string(),
-            },
-            DetailTab::Tree => match self.backend.tree(&id) {
-                Ok(node) => self.detail_body = format_tree(&node, 0),
-                Err(err) => self.detail_body = err.to_string(),
-            },
-            DetailTab::Related => match self.backend.related(&id, 2, 20) {
-                Ok(hits) => self.detail_body = format_related_tree(&hits),
-                Err(err) => self.detail_body = err.to_string(),
-            },
-            DetailTab::Notes => match self.backend.get(&id) {
-                Ok(detail) => {
-                    self.detail_body = format_notes(&detail);
-                    self.detail = Some(detail);
-                }
-                Err(err) => self.detail_body = err.to_string(),
-            },
+            }
+            Err(err) => {
+                self.excerpt = None;
+                self.detail_body = err.to_string();
+                self.detail = self.backend.get(id).ok();
+            }
         }
-        self.detail_md = Some(icedtea::widget::parse(&self.detail_body));
+        match self.detail_tab {
+            DetailTab::Tree => {
+                self.issue_tree = None;
+                self.tree_ids.clear();
+                match self.backend.tree(id) {
+                    Ok(node) => {
+                        let mut ids = Vec::new();
+                        self.issue_tree = Some(issue_tree_from(&node, &mut ids));
+                        self.tree_ids = ids;
+                    }
+                    Err(err) => self.message = err.to_string(),
+                }
+            }
+            DetailTab::Related => {
+                self.related_hits.clear();
+                self.related_marks.clear();
+                match self.backend.related(id, 2, 20) {
+                    Ok(hits) => {
+                        for hit in &hits {
+                            if let Ok(detail) = self.backend.get(&hit.id) {
+                                self.related_marks.insert(
+                                    hit.id.clone(),
+                                    (
+                                        detail.priority,
+                                        !detail.blocked_by.is_empty(),
+                                        detail.claimed_by.is_some(),
+                                    ),
+                                );
+                            }
+                        }
+                        self.related_hits = hits;
+                    }
+                    Err(err) => self.message = err.to_string(),
+                }
+            }
+            DetailTab::Notes => {}
+        }
+        self.bind_selectables();
+    }
+
+    /// Drag-select buffer for a detail field, if bound.
+    pub fn selectable(&self, id: &str) -> Option<&iced::widget::text_editor::Content> {
+        self.selectables.get(id)
+    }
+
+    /// Apply a select-only editor action to a bound field.
+    pub fn perform_select(&mut self, id: &str, action: iced::widget::text_editor::Action) {
+        self.selectables.perform(id, action);
+    }
+
+    fn bind_selectables(&mut self) {
+        self.selectables.retain(|id| {
+            id.starts_with("excerpt-") || id.starts_with("note-") || id.starts_with("clock-")
+        });
+        let Some(detail) = self.detail.as_ref() else {
+            return;
+        };
+        for row in excerpt_form(detail) {
+            self.selectables.bind(row.id, row.value);
+        }
+        self.selectables.bind("excerpt-body", detail.body.trim());
+        for (i, entry) in detail.logbook.iter().enumerate() {
+            if let Some(note) = &entry.note {
+                self.selectables.bind(format!("note-{i}"), note);
+            }
+            if let Some(raw) = &entry.raw {
+                self.selectables.bind(format!("clock-{i}"), clock_text(raw));
+            }
+        }
     }
 
     /// Select the filtered row with this issue id, if present.
@@ -1187,19 +1607,20 @@ impl Palette {
             if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
                 self.collapsed.remove(&p);
             }
-            self.refresh_detail();
+            self.follow_selection();
         }
     }
 
     /// Flip `id` between DONE and TODO.
     pub fn toggle_done(&mut self, id: &str) {
-        let current = match self.backend.get(id) {
-            Ok(detail) => detail.state,
-            Err(err) => {
-                self.message = err.to_string();
-                return;
-            }
+        let Some(current) = self.painted_state(id).map(str::to_string) else {
+            self.message = format!("{id} is not on the board");
+            return;
         };
+        if current == "CANCELLED" {
+            self.message = "CANCELLED; space toggles TODO/DONE".into();
+            return;
+        }
         let next = if current == "DONE" { "TODO" } else { "DONE" };
         match self.backend.update(UpdateReq {
             id: id.to_string(),
@@ -1227,30 +1648,20 @@ impl Palette {
         if title.is_empty() {
             return;
         }
-        let project = self.selected_item().map(|i| i.project.clone()).or_else(|| {
-            self.backend
-                .projects()
-                .ok()
-                .and_then(|p| p.into_iter().next())
+        let project = self.project.clone().or_else(|| {
+            self.selected_project_name()
+                .map(str::to_string)
+                .or_else(|| self.selected_item().map(|i| i.project.clone()))
         });
         let Some(project) = project else {
             self.message = "no project to add into".into();
             return;
         };
-        match ops::create(
-            self.backend.layout(),
-            &project,
-            &title,
-            CreateOpts {
-                quiet: true,
-                ..CreateOpts::default()
-            },
-        ) {
-            Ok(report) => {
-                self.message = report.trim().to_string();
+        match self.backend.create(&project, &title) {
+            Ok(result) => {
+                self.message = result.report.trim().to_string();
                 self.add_draft.clear();
                 self.focus = Focus::List;
-                let _ = self.backend.refresh();
                 self.backend.invalidate_since();
                 let _ = self.reload();
             }
@@ -1290,6 +1701,11 @@ impl Palette {
         if self.filter != BoardFilter::Search {
             self.set_filter(BoardFilter::Search);
         }
+        self.focus = Focus::Search;
+    }
+
+    /// Put typing in the query field without changing the pane.
+    pub fn focus_query(&mut self) {
         self.focus = Focus::Search;
     }
 
@@ -1354,7 +1770,11 @@ impl Palette {
             self.detail = None;
             self.excerpt = None;
             self.detail_body.clear();
-            self.detail_md = None;
+            self.issue_tree = None;
+            self.tree_ids.clear();
+            self.tree_focus = None;
+            self.related_hits.clear();
+            self.related_marks.clear();
             return Ok(());
         }
         let project = self.project.clone();
@@ -1366,7 +1786,10 @@ impl Palette {
             BoardFilter::Agenda => self.reload_agenda(project),
             BoardFilter::Search => self.reload_search(),
         }
-        if matches!(self.filter, BoardFilter::Ready | BoardFilter::List) {
+        if matches!(
+            self.filter,
+            BoardFilter::Ready | BoardFilter::List | BoardFilter::Search
+        ) {
             self.items = apply_forest(std::mem::take(&mut self.items));
         }
         if !self.query.is_empty() && self.filter != BoardFilter::Search {
@@ -1400,19 +1823,24 @@ impl Palette {
             }
             self.ready_count = page.issues.len();
         }
-        let mut cards: Vec<ProjectCard> = self
+        let cards: Vec<ProjectCard> = self
             .projects
             .iter()
-            .map(|name| ProjectCard {
-                name: name.clone(),
-                ready: counts.get(name).copied().unwrap_or(0),
-            })
+            .map(|name| ProjectCard::new(name.clone(), counts.get(name).copied().unwrap_or(0)))
             .collect();
-        cards.sort_by(|a, b| b.ready.cmp(&a.ready).then_with(|| a.name.cmp(&b.name)));
-        self.project_cards = cards;
+        self.project_cards = ProjectList::from_cards(cards);
         if self.project_sel >= self.project_cards.len() {
             self.project_sel = self.project_cards.len().saturating_sub(1);
         }
+        self.sync_project_selection();
+    }
+
+    fn sync_project_selection(&mut self) {
+        self.project_selection = if self.project_cards.is_empty() {
+            icedtea::collection::Selection::None
+        } else {
+            icedtea::collection::Selection::Single(self.project_sel)
+        };
     }
 
     fn refresh_chip_counts(&mut self, project: Option<&str>) {
@@ -1470,9 +1898,67 @@ impl Palette {
             self.search_count = 0;
             return;
         }
-        if let Ok(hits) = self.backend.search(&self.query, 50) {
+        let fetch = if self.project.is_some() { 200 } else { 50 };
+        if let Ok(hits) = self.backend.search(&self.query, fetch) {
+            let hits = match self.project.as_deref() {
+                Some(project) => hits
+                    .into_iter()
+                    .filter(|hit| hit.project == project)
+                    .take(50)
+                    .collect(),
+                None => hits,
+            };
             self.items = hits.into_iter().map(HudItem::from_search).collect();
             self.search_count = self.items.len();
+            self.attach_search_ancestors();
+        }
+    }
+
+    fn attach_search_ancestors(&mut self) {
+        let q = ListQuery {
+            project: self.project.clone(),
+            limit: Some(400),
+            ..ListQuery::default()
+        };
+        let Ok(page) = self.backend.list(q) else {
+            return;
+        };
+        let by_id: std::collections::HashMap<&str, &IssueRow> = page
+            .issues
+            .iter()
+            .map(|row| (row.id.as_str(), row))
+            .collect();
+        for item in &mut self.items {
+            if let Some(row) = by_id.get(item.id.as_str()) {
+                item.parent = row.parent.clone();
+                item.blocked_by = row.blocked_by.clone();
+                item.claimed_by = row.claimed_by.clone();
+            }
+        }
+        let mut want: std::collections::HashSet<String> =
+            self.items.iter().map(|item| item.id.clone()).collect();
+        let mut grew = true;
+        while grew {
+            grew = false;
+            let snapshot: Vec<String> = want.iter().cloned().collect();
+            for id in snapshot {
+                if let Some(row) = by_id.get(id.as_str())
+                    && let Some(parent) = row.parent.as_deref()
+                    && want.insert(parent.to_string())
+                {
+                    grew = true;
+                }
+            }
+        }
+        for id in &want {
+            if self.items.iter().any(|item| item.id == *id) {
+                continue;
+            }
+            if let Some(row) = by_id.get(id.as_str()) {
+                let mut item = HudItem::from_row((*row).clone());
+                item.source = ItemSource::Search;
+                self.items.push(item);
+            }
         }
     }
 
@@ -1484,6 +1970,7 @@ impl Palette {
             let next = (self.project_sel as i32 + delta)
                 .clamp(0, self.project_cards.len() as i32 - 1) as usize;
             self.project_sel = next;
+            self.sync_project_selection();
             return;
         }
         let vis = self.visible_indices();
@@ -1495,7 +1982,7 @@ impl Palette {
         let next = vis[next];
         if next != self.selected {
             self.selected = next;
-            self.refresh_detail();
+            self.follow_selection();
         }
     }
 
@@ -1511,16 +1998,73 @@ impl Palette {
     }
 }
 
-fn format_show(d: &IssueDetail) -> String {
-    let mut out = format!("{}\n{} · {}\n", d.title, d.state, d.priority);
-    if let Some(parent) = &d.parent {
-        out.push_str(&format!("under {parent}\n"));
+fn excerpt_columns(fields: &[ExcerptField]) -> (f32, f32) {
+    let label_n = fields
+        .iter()
+        .map(|row| row.label.chars().count())
+        .max()
+        .unwrap_or(4);
+    let value_n = fields
+        .iter()
+        .map(|row| row.value.chars().count())
+        .max()
+        .unwrap_or(8);
+    let label_w = (label_n as f32 * 7.0 + 8.0).clamp(40.0, 88.0);
+    let value_w = (value_n as f32 * 8.0).clamp(56.0, 168.0);
+    (label_w, label_w + 8.0 + value_w)
+}
+
+fn field_label(key: &str) -> &str {
+    match key {
+        "DEADLINE" => "Due",
+        "SCHEDULED" => "Scheduled",
+        "CLOSED" => "Closed",
+        "CREATED" => "Created",
+        "CLAIMED_AT" => "Claimed",
+        "CLAIMED_BY" => "Holder",
+        "TYPE" => "Type",
+        "PARENT" => "Parent",
+        other => other,
     }
-    if !d.blocked_by.is_empty() {
-        out.push_str(&format!("blocked by {}\n", d.blocked_by.join(", ")));
+}
+
+fn clock_text(raw: &str) -> String {
+    format_org_stamps(raw)
+        .trim()
+        .trim_start_matches("CLOCK:")
+        .trim()
+        .to_string()
+}
+
+struct ExcerptField {
+    id: String,
+    label: String,
+    value: String,
+}
+
+fn excerpt_form(d: &IssueDetail) -> Vec<ExcerptField> {
+    let mut rows = Vec::new();
+    let mut push = |key: &str, label: &str, value: String| {
+        if value.is_empty() {
+            return;
+        }
+        rows.push(ExcerptField {
+            id: format!("excerpt-{key}"),
+            label: label.to_string(),
+            value,
+        });
+    };
+    push("id", "Id", d.id.clone());
+    for key in ["CLOSED", "SCHEDULED", "DEADLINE"] {
+        if let Some(value) = d.properties.get(key) {
+            push(key, field_label(key), format_org_stamps(value));
+        }
     }
-    if let Some(who) = &d.claimed_by {
-        out.push_str(&format!("held by {who}\n"));
+    for (key, value) in &d.properties {
+        if matches!(key.as_str(), "ID" | "CLOSED" | "SCHEDULED" | "DEADLINE") {
+            continue;
+        }
+        push(key, field_label(key), format_org_stamps(value));
     }
     let mut tags = d.tags.clone();
     for t in &d.org_tags {
@@ -1529,29 +2073,9 @@ fn format_show(d: &IssueDetail) -> String {
         }
     }
     if !tags.is_empty() {
-        out.push_str(&format!("{}\n", tags.join("  ·  ")));
+        push("tags", "Tags", tags.join("  ·  "));
     }
-    if let Some(kind) = d.properties.get("TYPE") {
-        out.push_str(&format!("{kind}\n"));
-    }
-    out.push_str(&d.id);
-    out.push('\n');
-    let preview = body_preview(&d.body, 4);
-    if !preview.is_empty() {
-        out.push('\n');
-        out.push_str(&preview);
-        out.push('\n');
-    }
-    out
-}
-
-fn body_preview(body: &str, lines: usize) -> String {
-    body.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .take(lines)
-        .collect::<Vec<_>>()
-        .join("\n")
+    rows
 }
 
 /// One project group in the current filter.
@@ -1569,19 +2093,101 @@ pub struct ProjectSection<'a> {
     pub rows: Vec<(usize, &'a HudItem)>,
 }
 
-fn format_tree(node: &vissue_core::views::TreeNode, depth: usize) -> String {
-    let pad = "  ".repeat(depth);
-    let mut out = format!("{pad}{} [{}] {}\n", node.id, node.state, node.title);
-    if !node.blocked_by.is_empty() {
-        out.push_str(&format!(
-            "{pad}  blocked by: {}\n",
-            node.blocked_by.join(", ")
-        ));
+/// Priority, state, and title the detail header paints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeaderIssue<'a> {
+    /// Priority letter (`A`, `B`, or `C`).
+    pub priority: &'a str,
+    /// Org TODO state.
+    pub state: &'a str,
+    /// Heading title.
+    pub title: &'a str,
+    /// Project the heading lives in.
+    pub project: &'a str,
+    /// Whether `:BLOCKED_BY:` is set.
+    pub blocked: bool,
+    /// Whether a holder is set.
+    pub claimed: bool,
+}
+
+/// One visible row in the Tree detail tab.
+#[derive(Debug, Clone, Copy)]
+pub struct TreeRow<'a> {
+    /// Indent depth, `0` at the root.
+    pub depth: u32,
+    /// Node id used by toggle and pick messages.
+    pub tea_id: u64,
+    /// Issue id under this row.
+    pub issue_id: &'a str,
+    /// Org TODO state.
+    pub state: &'a str,
+    /// Heading title.
+    pub title: &'a str,
+    /// Whether `:BLOCKED_BY:` is set.
+    pub blocked: bool,
+    /// Whether children are shown.
+    pub expanded: bool,
+    /// Whether the row has children.
+    pub has_children: bool,
+}
+
+#[derive(Debug, Clone)]
+struct IssueTreeNode {
+    tea_id: u64,
+    issue_id: String,
+    state: String,
+    title: String,
+    blocked: bool,
+    expanded: bool,
+    children: Vec<IssueTreeNode>,
+}
+
+fn issue_tree_from(node: &vissue_core::views::TreeNode, ids: &mut Vec<String>) -> IssueTreeNode {
+    let tea_id = ids.len() as u64;
+    ids.push(node.id.clone());
+    let children: Vec<_> = node
+        .children
+        .iter()
+        .map(|child| issue_tree_from(child, ids))
+        .collect();
+    IssueTreeNode {
+        tea_id,
+        issue_id: node.id.clone(),
+        state: node.state.clone(),
+        title: node.title.clone(),
+        blocked: !node.blocked_by.is_empty(),
+        expanded: !children.is_empty(),
+        children,
     }
-    for child in &node.children {
-        out.push_str(&format_tree(child, depth + 1));
+}
+
+fn flatten_issue_tree<'a>(node: &'a IssueTreeNode, depth: u32, out: &mut Vec<TreeRow<'a>>) {
+    let has_children = !node.children.is_empty();
+    out.push(TreeRow {
+        depth,
+        tea_id: node.tea_id,
+        issue_id: &node.issue_id,
+        state: &node.state,
+        title: &node.title,
+        blocked: node.blocked,
+        expanded: node.expanded,
+        has_children,
+    });
+    if node.expanded {
+        for child in &node.children {
+            flatten_issue_tree(child, depth + 1, out);
+        }
     }
-    out
+}
+
+fn toggle_issue_tree(node: &mut IssueTreeNode, id: u64) -> bool {
+    if node.tea_id == id {
+        node.expanded = !node.expanded;
+        return true;
+    }
+    node.children
+        .iter_mut()
+        .any(|child| toggle_issue_tree(child, id))
 }
 
 fn apply_forest(items: Vec<HudItem>) -> Vec<HudItem> {
@@ -1641,58 +2247,6 @@ fn apply_forest(items: Vec<HudItem>) -> Vec<HudItem> {
             if !out.iter().any(|o| o.id == item.id) {
                 out.push(item.clone());
             }
-        }
-    }
-    out
-}
-
-fn format_related_tree(hits: &[vissue_core::views::RelatedHit]) -> String {
-    if hits.is_empty() {
-        return "no related issues\n".into();
-    }
-    use std::collections::BTreeMap;
-    let mut by_proj: BTreeMap<&str, Vec<&vissue_core::views::RelatedHit>> = BTreeMap::new();
-    for hit in hits {
-        by_proj.entry(hit.project.as_str()).or_default().push(hit);
-    }
-    let mut out = String::new();
-    for (project, rows) in by_proj {
-        out.push_str(&format!("{project}\n"));
-        for hit in rows {
-            out.push_str(&format!(
-                "  {} [{}] {}\n    score {:.2}\n    {}\n",
-                hit.id,
-                hit.state,
-                hit.title,
-                hit.score,
-                hit.evidence.join("\n    ")
-            ));
-        }
-    }
-    out
-}
-
-fn format_notes(d: &IssueDetail) -> String {
-    if d.logbook.is_empty() {
-        return "no logbook yet. n writes a note.\n".into();
-    }
-    let mut out = String::new();
-    for e in &d.logbook {
-        if let Some(raw) = &e.raw {
-            out.push_str(raw);
-            out.push('\n');
-            continue;
-        }
-        if let (Some(to), from) = (&e.to_state, &e.from_state) {
-            match from {
-                Some(from) => {
-                    out.push_str(&format!("{}  {} -> {}\n", e.timestamp, from, to));
-                }
-                None => out.push_str(&format!("{}  -> {}\n", e.timestamp, to)),
-            }
-        }
-        if let Some(note) = &e.note {
-            out.push_str(&format!("{}  note: {}\n", e.timestamp, note));
         }
     }
     out
@@ -1885,6 +2439,13 @@ mod tests {
         ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
             self.inner.update(r)
         }
+        fn create(
+            &self,
+            project: &str,
+            title: &str,
+        ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+            self.inner.create(project, title)
+        }
         fn open(
             &self,
             id: &str,
@@ -1900,6 +2461,311 @@ mod tests {
         let mut palette = Palette::open_core(layout, agent.into()).unwrap();
         palette.enter_project("atlas");
         palette
+    }
+
+    #[test]
+    fn search_in_a_project_drops_hits_from_other_projects() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.set_filter(BoardFilter::Search);
+        palette.set_query("retry");
+        let titles: Vec<_> = palette
+            .filtered_items()
+            .iter()
+            .map(|i| i.title.as_str())
+            .collect();
+        assert!(
+            titles.iter().all(|t| !t.to_lowercase().contains("retry")),
+            "{titles:?}"
+        );
+        palette.set_query("summary");
+        let titles: Vec<_> = palette
+            .filtered_items()
+            .iter()
+            .map(|i| i.title.as_str())
+            .collect();
+        assert!(
+            titles.iter().any(|t| t.contains("Emit a summary")),
+            "{titles:?}"
+        );
+        assert!(
+            titles
+                .iter()
+                .any(|t| t.contains("Parse the manifest header")),
+            "search should keep the parent in the tree: {titles:?}"
+        );
+        let child = palette
+            .filtered_items()
+            .into_iter()
+            .find(|i| i.title.contains("Emit a summary"))
+            .expect("child");
+        assert!(child.depth > 0, "child should nest under its parent");
+    }
+
+    #[test]
+    fn header_follows_the_opened_issue() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Parse the manifest header")
+        );
+        palette.set_detail_tab(DetailTab::Tree);
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Parse the manifest header")
+        );
+        palette.open_issue("atlas-2c3d");
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Emit a summary table")
+        );
+        assert_eq!(palette.header_issue().map(|h| h.project), Some("atlas"));
+    }
+
+    #[test]
+    fn opened_issue_stays_when_it_leaves_the_list() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.open_issue("atlas-2c3d");
+        assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
+        palette.set_query("manifest");
+        assert_ne!(
+            palette.selected_id(),
+            Some("atlas-2c3d"),
+            "query should drop the opened row from the list"
+        );
+        palette.set_detail_tab(DetailTab::Notes);
+        assert_eq!(
+            palette.header_issue().map(|h| h.title),
+            Some("Emit a summary table")
+        );
+        assert_eq!(palette.detail().map(|d| d.id.as_str()), Some("atlas-2c3d"));
+        let _ = palette.reload();
+        assert_eq!(palette.detail().map(|d| d.id.as_str()), Some("atlas-2c3d"));
+        assert_ne!(palette.selected_id(), Some("atlas-2c3d"));
+    }
+
+    #[test]
+    fn tree_tab_builds_rows() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.set_query("atlas-2c3d");
+        palette.set_detail_tab(DetailTab::Tree);
+        assert!(!palette.tree_rows().is_empty());
+        assert!(palette.tree_selected().is_some());
+    }
+
+    #[test]
+    fn tree_tab_pick_highlights_without_leaving_the_tree() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Tree);
+        let child_id = palette
+            .tree_rows()
+            .into_iter()
+            .find(|row| row.issue_id == "atlas-2c3d")
+            .expect("parent tree includes the child")
+            .tea_id;
+        palette.select_tree_node(child_id);
+        assert_eq!(palette.selected_id(), Some("atlas-1a2b"));
+        assert_eq!(palette.tree_rows()[0].issue_id, "atlas-1a2b");
+        assert_eq!(palette.tree_selected(), Some(child_id));
+        assert_eq!(palette.detail_tab(), DetailTab::Tree);
+        palette.set_detail_tab(DetailTab::Related);
+        palette.set_detail_tab(DetailTab::Tree);
+        assert_eq!(
+            palette.tree_selected(),
+            Some(child_id),
+            "a tree pick should survive leaving the tree tab"
+        );
+        palette.cycle_detail_tab();
+        palette.cycle_detail_tab();
+        palette.cycle_detail_tab();
+        assert_eq!(
+            palette.tree_selected(),
+            Some(child_id),
+            "a tree pick should survive Enter cycling the side tabs"
+        );
+    }
+
+    #[test]
+    fn opening_a_tree_node_selects_that_issue() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Tree);
+        palette.open_issue("atlas-2c3d");
+        assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
+        assert_eq!(palette.detail_tab(), DetailTab::Tree);
+        assert_eq!(palette.project(), Some("atlas"));
+        let heading = palette.header_issue().expect("header");
+        assert_eq!(heading.title, "Emit a summary table");
+        assert_eq!(heading.state, "TODO");
+    }
+
+    #[test]
+    fn opening_an_issue_outside_the_filter_lists_it() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.set_query("manifest");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Tree);
+        assert!(
+            palette
+                .filtered_items()
+                .iter()
+                .all(|item| item.id != "atlas-2c3d"),
+            "query should drop the child from the list"
+        );
+        palette.open_issue("atlas-2c3d");
+        assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
+        assert_eq!(palette.detail_tab(), DetailTab::Tree);
+        assert_eq!(palette.filter(), BoardFilter::List);
+        assert!(palette.query().is_empty());
+    }
+
+    #[test]
+    fn opening_an_issue_in_another_project_enters_that_project() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Related);
+        palette.open_issue("beacon-5j6k");
+        assert_eq!(palette.project(), Some("beacon"));
+        assert_eq!(palette.selected_id(), Some("beacon-5j6k"));
+        assert_eq!(palette.detail_tab(), DetailTab::Related);
+        assert_eq!(palette.filter(), BoardFilter::List);
+    }
+
+    #[test]
+    fn tree_tab_toggle_hides_children() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Tree);
+        let before = palette.tree_rows().len();
+        let root = palette.tree_rows()[0];
+        assert!(root.has_children);
+        palette.toggle_tree_node(root.tea_id);
+        assert!(
+            palette.tree_rows().len() < before,
+            "collapse should hide children"
+        );
+    }
+
+    #[test]
+    fn related_tab_keeps_structured_hits() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Related);
+        assert!(
+            !palette.related_hits().is_empty(),
+            "parser heading should have neighbors"
+        );
+        assert!(
+            palette
+                .related_hits()
+                .iter()
+                .any(|hit| !hit.title.is_empty() && !hit.state.is_empty()),
+            "{:?}",
+            palette.related_hits()
+        );
+        assert!(
+            palette
+                .related_hits()
+                .iter()
+                .any(|hit| palette.related_marks(&hit.id).is_some()),
+            "related rows should load the same badges as cards"
+        );
+    }
+
+    #[test]
+    fn excerpt_tab_keeps_the_org_heading() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        let excerpt = palette.excerpt().expect("heading range");
+        assert!(excerpt.text.contains(":PROPERTIES:"), "{}", excerpt.text);
+        assert!(
+            excerpt.text.contains("Scope: read the header block"),
+            "{}",
+            excerpt.text
+        );
+        assert!(excerpt.line_start > 0);
+        assert!(excerpt.line_end >= excerpt.line_start);
+        let detail = palette.detail().expect("heading fields");
+        assert_eq!(
+            detail.properties.get("TYPE").map(String::as_str),
+            Some("feature")
+        );
+        assert!(detail.body.contains("Scope: read the header block"));
+        assert!(palette.selectable("excerpt-body").is_some());
+        assert_eq!(detail.title, "Parse the manifest header");
+        assert!(
+            detail
+                .body
+                .contains("Done-when: a malformed header names the offending line number."),
+            "{}",
+            detail.body
+        );
+    }
+
+    #[test]
+    fn excerpt_table_fits_the_field_stack() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        let label = palette.excerpt_label_width();
+        let table = palette.excerpt_table_width();
+        assert!(
+            label < icedtea::layout::FORM_LABEL,
+            "label gutter {label} should follow the longest name, not the form column"
+        );
+        assert!(
+            table < icedtea::layout::FORM_LABEL + 160.0,
+            "table {table} should leave the body the wide pane"
+        );
+        assert!(table > label);
+    }
+
+    #[test]
+    fn notes_tab_keeps_logbook_lines() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.select_id("atlas-1a2b");
+        palette.set_detail_tab(DetailTab::Notes);
+        let detail = palette.detail().expect("detail");
+        assert!(
+            detail
+                .logbook
+                .iter()
+                .any(|e| e.to_state.as_deref() == Some("STARTED")),
+            "{:?}",
+            detail.logbook
+        );
+        assert!(
+            detail
+                .logbook
+                .iter()
+                .any(|e| e.raw.as_deref().is_some_and(|r| r.contains("CLOCK"))),
+            "{:?}",
+            detail.logbook
+        );
+    }
+
+    #[test]
+    fn dragging_the_detail_sash_grows_the_detail_pane() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        let before = palette.detail_split().ratio;
+        palette.apply_sash(icedtea::layout::SashEvent::Press);
+        palette.apply_sash(icedtea::layout::SashEvent::Move(400.0));
+        palette.apply_sash(icedtea::layout::SashEvent::Move(300.0));
+        assert!(
+            palette.detail_split().ratio < before,
+            "dragging the sash up should shrink the list share"
+        );
+    }
+
+    #[test]
+    fn help_markdown_is_parsed_once() {
+        let palette =
+            Palette::open_core(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap".into()).unwrap();
+        assert!(
+            !palette.help_md().items.is_empty(),
+            "help source must parse into markdown items"
+        );
+        assert!(palette.help_md().source.contains("claim"));
     }
 
     #[test]
@@ -1933,14 +2799,78 @@ mod tests {
     }
 
     #[test]
-    fn enter_shows_excerpt() {
+    fn selecting_a_row_loads_the_issue_body() {
         let (_dir, layout) = writable();
         let mut palette = open_atlas(layout, "hud-test");
         palette.handle_key(PaletteKey::Down);
         assert_eq!(palette.selected_id(), Some("atlas-2c3d"));
-        palette.handle_key(PaletteKey::Enter);
+        assert_eq!(palette.detail_tab(), DetailTab::Tree);
         let text = palette.excerpt().map(|e| e.text.as_str()).unwrap_or("");
         assert!(text.contains("summary"), "{text}");
+        assert!(
+            palette
+                .detail()
+                .is_some_and(|d| d.body.contains("summary") || d.title.contains("summary")),
+            "{:?}",
+            palette.detail().map(|d| &d.body)
+        );
+    }
+
+    #[test]
+    fn clearing_home_search_returns_to_the_project_list() {
+        let mut palette =
+            Palette::open_core(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap".into()).unwrap();
+        assert!(palette.browsing());
+        palette.type_query("x");
+        assert_eq!(palette.filter(), BoardFilter::Search);
+        palette.type_query("");
+        assert!(palette.browsing());
+        assert_eq!(palette.filter(), BoardFilter::Ready);
+        assert!(!palette.project_cards().is_empty());
+    }
+
+    #[test]
+    fn add_writes_into_the_open_project() {
+        let (_dir, layout) = writable();
+        let mut palette = open_atlas(layout.clone(), "hud-test");
+        palette.set_add_draft("only atlas");
+        palette.submit_add();
+        let atlas = std::fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+        assert!(atlas.contains("only atlas"), "{atlas}");
+        let beacon = std::fs::read_to_string(layout.project_issues_path("beacon")).unwrap();
+        assert!(!beacon.contains("only atlas"), "{beacon}");
+    }
+
+    #[test]
+    fn toggle_done_leaves_cancelled_alone() {
+        let (_dir, layout) = writable();
+        let mut palette = open_atlas(layout, "hud-test");
+        let id = palette.selected_id().expect("a row").to_string();
+        palette.handle_key(PaletteKey::Char('X'));
+        palette.handle_key(PaletteKey::Enter);
+        assert_eq!(palette.backend().get(&id).unwrap().state, "CANCELLED");
+        palette.set_filter(BoardFilter::List);
+        palette.select_id(&id);
+        palette.toggle_done(&id);
+        assert_eq!(palette.backend().get(&id).unwrap().state, "CANCELLED");
+        assert!(
+            palette.message().contains("CANCELLED"),
+            "{}",
+            palette.message()
+        );
+    }
+
+    #[test]
+    fn toggle_done_needs_a_painted_row() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "hud-test");
+        let before = palette.backend().get("atlas-1a2b").unwrap().state;
+        palette.toggle_done("atlas-zzzz");
+        assert_eq!(palette.backend().get("atlas-1a2b").unwrap().state, before);
+        assert!(
+            palette.message().contains("atlas-zzzz"),
+            "{}",
+            palette.message()
+        );
     }
 
     #[test]

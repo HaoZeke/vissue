@@ -8,9 +8,9 @@ use std::time::Duration;
 use serde_json::Value;
 use vissue_control::client::Client;
 use vissue_control::rpc::{
-    CONFLICT, CYCLE, ClaimParams, Error as RpcError, INVALID_STATE, IdParams, InitializeResult,
-    IssueListParams, IssueListResult, MutResult as WireMut, NOT_FOUND, NoteParams, Notification,
-    RelatedParams, Request, SearchParams, TreeParams, UpdateParams,
+    CONFLICT, CYCLE, ClaimParams, CreateParams, Error as RpcError, INVALID_STATE, IdParams,
+    InitializeResult, IssueListParams, IssueListResult, MutResult as WireMut, NOT_FOUND,
+    NoteParams, Notification, RelatedParams, Request, SearchParams, TreeParams, UpdateParams,
 };
 use vissue_control::{InitializeParams, PROTOCOL_VERSION};
 use vissue_core::config::Layout;
@@ -423,6 +423,22 @@ impl BoardBackend for ControlBackend {
             if_state: req.if_state,
             if_gen: req.if_gen,
             agent: None,
+        }))?;
+        Ok(self.apply_mut(decode(value)?))
+    }
+
+    fn create(&self, project: &str, title: &str) -> Result<MutResult, Error> {
+        let value = self.call(&Request::IssueCreate(CreateParams {
+            project: project.to_string(),
+            title: title.to_string(),
+            agent: None,
+            priority: None,
+            issue_type: None,
+            deadline: None,
+            scheduled: None,
+            tags: None,
+            parent: None,
+            body: None,
         }))?;
         Ok(self.apply_mut(decode(value)?))
     }

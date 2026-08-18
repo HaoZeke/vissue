@@ -1,4 +1,4 @@
-//! iced chrome around [`crate::palette::Palette`]. No unit tests here.
+//! iced chrome around [`crate::palette::Palette`].
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -42,7 +42,7 @@ pub enum Message {
     Tick,
     /// Latest iced window id, once the shell reports one.
     WindowId(Option<window::Id>),
-    /// Close request: hide rather than exit.
+    /// Window close or compositor delete: leave the process.
     Close,
     /// Switch the list filter chip.
     Filter(BoardFilter),
@@ -62,8 +62,6 @@ pub enum Message {
     NoteSubmit,
     /// Focus the add-task field.
     FocusAdd,
-    /// Switch to Search and focus the query field.
-    FocusSearch,
     /// Return typing to the row list.
     FocusList,
     /// Open this detail tab.
@@ -72,10 +70,26 @@ pub enum Message {
     ToggleProject(String),
     /// Enter this project from the home list.
     SelectProject(String),
+    /// Enter the home-list card at this index.
+    PickProject(usize),
+    /// Home project list scroll window.
+    ProjectScroll(icedtea::collection::VisibleWindow),
     /// Return to the home project list.
     LeaveProject,
     /// Copy a markdown link target.
     MdLink(String),
+    /// Expand or collapse a Tree-tab node.
+    TreeToggle(u64),
+    /// Highlight the issue under a Tree-tab node.
+    TreePick(u64),
+    /// Open this issue as the selected board row.
+    OpenIssue(String),
+    /// Drag-select inside a read-only detail field.
+    SelectField(String, iced::widget::text_editor::Action),
+    /// Drag the list/detail sash.
+    Sash(icedtea::layout::SashEvent),
+    /// Window height changed.
+    WindowResized(f32),
     /// Discarded click (tab-bar close, unused).
     Noop,
 }
@@ -100,6 +114,11 @@ impl HudApp {
         }
     }
 
+    /// Compositor close leaves the process only while the overlay is mapped.
+    fn close_exits(&self) -> bool {
+        self.palette.visible()
+    }
+
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::WindowId(id) => {
@@ -119,8 +138,11 @@ impl HudApp {
                 Task::none()
             }
             Message::Close => {
-                self.palette.hide();
-                self.sync_window()
+                if self.close_exits() {
+                    iced::exit()
+                } else {
+                    Task::none()
+                }
             }
             Message::Filter(filter) => {
                 self.palette.set_filter(filter);
@@ -135,7 +157,7 @@ impl HudApp {
                 Task::none()
             }
             Message::QueryChanged(q) => {
-                self.palette.set_query(q);
+                self.palette.type_query(q);
                 Task::none()
             }
             Message::AddChanged(text) => {
@@ -158,11 +180,6 @@ impl HudApp {
                 self.palette.focus_add();
                 Task::none()
             }
-            Message::FocusSearch => {
-                self.palette.set_filter(BoardFilter::Search);
-                self.palette.focus_search();
-                Task::none()
-            }
             Message::FocusList => {
                 self.palette.focus_list();
                 Task::none()
@@ -179,12 +196,51 @@ impl HudApp {
                 self.palette.enter_project(&project);
                 Task::none()
             }
+            Message::PickProject(index) => {
+                if let Some(name) = self
+                    .palette
+                    .project_cards()
+                    .get(index)
+                    .map(|card| card.name.clone())
+                {
+                    self.palette.enter_project(&name);
+                }
+                Task::none()
+            }
+            Message::ProjectScroll(window) => {
+                self.palette.set_project_window(window);
+                Task::none()
+            }
             Message::LeaveProject => {
                 self.palette.leave_project();
                 Task::none()
             }
             Message::MdLink(url) => {
                 self.palette.set_clipboard(url);
+                Task::none()
+            }
+            Message::TreeToggle(id) => {
+                self.palette.toggle_tree_node(id);
+                Task::none()
+            }
+            Message::TreePick(id) => {
+                self.palette.select_tree_node(id);
+                Task::none()
+            }
+            Message::OpenIssue(id) => {
+                self.palette.open_issue(&id);
+                Task::none()
+            }
+            Message::SelectField(id, action) => {
+                self.palette.perform_select(&id, action);
+                Task::none()
+            }
+            Message::Sash(event) => {
+                self.palette.apply_sash(event);
+                Task::none()
+            }
+            Message::WindowResized(height) => {
+                self.palette.set_window_height(height);
                 Task::none()
             }
             Message::Noop => Task::none(),
@@ -274,6 +330,7 @@ pub fn run(opts: BootOpts) -> anyhow::Result<()> {
 }
 
 fn run_iced(palette: Palette) -> iced::Result {
+    icedtea::typo::install_platform_faces();
     let cell = std::sync::Mutex::new(Some(palette));
     iced::application(
         move || {
@@ -328,6 +385,9 @@ fn subscription(_app: &HudApp) -> Subscription<Message> {
             _ => None,
         }),
         time::every(Duration::from_millis(50)).map(|_| Message::Tick),
+        icedtea::layout::listen_sash()
+            .map(|drive| Message::Sash(drive.into_event(icedtea::layout::Axis::Vertical))),
+        iced::window::resize_events().map(|(_, size)| Message::WindowResized(size.height)),
     ])
 }
 
@@ -361,3 +421,22 @@ fn map_key(key: Key) -> Option<Message> {
 
 // Keep Font in scope so a missing FACE constant fails here, not in view.
 const _: Font = theme::FACE;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vissue_core::config::{DEFAULT_PREFIX, Layout};
+
+    #[test]
+    fn a_hidden_overlay_does_not_quit_on_window_close() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        std::fs::create_dir_all(layout.projects_dir()).expect("projects dir");
+        let mut palette = Palette::open_core(layout, "close".into()).expect("open");
+        palette.show();
+        let mut app = HudApp::from_palette(palette);
+        assert!(app.close_exits());
+        app.palette.hide();
+        assert!(!app.close_exits());
+    }
+}

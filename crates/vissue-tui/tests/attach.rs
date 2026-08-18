@@ -190,6 +190,9 @@ impl BoardBackend for RecordingBackend {
     fn update(&self, _r: UpdateReq) -> Result<MutResult, vissue_core::error::Error> {
         panic!("RecordingBackend::update is unused in this test")
     }
+    fn create(&self, _project: &str, _title: &str) -> Result<MutResult, vissue_core::error::Error> {
+        panic!("RecordingBackend::create is unused in this test")
+    }
     fn open(
         &self,
         _id: &str,

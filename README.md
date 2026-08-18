@@ -172,13 +172,15 @@ socket bound to another root stays on the files so a claim cannot hit
 the wrong vault. `q` quits; `?` lists the keys.
 
 `vissue hud` opens on the project list. Opening a project shows that
-project's ready forest, then List / Claims / Agenda / Search inside it.
+project's ready forest, then List / Claims / Agenda inside it.
 The window is an icedtea overlay: undecorated and always-on-top. On
 Sway it floats itself over the IPC socket (`SWAYSOCK`); there is no
-compositor include to install. Chrome is
-[icedtea](https://crates.io/crates/icedtea): chips, cards, markdown,
-and the type scale. The selected row has show / excerpt /
-tree / related / notes. `n` opens the logbook and writes a note. Keys
+compositor include to install. Filters, search, and add sit on one
+row. Chrome is
+[icedtea](https://crates.io/crates/icedtea) 0.11: chips, cards, markdown,
+the search field, and the type scale. The selected row keeps the issue
+visible (properties above a wrapping body) with tree / related / notes on the
+right. `n` opens the logbook and writes a note. Keys
 come from a catalog; `~/.config/vissue/keys.toml` (or
 `VISSUE_KEYS`) remaps them. `--rofi` is the seat dmenu picker.
 

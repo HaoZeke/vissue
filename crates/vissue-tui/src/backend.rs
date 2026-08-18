@@ -196,6 +196,13 @@ pub trait BoardBackend: Send + Sync + std::fmt::Debug {
     /// Returns an error if the issue does not exist, the change is refused, or
     /// the write fails.
     fn update(&self, req: UpdateReq) -> Result<MutResult, Error>;
+    /// Create a TODO in `project` with `title`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the project does not exist, the title is empty, or
+    /// the write fails.
+    fn create(&self, project: &str, title: &str) -> Result<MutResult, Error>;
     /// Same metadata as [`Self::get`]; control also marks the issue opened.
     ///
     /// # Errors
@@ -221,8 +228,8 @@ pub trait BoardBackend: Send + Sync + std::fmt::Debug {
     /// catalog-wide, so a pane or project change must fetch a full page.
     fn invalidate_since(&self) {}
 
-    /// Re-read the files. Core uses this after an out-of-band write such as
-    /// `ops::create`. Control is a no-op; serve sees the file event.
+    /// Re-read the files. Core uses this after an out-of-band write. Control
+    /// is a no-op; serve sees the file event.
     ///
     /// # Errors
     ///

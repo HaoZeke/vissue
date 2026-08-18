@@ -157,16 +157,12 @@ fn the_selected_project_tracks_the_cursor_on_the_card_list() {
 
 #[test]
 fn the_excerpt_pane_reads_the_issue_off_disk() {
-    let (_dir, mut palette) = in_atlas();
-    assert!(palette.excerpt().is_none());
-
-    palette.show_excerpt();
+    let (_dir, palette) = in_atlas();
     let excerpt = palette.excerpt().expect("an excerpt");
     assert!(!excerpt.text.is_empty(), "{excerpt:?}");
     assert!(excerpt.file.contains("issues.org"), "{excerpt:?}");
     assert!(!excerpt.suppressed);
 
-    // The detail is fetched alongside it, so the pane can label what it shows.
     let detail = palette.detail().expect("a detail");
     assert_eq!(Some(detail.id.as_str()), palette.selected_id());
 }
@@ -174,27 +170,20 @@ fn the_excerpt_pane_reads_the_issue_off_disk() {
 #[test]
 fn the_detail_body_follows_the_tab() {
     let (_dir, mut palette) = in_atlas();
-    let mut bodies = Vec::new();
     for tab in DetailTab::ALL {
         palette.set_detail_tab(tab);
-        bodies.push((tab, palette.detail_body().to_string()));
+        assert!(
+            palette.excerpt().is_some(),
+            "{tab:?} dropped the issue table"
+        );
+        assert!(
+            palette
+                .detail_body()
+                .contains(palette.selected_id().unwrap()),
+            "{tab:?} dropped the issue id: {}",
+            palette.detail_body()
+        );
     }
-    // Show and tree describe the same issue in different shapes, so at least
-    // two of the five have to differ from each other.
-    let distinct = bodies
-        .iter()
-        .map(|(_, b)| b.as_str())
-        .collect::<std::collections::BTreeSet<_>>()
-        .len();
-    assert!(
-        distinct >= 2,
-        "every tab rendered the same text: {bodies:?}"
-    );
-    let show = &bodies[0].1;
-    assert!(
-        show.contains(palette.selected_id().unwrap()),
-        "the show tab does not name the issue: {show}"
-    );
 }
 
 #[test]

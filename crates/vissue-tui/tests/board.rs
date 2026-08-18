@@ -451,6 +451,13 @@ impl BoardBackend for UnchangedAfterFirst {
     ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
         self.inner.update(r)
     }
+    fn create(
+        &self,
+        project: &str,
+        title: &str,
+    ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+        self.inner.create(project, title)
+    }
     fn open(&self, id: &str) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
         self.inner.open(id)
     }
@@ -601,6 +608,13 @@ impl BoardBackend for SinceOnRepeat {
         r: vissue_tui::UpdateReq,
     ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
         self.inner.update(r)
+    }
+    fn create(
+        &self,
+        project: &str,
+        title: &str,
+    ) -> Result<vissue_tui::MutResult, vissue_core::error::Error> {
+        self.inner.create(project, title)
     }
     fn open(&self, id: &str) -> Result<vissue_core::views::IssueDetail, vissue_core::error::Error> {
         self.inner.open(id)

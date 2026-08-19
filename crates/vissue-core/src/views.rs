@@ -15,6 +15,8 @@ pub struct IssueRec {
     pub heading: IssueHeading,
     /// Absolute path of the project's `issues.org`.
     pub path: PathBuf,
+    /// File-level tags and `#+TAGS:` groups from the preamble.
+    pub tag_settings: crate::org::TagSettings,
 }
 
 /// Filters for [`crate::catalog::CatalogService::issues_rows`].

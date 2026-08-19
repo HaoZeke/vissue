@@ -127,6 +127,7 @@ pub fn related(
             project,
             heading,
             path: std::path::PathBuf::new(),
+            tag_settings: crate::org::TagSettings::default(),
         })
         .collect();
     let hits = related_hits_from(&recs, id, depth, limit)?;

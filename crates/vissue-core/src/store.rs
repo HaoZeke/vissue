@@ -14,9 +14,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::config::Layout;
 use crate::model::{IssueHeading, LogEntry, TODO_HEADER, parse_log_line, today_inactive_bracket};
 use crate::org::{
-    OrgScan, ensure_org_preamble, is_headline, is_issue_headline, is_planning_line,
+    OrgScan, TagSettings, ensure_org_preamble, is_headline, is_issue_headline, is_planning_line,
     is_top_level_headline, opens_a_drawer, parse_headline_bits, parse_planning_line,
-    property_key_and_append, split_statistics_cookies, todo_keywords_from_lines,
+    property_key_and_append, split_statistics_cookies, tag_settings_from_preamble,
+    todo_keywords_from_lines,
 };
 
 /// Process-local mutex per path, so concurrent async handlers in one process
@@ -172,6 +173,8 @@ pub struct IssueDoc {
     pub path: PathBuf,
     /// File header above the first heading, including `#+TODO:`.
     pub preamble: String,
+    /// `#+FILETAGS:`, `#+TAGS:`, and export tag keywords from the preamble.
+    pub tag_settings: TagSettings,
     /// Top-level issue headings, in file order.
     pub headings: Vec<IssueHeading>,
     /// Org that follows each issue (COMMENT trees, notes headings). Same
@@ -183,10 +186,12 @@ pub struct IssueDoc {
 impl IssueDoc {
     /// An empty document with the house preamble and no headings.
     pub fn empty(project: &str, path: PathBuf) -> Self {
+        let preamble = default_preamble(project);
         IssueDoc {
             project: project.to_string(),
             path,
-            preamble: default_preamble(project),
+            tag_settings: tag_settings_from_preamble(&preamble),
+            preamble,
             headings: Vec::new(),
             after: Vec::new(),
         }
@@ -261,6 +266,7 @@ impl IssueDoc {
         Ok(IssueDoc {
             project: project.to_string(),
             path,
+            tag_settings: tag_settings_from_preamble(&preamble),
             preamble,
             headings,
             after,
@@ -573,7 +579,9 @@ fn parse_heading(
 /// spanning several projects would label every row `issues`.
 pub fn default_preamble(project: &str) -> String {
     format!(
-        "#+TITLE: {project} issues\n#+CATEGORY: {project}\n#+FILETAGS: :issues:{project}:\n#+DATE: {}\n#+DESCRIPTION: Issue tracking file for {project} specs, plans, and implementation tasks.\n#+STATUS: Active\n{}",
+        "#+TITLE: {project} issues\n#+CATEGORY: {project}\n#+FILETAGS: :issues:{project}:noexport:\n{}\n{}\n#+EXCLUDE_TAGS: noexport\n#+SELECT_TAGS: export\n#+DATE: {}\n#+DESCRIPTION: Issue tracking file for {project} specs, plans, and implementation tasks.\n#+STATUS: Active\n{}",
+        crate::org::HOUSE_TAGS_LINES[0],
+        crate::org::HOUSE_TAGS_LINES[1],
         today_inactive_bracket(),
         TODO_HEADER
     )
@@ -1106,6 +1114,7 @@ mod tests {
             project: "sample".into(),
             path: path.clone(),
             preamble: default_preamble("sample"),
+            tag_settings: tag_settings_from_preamble(&default_preamble("sample")),
             headings: vec![sample_heading()],
             after: vec![String::new()],
         }
@@ -1151,7 +1160,10 @@ mod tests {
             // Org takes the category from the file name otherwise, and every
             // project's file is issues.org.
             "#+CATEGORY: sample",
-            "#+FILETAGS: :issues:sample:",
+            "#+FILETAGS: :issues:sample:noexport:",
+            "#+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }",
+            "#+EXCLUDE_TAGS: noexport",
+            "#+SELECT_TAGS: export",
             "#+DATE:",
             "#+STATUS: Active",
             TODO_HEADER,

@@ -301,6 +301,7 @@ pub fn render(
             .headings
             .iter()
             .filter(|h| state_filter.map(|s| h.state == s).unwrap_or(true))
+            .filter(|h| doc.tag_settings.heading_exportable(&h.org_tags))
             .collect();
         headings.sort_by(|a, b| {
             a.priority
@@ -689,5 +690,35 @@ mod tests {
         assert_eq!(Format::parse("org").unwrap(), Format::Org);
         assert_eq!(Format::parse("md").unwrap(), Format::Markdown);
         assert!(Format::parse("pdf").is_err());
+    }
+
+    #[test]
+    fn org_mirror_drops_a_heading_tagged_noexport() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        crate::ops::create(
+            &layout,
+            "alpha",
+            "keep this",
+            crate::ops::CreateOpts::default(),
+        )
+        .unwrap();
+        crate::ops::create(
+            &layout,
+            "alpha",
+            "secret tree",
+            crate::ops::CreateOpts {
+                tags: Some("noexport"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let text = render(&layout, &["alpha".into()], Format::Org, None).unwrap();
+        assert!(text.contains("keep this"), "{text}");
+        assert!(
+            !text.contains("secret tree"),
+            "a heading tagged noexport stayed in the Org mirror: {text}"
+        );
     }
 }

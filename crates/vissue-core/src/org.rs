@@ -561,21 +561,277 @@ pub fn todo_keywords_from_lines(lines: &[&str]) -> Vec<String> {
 
 /// Tags from `#+FILETAGS:` (manual 6 / in-buffer settings).
 pub fn filetags_from_preamble(preamble: &str) -> Vec<String> {
-    let mut tags = Vec::new();
-    for line in preamble.lines() {
-        let Some(rest) = strip_file_keyword(line.trim(), "FILETAGS") else {
-            continue;
-        };
-        for tag in rest.trim().trim_matches(':').split(':') {
-            let tag = tag.trim();
-            if !tag.is_empty() && tag.chars().all(is_org_tag_char) && !tags.iter().any(|t| t == tag)
-            {
-                tags.push(tag.to_string());
+    tag_settings_from_preamble(preamble).filetags
+}
+
+/// A declared tag on `#+TAGS:`, with an optional fast-selection key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagSpec {
+    /// Tag text, Org's `[[:alnum:]_@#%]+` or a `{regex}` group member.
+    pub name: String,
+    /// Fast tag selection key (`TAG(k)`).
+    pub key: Option<char>,
+}
+
+/// File-level tag, export, and publish settings (manual 6, 13.2, 17.8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagSettings {
+    /// Tags every heading inherits, as if from a hypothetical level 0.
+    pub filetags: Vec<String>,
+    /// Tags declared on `#+TAGS:` lines, in file order.
+    pub declared: Vec<TagSpec>,
+    /// Mutually exclusive groups `{ a b }`.
+    pub exclusive: Vec<Vec<String>>,
+    /// Group tag then members: `[ GTD : Control Persp ]`.
+    pub hierarchies: Vec<(String, Vec<String>)>,
+    /// `#+SELECT_TAGS:`; Org's default is `export`.
+    pub select_tags: Vec<String>,
+    /// `#+EXCLUDE_TAGS:`; Org's default is `noexport`.
+    pub exclude_tags: Vec<String>,
+}
+
+impl Default for TagSettings {
+    fn default() -> Self {
+        Self {
+            filetags: Vec::new(),
+            declared: Vec::new(),
+            exclusive: Vec::new(),
+            hierarchies: Vec::new(),
+            select_tags: vec!["export".into()],
+            exclude_tags: vec!["noexport".into()],
+        }
+    }
+}
+
+impl TagSettings {
+    /// Own tags plus inherited FILETAGS, which is Org's ALLTAGS for a
+    /// level-one heading (manual 6.1). FILETAGS are not copied onto the
+    /// heading on write.
+    pub fn all_tags(&self, own: &[String]) -> Vec<String> {
+        let mut tags = own.to_vec();
+        for tag in &self.filetags {
+            if !tags.iter().any(|seen| seen == tag) {
+                tags.push(tag.clone());
             }
+        }
+        tags
+    }
+
+    /// Whether `needle` matches an own tag, an inherited FILETAGS tag, or
+    /// a group tag whose members the heading carries (manual 6.3).
+    pub fn matches_query(&self, own: &[String], needle: &str) -> bool {
+        let needle_l = needle.to_lowercase();
+        if needle_l.is_empty() {
+            return false;
+        }
+        let all = self.all_tags(own);
+        if all.iter().any(|tag| tag.to_lowercase().contains(&needle_l)) {
+            return true;
+        }
+        for (group, members) in &self.hierarchies {
+            if !group.to_lowercase().contains(&needle_l) {
+                continue;
+            }
+            if members
+                .iter()
+                .any(|m| all.iter().any(|tag| tag.eq_ignore_ascii_case(m)))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether this heading's own tags exclude it from Org export.
+    ///
+    /// FILETAGS `:noexport:` is a file-level publish signal and does not
+    /// hide the heading from a vissue mirror. A heading tagged `noexport`
+    /// (or another `#+EXCLUDE_TAGS:` token) is dropped. `noexport` wins
+    /// over `export` (manual 13.2).
+    pub fn heading_exportable(&self, own: &[String]) -> bool {
+        !own.iter().any(|tag| {
+            self.exclude_tags
+                .iter()
+                .any(|ex| ex.eq_ignore_ascii_case(tag))
+        })
+    }
+}
+
+/// Parse `#+FILETAGS:`, `#+TAGS:`, `#+SELECT_TAGS:`, `#+EXCLUDE_TAGS:`.
+pub fn tag_settings_from_preamble(preamble: &str) -> TagSettings {
+    let mut settings = TagSettings::default();
+    let mut saw_select = false;
+    let mut saw_exclude = false;
+    for line in preamble.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = strip_file_keyword(trimmed, "FILETAGS") {
+            for tag in rest.trim().trim_matches(':').split(':') {
+                let tag = tag.trim();
+                if !tag.is_empty()
+                    && tag.chars().all(is_org_tag_char)
+                    && !settings.filetags.iter().any(|t| t == tag)
+                {
+                    settings.filetags.push(tag.to_string());
+                }
+            }
+            continue;
+        }
+        if let Some(rest) = strip_file_keyword(trimmed, "TAGS") {
+            apply_tags_line(&mut settings, rest);
+            continue;
+        }
+        if let Some(rest) = strip_file_keyword(trimmed, "SELECT_TAGS") {
+            settings.select_tags = split_keyword_tags(rest);
+            saw_select = true;
+            continue;
+        }
+        if let Some(rest) = strip_file_keyword(trimmed, "EXCLUDE_TAGS") {
+            settings.exclude_tags = split_keyword_tags(rest);
+            saw_exclude = true;
+        }
+    }
+    if !saw_select {
+        settings.select_tags = vec!["export".into()];
+    }
+    if !saw_exclude {
+        settings.exclude_tags = vec!["noexport".into()];
+    }
+    settings
+}
+
+fn split_keyword_tags(rest: &str) -> Vec<String> {
+    let mut tags = Vec::new();
+    for tag in rest
+        .split(|c: char| c.is_whitespace() || c == ':' || c == ',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
+        if tag.chars().all(is_org_tag_char) && !tags.iter().any(|t| t == tag) {
+            tags.push(tag.to_string());
         }
     }
     tags
 }
+
+fn apply_tags_line(settings: &mut TagSettings, rest: &str) {
+    let tokens = tokenize_tags_line(rest);
+    let mut i = 0;
+    while i < tokens.len() {
+        match tokens[i].as_str() {
+            "{" | "[" => {
+                let exclusive = tokens[i] == "{";
+                let closer = if exclusive { "}" } else { "]" };
+                i += 1;
+                let mut names: Vec<TagSpec> = Vec::new();
+                let mut hierarchy_at = None;
+                while i < tokens.len() && tokens[i] != closer {
+                    if tokens[i] == ":" {
+                        hierarchy_at = Some(names.len());
+                        i += 1;
+                        continue;
+                    }
+                    if let Some(spec) = parse_tag_token(&tokens[i]) {
+                        names.push(spec);
+                    }
+                    i += 1;
+                }
+                if i < tokens.len() && tokens[i] == closer {
+                    i += 1;
+                }
+                let names_only: Vec<String> = names.iter().map(|s| s.name.clone()).collect();
+                if let Some(split) = hierarchy_at {
+                    if split >= 1 {
+                        let group = names[0].name.clone();
+                        let members: Vec<String> = names_only.into_iter().skip(split).collect();
+                        settings.hierarchies.push((group, members));
+                    }
+                } else if exclusive {
+                    if names_only.len() >= 2 {
+                        settings.exclusive.push(names_only);
+                    }
+                }
+                for spec in names {
+                    if !settings.declared.iter().any(|d| d.name == spec.name) {
+                        settings.declared.push(spec);
+                    }
+                }
+            }
+            "\\n" => i += 1,
+            other => {
+                if let Some(spec) = parse_tag_token(other)
+                    && !settings.declared.iter().any(|d| d.name == spec.name)
+                {
+                    settings.declared.push(spec);
+                }
+                i += 1;
+            }
+        }
+    }
+}
+
+fn tokenize_tags_line(rest: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let chars: Vec<char> = rest.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_whitespace() {
+            i += 1;
+            continue;
+        }
+        if matches!(c, '{' | '}' | '[' | ']' | ':') {
+            tokens.push(c.to_string());
+            i += 1;
+            continue;
+        }
+        if c == '\\' && chars.get(i + 1) == Some(&'n') {
+            tokens.push("\\n".into());
+            i += 2;
+            continue;
+        }
+        let start = i;
+        while i < chars.len()
+            && !chars[i].is_whitespace()
+            && !matches!(chars[i], '{' | '}' | '[' | ']' | ':')
+        {
+            i += 1;
+        }
+        tokens.push(chars[start..i].iter().collect());
+    }
+    tokens
+}
+
+fn parse_tag_token(token: &str) -> Option<TagSpec> {
+    let token = token.trim();
+    if token.is_empty() {
+        return None;
+    }
+    if let Some(name) = token.strip_suffix(')')
+        && let Some((name, key)) = name.rsplit_once('(')
+    {
+        let name = name.trim();
+        let key = key.trim();
+        if !name.is_empty() && name.chars().all(is_org_tag_char) && key.chars().count() == 1 {
+            return Some(TagSpec {
+                name: name.to_string(),
+                key: key.chars().next(),
+            });
+        }
+    }
+    if token.chars().all(is_org_tag_char) {
+        return Some(TagSpec {
+            name: token.to_string(),
+            key: None,
+        });
+    }
+    None
+}
+
+/// House `#+TAGS:` lines: types are mutually exclusive; the rest are loose.
+pub const HOUSE_TAGS_LINES: &[&str] = &[
+    "#+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }",
+    "#+TAGS: docs(d) perf ignore ARCHIVE",
+];
 
 /// Whether the preamble already carries `#+NAME:`.
 pub fn preamble_has_keyword(preamble: &str, name: &str) -> bool {
@@ -584,9 +840,13 @@ pub fn preamble_has_keyword(preamble: &str, name: &str) -> bool {
         .any(|line| strip_file_keyword(line.trim(), name).is_some())
 }
 
-/// Insert `#+CATEGORY:` and `#+FILETAGS:` when a hand-started file never
-/// grew them. Org takes the category from the file name otherwise, and
-/// every project's file is `issues.org`.
+/// Insert the house in-buffer settings a hand-started file never grew.
+///
+/// Org takes the category from the file name otherwise, and every
+/// project's file is `issues.org`. A missing `#+TAGS:` means Emacs
+/// fast-tag selection has no type group. `#+FILETAGS:` includes
+/// `noexport` so a vault publish project skips the tracker (manual 13.2,
+/// 14). Existing FILETAGS are left alone.
 pub fn ensure_org_preamble(preamble: &str, project: &str) -> String {
     if preamble.trim().is_empty() {
         return preamble.to_string();
@@ -602,7 +862,16 @@ pub fn ensure_org_preamble(preamble: &str, project: &str) -> String {
         extra.push(format!("#+CATEGORY: {project}"));
     }
     if !preamble_has_keyword(preamble, "FILETAGS") {
-        extra.push(format!("#+FILETAGS: :issues:{project}:"));
+        extra.push(format!("#+FILETAGS: :issues:{project}:noexport:"));
+    }
+    if !preamble_has_keyword(preamble, "TAGS") {
+        extra.extend(HOUSE_TAGS_LINES.iter().map(|s| (*s).to_string()));
+    }
+    if !preamble_has_keyword(preamble, "EXCLUDE_TAGS") {
+        extra.push("#+EXCLUDE_TAGS: noexport".to_string());
+    }
+    if !preamble_has_keyword(preamble, "SELECT_TAGS") {
+        extra.push("#+SELECT_TAGS: export".to_string());
     }
     if extra.is_empty() {
         return preamble.to_string();
@@ -1237,13 +1506,80 @@ mod tests {
     }
 
     #[test]
+    fn tag_settings_parse_groups_and_keys() {
+        let settings = tag_settings_from_preamble(
+            "#+FILETAGS: :issues:demo:noexport:\n\
+             #+TAGS: { bug(b) feature(f) task(t) }\n\
+             #+TAGS: [ area : core cli ]\n\
+             #+TAGS: docs(d) perf\n\
+             #+EXCLUDE_TAGS: noexport\n\
+             #+SELECT_TAGS: export\n",
+        );
+        assert_eq!(settings.filetags, vec!["issues", "demo", "noexport"]);
+        assert_eq!(
+            settings
+                .declared
+                .iter()
+                .map(|s| (s.name.as_str(), s.key))
+                .collect::<Vec<_>>(),
+            vec![
+                ("bug", Some('b')),
+                ("feature", Some('f')),
+                ("task", Some('t')),
+                ("area", None),
+                ("core", None),
+                ("cli", None),
+                ("docs", Some('d')),
+                ("perf", None),
+            ]
+        );
+        assert_eq!(
+            settings.exclusive,
+            vec![vec![
+                "bug".to_string(),
+                "feature".to_string(),
+                "task".to_string()
+            ]]
+        );
+        assert_eq!(
+            settings.hierarchies,
+            vec![("area".to_string(), vec!["core".into(), "cli".into()])]
+        );
+        let own = vec!["core".to_string(), "bug".to_string()];
+        assert!(settings.matches_query(&own, "area"));
+        assert!(settings.matches_query(&own, "issues"));
+        assert!(settings.heading_exportable(&own));
+        assert!(!settings.heading_exportable(&["noexport".into()]));
+        assert_eq!(
+            settings.all_tags(&own),
+            vec!["core", "bug", "issues", "demo", "noexport"]
+        );
+    }
+
+    #[test]
     fn ensure_org_preamble_inserts_category_and_filetags() {
         let raw = "#+TITLE: demo issues\n#+TODO: TODO | DONE";
         let out = ensure_org_preamble(raw, "demo");
         assert!(out.contains("#+CATEGORY: demo"), "{out}");
-        assert!(out.contains("#+FILETAGS: :issues:demo:"), "{out}");
+        assert!(out.contains("#+FILETAGS: :issues:demo:noexport:"), "{out}");
+        assert!(
+            out.contains("#+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }"),
+            "{out}"
+        );
+        assert!(out.contains("#+EXCLUDE_TAGS: noexport"), "{out}");
+        assert!(out.contains("#+SELECT_TAGS: export"), "{out}");
         assert!(out.find("#+TITLE:").unwrap() < out.find("#+CATEGORY:").unwrap());
         assert_eq!(ensure_org_preamble(&out, "demo"), out);
+        let kept = "#+TITLE: demo issues\n#+FILETAGS: :issues:demo:\n#+TODO: TODO | DONE";
+        let healed = ensure_org_preamble(kept, "demo");
+        assert!(
+            healed.contains("#+FILETAGS: :issues:demo:\n"),
+            "existing FILETAGS stay: {healed}"
+        );
+        assert!(
+            !healed.contains("#+FILETAGS: :issues:demo:noexport:"),
+            "{healed}"
+        );
     }
 
     #[test]

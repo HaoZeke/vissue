@@ -59,8 +59,11 @@ is the form tag search sees. =:BLOCKED_BY:= is the vissue graph;
 =ready= also reads ids out of a =:BLOCKER:= org-edna form. A rewrite
 does not mint =ids(...)=. Any other property is preserved untouched, in
 the order it appears on disk. =check= names a file whose preamble has
-no =#+CATEGORY:=, and a project whose types never made it onto the
-heading. =vissue normalize= rewrites a tracker onto that shape;
+no =#+CATEGORY:=, no =#+TAGS:=, or a =#+FILETAGS:= without
+=noexport=, and a project whose types never made it onto the
+heading. =search= matches inherited FILETAGS and a =#+TAGS:= group
+tag. An Org-format =mirror= drops a heading tagged =noexport=.
+=vissue normalize= rewrites a tracker onto that shape;
 =--dry-run= prints the files that would change.
 
 =:BLOCKED_BY:= accepts commas, whitespace, or both. =:PARENT:= may name

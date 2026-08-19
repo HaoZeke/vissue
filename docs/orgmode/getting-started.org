@@ -21,7 +21,11 @@ That file is ordinary Org:
 #+begin_src org
 #+TITLE: parser issues
 #+CATEGORY: parser
-#+FILETAGS: :issues:parser:
+#+FILETAGS: :issues:parser:noexport:
+#+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }
+#+TAGS: docs(d) perf ignore ARCHIVE
+#+EXCLUDE_TAGS: noexport
+#+SELECT_TAGS: export
 #+DATE: [2026-08-03 Mon]
 #+DESCRIPTION: Issue tracking file for parser specs, plans, and implementation tasks.
 #+STATUS: Active

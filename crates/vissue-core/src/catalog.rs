@@ -36,6 +36,7 @@ pub fn load_recs(layout: &Layout) -> Result<Vec<IssueRec>> {
                 project: project.clone(),
                 heading,
                 path: path.clone(),
+                tag_settings: doc.tag_settings.clone(),
             });
         }
     }
@@ -235,7 +236,7 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
             }
         }
         if let Some(needle) = q.query.as_deref()
-            && !list_query_matches(&rec.heading, needle)
+            && !list_query_matches(rec, needle)
         {
             continue;
         }
@@ -264,15 +265,13 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
     Ok(out)
 }
 
-fn list_query_matches(h: &IssueHeading, needle: &str) -> bool {
+fn list_query_matches(rec: &IssueRec, needle: &str) -> bool {
+    let h = &rec.heading;
     let needle = needle.to_lowercase();
     if h.id.to_lowercase().contains(&needle) || h.title.to_lowercase().contains(&needle) {
         return true;
     }
-    if h.tags()
-        .iter()
-        .any(|tag| tag.to_lowercase().contains(&needle))
-    {
+    if rec.tag_settings.matches_query(&h.tags(), &needle) {
         return true;
     }
     h.properties
@@ -303,7 +302,7 @@ fn issue_detail(rec: &IssueRec) -> IssueDetail {
         priority: rec.heading.priority.to_string(),
         properties: rec.heading.properties.clone(),
         org_tags: rec.heading.org_tags.clone(),
-        tags: rec.heading.tags(),
+        tags: rec.tag_settings.all_tags(&rec.heading.tags()),
         blocked_by: rec.heading.blocked_by(),
         parent: rec.heading.parent().map(str::to_string),
         claimed_by: rec.heading.claimed_by().map(str::to_string),
@@ -512,7 +511,9 @@ pub fn search_hits_from(issues: &[IssueRec], query: &str, limit: usize) -> Resul
     let mut hits: Vec<(char, String, String, SearchHit)> = Vec::new();
     for rec in issues {
         let h = &rec.heading;
-        if !search_haystack(h).to_lowercase().contains(&needle) {
+        if !search_haystack(rec).to_lowercase().contains(&needle)
+            && !rec.tag_settings.matches_query(&h.tags(), &needle)
+        {
             continue;
         }
         hits.push((
@@ -525,7 +526,7 @@ pub fn search_hits_from(issues: &[IssueRec], query: &str, limit: usize) -> Resul
                 state: h.state.clone(),
                 priority: h.priority.to_string(),
                 title: h.title.clone(),
-                snippet: search_snippet(h, &needle),
+                snippet: search_snippet(rec, &needle),
             },
         ));
     }
@@ -538,7 +539,8 @@ pub fn search_hits_from(issues: &[IssueRec], query: &str, limit: usize) -> Resul
     Ok(hits.into_iter().map(|h| h.3).collect())
 }
 
-fn search_haystack(h: &IssueHeading) -> String {
+fn search_haystack(rec: &IssueRec) -> String {
+    let h = &rec.heading;
     let mut hay = String::new();
     hay.push_str(&h.id);
     hay.push(' ');
@@ -550,7 +552,7 @@ fn search_haystack(h: &IssueHeading) -> String {
         hay.push_str(v);
         hay.push(' ');
     }
-    for tag in h.tags() {
+    for tag in rec.tag_settings.all_tags(&h.tags()) {
         hay.push_str(&tag);
         hay.push(' ');
     }
@@ -558,12 +560,13 @@ fn search_haystack(h: &IssueHeading) -> String {
     hay
 }
 
-fn search_snippet(h: &IssueHeading, needle: &str) -> String {
+fn search_snippet(rec: &IssueRec, needle: &str) -> String {
+    let h = &rec.heading;
     let mut candidates = vec![h.id.clone(), h.title.clone()];
     for (k, v) in &h.properties {
         candidates.push(format!("{k}:{v}"));
     }
-    candidates.extend(h.tags());
+    candidates.extend(rec.tag_settings.all_tags(&h.tags()));
     candidates.extend(h.body.lines().map(str::to_string));
     let found = candidates
         .into_iter()

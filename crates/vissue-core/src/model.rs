@@ -231,6 +231,17 @@ impl IssueHeading {
         crate::org::effort_from_properties(&self.properties)
     }
 
+    /// Own tags plus inherited FILETAGS (Org ALLTAGS for a top-level heading).
+    pub fn all_tags(&self, filetags: &[String]) -> Vec<String> {
+        let mut tags = self.tags();
+        for tag in filetags {
+            if !tags.iter().any(|seen| seen == tag) {
+                tags.push(tag.clone());
+            }
+        }
+        tags
+    }
+
     /// Every tag on the issue: the `:VISSUE_TAGS:` property and the heading's
     /// own Org tags, in that order and without duplicates.
     pub fn tags(&self) -> Vec<String> {

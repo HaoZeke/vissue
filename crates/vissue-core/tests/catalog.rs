@@ -41,6 +41,7 @@ fn issue(project: &str, id: &str, state: &str, title: &str) -> IssueRec {
             line_end: 6,
         },
         path: PathBuf::from(format!("/tmp/{project}/issues.org")),
+        tag_settings: vissue_core::org::TagSettings::default(),
     }
 }
 
@@ -219,6 +220,21 @@ fn detail_carries_the_tags_and_the_file_range() {
     assert_eq!(detail.line_start, 1);
     // `file` carries the range an editor opens: path, start, end.
     assert!(detail.file.ends_with("issues.org:1-6"), "{}", detail.file);
+}
+
+#[test]
+fn search_matches_filetags_and_a_group_tag() {
+    let mut recs = corpus();
+    recs[0].tag_settings.filetags = vec!["issues".into(), "atlas".into()];
+    recs[0].tag_settings.hierarchies = vec![("area".into(), vec!["core".into(), "cli".into()])];
+    let cat = CatalogService::from_recs(&recs);
+    let by_file = cat.search("issues", 10).unwrap();
+    assert!(by_file.iter().any(|h| h.id == "atlas-1a2b"), "{by_file:?}");
+    let by_group = cat.search("area", 10).unwrap();
+    assert!(
+        by_group.iter().any(|h| h.id == "atlas-1a2b"),
+        "group tag area should match heading tagged core: {by_group:?}"
+    );
 }
 
 #[test]

@@ -122,6 +122,15 @@ fn export_rows_carry_the_documented_schema() {
     assert_eq!(parser["org_tags"][0], "parser");
     assert_eq!(parser["org_tags"][1], "core");
     assert_eq!(parser["tags"][0], "parser");
+    let all_tags: Vec<&str> = parser["all_tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(all_tags.contains(&"parser"), "{all_tags:?}");
+    assert!(all_tags.contains(&"issues"), "{all_tags:?}");
+    assert!(all_tags.contains(&"noexport"), "{all_tags:?}");
     assert_eq!(parser["logbook"][0]["to"], "STARTED");
     assert_eq!(parser["logbook"][0]["from"], "TODO");
     assert!(
@@ -710,6 +719,12 @@ fn a_search_finds_body_and_property_text() {
     );
     assert!(
         report::search(&layout, "core", 10)
+            .unwrap()
+            .contains("atlas-1a2b")
+    );
+    // FILETAGS are inherited (manual 6.1): every heading matches `issues`.
+    assert!(
+        report::search(&layout, "issues", 10)
             .unwrap()
             .contains("atlas-1a2b")
     );

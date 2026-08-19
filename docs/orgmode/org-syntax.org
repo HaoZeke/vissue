@@ -135,10 +135,31 @@ A token that character class rejects (=needs-review=) stays in
 =:VISSUE_TAGS:=. Never =:TAGS:= in the drawer: Org reserves that name
 for the headline run, ignores the drawer, and =org-lint= says so.
 
-=#+FILETAGS:= is =:issues:project:= on a fresh file, and a write
-inserts it when a hand-started file never grew one. It is not copied
-onto every heading, because then every issue in the file would share
-the same two tags and =search= would stop meaning anything.
+** 6.1 Tag inheritance
+
+=#+FILETAGS:= is the hypothetical level-zero heading around the file
+(manual 6.1). A fresh file gets =:issues:project:noexport:=. A write
+inserts that line when a hand-started file never grew one. It is not
+copied onto every heading. =search= and =show= still match those
+tags, because Org's =ALLTAGS= includes them. =noexport= is the
+publish signal (13.2, 14): a vault =org-publish= project that
+excludes that tag will skip the tracker.
+
+** 6.2 Setting tags
+
+A fresh file declares the house set so =C-c C-q= has keys:
+
+: #+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }
+: #+TAGS: docs(d) perf ignore ARCHIVE
+
+Braces are mutually exclusive (at most one type). A write inserts
+those lines when =#+TAGS:= is missing. =check= names a heading that
+carries two tags from one exclusive group.
+
+** 6.3 Tag hierarchy
+
+=#+TAGS: [ area : core cli ]= is a group tag. =search area= matches a
+heading tagged =core= or =cli=, the way Org's agenda filter does.
 
 * 7 Properties and Columns
 
@@ -273,6 +294,23 @@ are not headlines.
 
 * 13 Exporting
 
+** 13.2 Export settings
+
+A fresh file writes the keywords Org's exporter already reads:
+
+: #+EXCLUDE_TAGS: noexport
+: #+SELECT_TAGS: export
+
+Those are Org's defaults, written so a publish project does not have
+to restate them. A heading tagged =:noexport:= is dropped from an
+Org-format =vissue mirror=. File-level =FILETAGS= =noexport= does
+not empty the mirror: the mirror is a new document, not an export of
+the tracker file. JSONL =export= is the tracker dump and keeps every
+heading.
+
+=AUTHOR=, =DATE=, =TITLE=, =OPTIONS=, and =EXPORT_*= subtree
+overrides are preamble or properties and are preserved.
+
 ** 13.6 Comment lines
 
 A line starting with =# = is a comment. A =COMMENT= keyword on a
@@ -284,7 +322,22 @@ HTML/LaTeX/Beamer/ODT/Texinfo backends are not interpreted.
 
 * 14 Publishing
 
-Out of scope. Publishing is a project-alist in Emacs.
+Publishing is still an Emacs =org-publish-project-alist=. The
+tracker does not upload HTML. What it does is carry the in-file
+signals that alist reads:
+
+- =#+FILETAGS: :issues:project:noexport:= so a project whose
+  =:exclude-tags= (or the default =noexport=) covers the vault
+  skips every tree in =issues.org=.
+- =#+EXCLUDE_TAGS:= / =#+SELECT_TAGS:= as in 13.2.
+- A heading tagged =:noexport:= or =:ARCHIVE:= stays an issue.
+  =vissue refile= is the move between projects; Org's archive
+  sibling is not implied.
+
+A publish project that wants the tracker on the site omits
+=noexport= from =FILETAGS= and exports the file like any other Org
+document. =check= names a file whose =FILETAGS= has no =noexport=,
+because that is the usual leak.
 
 * 15 Citation handling
 

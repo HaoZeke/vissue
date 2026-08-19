@@ -49,6 +49,7 @@ fn issue(project: &str, id: &str, state: &str, title: &str) -> IssueRec {
             line_end: 5,
         },
         path: PathBuf::from("/tmp/none/issues.org"),
+        tag_settings: vissue_core::org::TagSettings::default(),
     }
 }
 

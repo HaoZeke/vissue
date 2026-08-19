@@ -1,6 +1,10 @@
 #+TITLE: atlas issues
 #+CATEGORY: atlas
-#+FILETAGS: :issues:atlas:
+#+FILETAGS: :issues:atlas:noexport:
+#+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }
+#+TAGS: docs(d) perf ignore ARCHIVE
+#+EXCLUDE_TAGS: noexport
+#+SELECT_TAGS: export
 #+DATE: [2026-01-12 Mon]
 #+DESCRIPTION: Issue tracking file for atlas specs, plans, and implementation tasks.
 #+STATUS: Active

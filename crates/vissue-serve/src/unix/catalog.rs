@@ -107,6 +107,7 @@ pub fn load_project_recs(layout: &Layout, project: &str) -> Result<Vec<IssueRec>
         return Ok(Vec::new());
     }
     let doc = IssueDoc::parse_file(project, &path)?;
+    let tag_settings = doc.tag_settings.clone();
     Ok(doc
         .headings
         .into_iter()
@@ -114,6 +115,7 @@ pub fn load_project_recs(layout: &Layout, project: &str) -> Result<Vec<IssueRec>
             project: project.to_string(),
             heading,
             path: path.clone(),
+            tag_settings: tag_settings.clone(),
         })
         .collect())
 }

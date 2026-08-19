@@ -167,7 +167,12 @@ pub fn show(layout: &Layout, id: &str) -> Result<String> {
             None => writeln!(out, "Claimed:  {who}")?,
         }
     }
-    let tags = h.tags();
+    let settings = crate::org::tag_settings_from_preamble(
+        &IssueDoc::parse_file(&project, &path)
+            .map(|d| d.preamble)
+            .unwrap_or_default(),
+    );
+    let tags = settings.all_tags(&h.tags());
     if !tags.is_empty() {
         writeln!(out, "Tags:     {}", tags.join(", "))?;
     }
@@ -445,11 +450,15 @@ pub fn count(
 /// Returns an error if the corpus cannot be read.
 pub fn export(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     let mut out = String::new();
-    for (project, h) in load_all(layout)? {
-        if !project_selected(&project, project_filter) {
+    for rec in load_recs(layout)? {
+        if !project_selected(&rec.project, project_filter) {
             continue;
         }
-        let _ = writeln!(out, "{}", export_row(&project, h));
+        let _ = writeln!(
+            out,
+            "{}",
+            export_row(&rec.project, rec.heading, &rec.tag_settings)
+        );
     }
     Ok(out)
 }
@@ -468,14 +477,18 @@ pub fn export(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
 /// Returns an error if the corpus cannot be read.
 pub fn export_by_project(layout: &Layout) -> Result<BTreeMap<String, String>> {
     let mut out: BTreeMap<String, String> = BTreeMap::new();
-    for (project, h) in load_all(layout)? {
-        let row = export_row(&project, h);
-        let _ = writeln!(out.entry(project).or_default(), "{row}");
+    for rec in load_recs(layout)? {
+        let row = export_row(&rec.project, rec.heading, &rec.tag_settings);
+        let _ = writeln!(out.entry(rec.project).or_default(), "{row}");
     }
     Ok(out)
 }
 
-fn export_row(project: &str, h: IssueHeading) -> serde_json::Value {
+fn export_row(
+    project: &str,
+    h: IssueHeading,
+    settings: &crate::org::TagSettings,
+) -> serde_json::Value {
     let logbook: Vec<serde_json::Value> = h
         .logbook
         .iter()
@@ -501,6 +514,7 @@ fn export_row(project: &str, h: IssueHeading) -> serde_json::Value {
         "properties": h.properties,
         "org_tags": h.org_tags,
         "tags": h.tags(),
+        "all_tags": settings.all_tags(&h.tags()),
         "logbook": logbook,
         "body": h.body,
         "line_start": h.line_start,
@@ -974,8 +988,27 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
         if !crate::org::preamble_has_keyword(&doc.preamble, "FILETAGS") {
             writeln!(out, "[warn] {project}: preamble has no #+FILETAGS:")?;
             warnings += 1;
+        } else if !doc
+            .tag_settings
+            .filetags
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case("noexport"))
+        {
+            writeln!(
+                out,
+                "[warn] {project}: #+FILETAGS: has no noexport; a vault publish will export this tracker"
+            )?;
+            warnings += 1;
+        }
+        if !crate::org::preamble_has_keyword(&doc.preamble, "TAGS") {
+            writeln!(
+                out,
+                "[warn] {project}: preamble has no #+TAGS:; Emacs fast tag selection has no type group"
+            )?;
+            warnings += 1;
         }
         let mut type_not_tagged = 0usize;
+        let mut exclusive_clash = 0usize;
         let mut priority_in_drawer = 0usize;
         let mut blockedby_typo = 0usize;
         let mut blocker_as_ids = 0usize;
@@ -989,6 +1022,16 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                     && !h.org_tags.iter().any(|t| t == kind)
                 {
                     type_not_tagged += 1;
+                }
+            }
+            for group in &doc.tag_settings.exclusive {
+                let hits = group
+                    .iter()
+                    .filter(|name| h.org_tags.iter().any(|t| t == *name))
+                    .count();
+                if hits > 1 {
+                    exclusive_clash += 1;
+                    break;
                 }
             }
             if h.properties.contains_key("PRIORITY") {
@@ -1018,6 +1061,13 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             writeln!(
                 out,
                 "[warn] {project}: {type_not_tagged} heading(s) have :TYPE: that is a legal Org tag but is not on the heading"
+            )?;
+            warnings += 1;
+        }
+        if exclusive_clash > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {exclusive_clash} heading(s) carry more than one tag from a #+TAGS: exclusive group"
             )?;
             warnings += 1;
         }

@@ -978,6 +978,32 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
     for project in list_projects(layout)? {
         let path = layout.project_issues_path(&project);
         let doc = IssueDoc::parse_file(&project, &path)?;
+        match crate::org::protocol_from_preamble(&doc.preamble) {
+            None => {
+                writeln!(
+                    out,
+                    "[warn] {project}: preamble has no #+VISSUE: protocol stamp"
+                )?;
+                warnings += 1;
+            }
+            Some(n) if n < crate::org::PROTOCOL_VERSION => {
+                writeln!(
+                    out,
+                    "[warn] {project}: #+VISSUE: {n} is behind protocol {}",
+                    crate::org::PROTOCOL_VERSION
+                )?;
+                warnings += 1;
+            }
+            Some(n) if n > crate::org::PROTOCOL_VERSION => {
+                writeln!(
+                    out,
+                    "[err]  {project}: #+VISSUE: {n} is newer than this vissue (protocol {})",
+                    crate::org::PROTOCOL_VERSION
+                )?;
+                errors += 1;
+            }
+            Some(_) => {}
+        }
         if !crate::org::preamble_has_keyword(&doc.preamble, "CATEGORY") {
             writeln!(
                 out,

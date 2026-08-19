@@ -1,4 +1,5 @@
 #+TITLE: atlas issues
+#+VISSUE: 1
 #+CATEGORY: atlas
 #+FILETAGS: :issues:atlas:noexport:
 #+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }

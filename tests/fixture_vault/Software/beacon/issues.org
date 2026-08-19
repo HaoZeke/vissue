@@ -1,4 +1,5 @@
 #+TITLE: beacon issues
+#+VISSUE: 1
 #+CATEGORY: beacon
 #+FILETAGS: :issues:beacon:noexport:
 #+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }

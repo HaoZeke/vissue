@@ -10,6 +10,14 @@ The parser lives in =vissue-core::org= and is driven from =IssueDoc::parse=.
 =tests/org_interop.sh= is the live Emacs check for the subset Org itself
 writes back.
 
+The on-disk contract is stamped =#+VISSUE: 1= in the preamble, independent
+of the crate version and of the control-socket =protocolVersion=. 1 is
+the house Org shape in this file: =#+CATEGORY:=, =#+FILETAGS:= with
+=noexport=, the type =#+TAGS:= group, type as a heading tag,
+=:BLOCKED_BY:= as the graph, and =:BLOCKER:= as org-edna (read, never
+minted). =normalize= writes the stamp. =check= names a file that lacks
+it or carries a future number.
+
 * 1 Introduction
 
 Out of scope. The manual's tour of Org as an editor does not change the

@@ -20,6 +20,7 @@ That file is ordinary Org:
 
 #+begin_src org
 #+TITLE: parser issues
+#+VISSUE: 1
 #+CATEGORY: parser
 #+FILETAGS: :issues:parser:noexport:
 #+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }

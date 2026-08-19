@@ -1076,6 +1076,7 @@ fn run() -> Result<()> {
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|_| "vissue".into());
             emitln!("vissue {}", env!("CARGO_PKG_VERSION"));
+            emitln!("protocol: {}", vissue_core::org::PROTOCOL_VERSION);
             emitln!("binary: {exe}");
             emitln!("root:   {}", layout.root().display());
             emitln!("prefix: {}", layout.prefix());

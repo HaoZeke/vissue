@@ -16,6 +16,7 @@ back.
 | Type and tags Org can hold  | The heading's own =:bug:parser:= run, aligned to =org-tags-column= | Tag search matches |
 | Identity                    | =:ID:=                                            | =org-id= resolves an =id:= link |
 | Project                     | =#+CATEGORY:= in the preamble                     | The agenda labels rows by project |
+| File protocol               | =#+VISSUE: 1=                                     | On-disk contract; =check= reads it |
 | File tags                   | =#+FILETAGS: :issues:project:noexport:=           | Inherited by every heading; publish skips the file |
 | Fast tags                   | =#+TAGS:= type group plus =docs= / =perf=         | =C-c C-q= has keys |
 | Workstream override         | =:CATEGORY:= on that heading only                 | That row's agenda label |

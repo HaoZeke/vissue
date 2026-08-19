@@ -2103,6 +2103,35 @@ mod tests {
             "{}",
             report.text
         );
+        assert!(
+            report
+                .text
+                .contains("preamble has no #+VISSUE: protocol stamp"),
+            "{}",
+            report.text
+        );
+    }
+
+    #[test]
+    fn check_errors_on_a_newer_protocol_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        let path = layout.project_issues_path("sample");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "#+TITLE: sample issues\n#+VISSUE: 99\n#+CATEGORY: sample\n#+FILETAGS: :issues:sample:noexport:\n#+TAGS: docs\n#+TODO: TODO | DONE\n\n* TODO [#A] Future\n:PROPERTIES:\n:ID:         sample-aaaa\n:END:\n",
+        )
+        .unwrap();
+        let report = crate::report::check(&layout).unwrap();
+        assert!(report.errors >= 1, "{}", report.text);
+        assert!(
+            report
+                .text
+                .contains("#+VISSUE: 99 is newer than this vissue"),
+            "{}",
+            report.text
+        );
     }
 
     #[test]

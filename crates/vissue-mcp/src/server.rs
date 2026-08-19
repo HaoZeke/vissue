@@ -692,8 +692,9 @@ fn issues_json_routed(
 
 fn identity_report(layout: &Layout, router: &Router) -> String {
     let mut out = format!(
-        "vissue-mcp {}\nroot:   {}\nprefix: {}\nroot={}\nprefix={}\n",
+        "vissue-mcp {}\nprotocol: {}\nroot:   {}\nprefix: {}\nroot={}\nprefix={}\n",
         env!("CARGO_PKG_VERSION"),
+        vissue_core::org::PROTOCOL_VERSION,
         layout.root().display(),
         layout.prefix(),
         layout.root().display(),

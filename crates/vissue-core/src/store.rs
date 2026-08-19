@@ -579,7 +579,8 @@ fn parse_heading(
 /// spanning several projects would label every row `issues`.
 pub fn default_preamble(project: &str) -> String {
     format!(
-        "#+TITLE: {project} issues\n#+CATEGORY: {project}\n#+FILETAGS: :issues:{project}:noexport:\n{}\n{}\n#+EXCLUDE_TAGS: noexport\n#+SELECT_TAGS: export\n#+DATE: {}\n#+DESCRIPTION: Issue tracking file for {project} specs, plans, and implementation tasks.\n#+STATUS: Active\n{}",
+        "#+TITLE: {project} issues\n#+VISSUE: {}\n#+CATEGORY: {project}\n#+FILETAGS: :issues:{project}:noexport:\n{}\n{}\n#+EXCLUDE_TAGS: noexport\n#+SELECT_TAGS: export\n#+DATE: {}\n#+DESCRIPTION: Issue tracking file for {project} specs, plans, and implementation tasks.\n#+STATUS: Active\n{}",
+        crate::org::PROTOCOL_VERSION,
         crate::org::HOUSE_TAGS_LINES[0],
         crate::org::HOUSE_TAGS_LINES[1],
         today_inactive_bracket(),
@@ -1157,6 +1158,7 @@ mod tests {
         let written = fs::read_to_string(&path).unwrap();
         for expected in [
             "#+TITLE: sample issues",
+            "#+VISSUE: 1",
             // Org takes the category from the file name otherwise, and every
             // project's file is issues.org.
             "#+CATEGORY: sample",

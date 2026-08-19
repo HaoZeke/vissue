@@ -833,6 +833,47 @@ pub const HOUSE_TAGS_LINES: &[&str] = &[
     "#+TAGS: docs(d) perf ignore ARCHIVE",
 ];
 
+/// On-disk `issues.org` contract. Independent of the crate version and of
+/// the control-socket protocol.
+///
+/// 1 is the house Org shape: `#+CATEGORY:`, `#+FILETAGS:` with `noexport`,
+/// the type `#+TAGS:` group, `#+SELECT_TAGS:` / `#+EXCLUDE_TAGS:`, type as
+/// a heading tag, `:BLOCKED_BY:` as the graph, and `:BLOCKER:` as org-edna
+/// (read, never minted).
+pub const PROTOCOL_VERSION: u32 = 1;
+
+/// In-buffer keyword that carries [`PROTOCOL_VERSION`].
+pub const PROTOCOL_KEYWORD: &str = "VISSUE";
+
+/// Protocol integer from `#+VISSUE:`, when the line parses.
+pub fn protocol_from_preamble(preamble: &str) -> Option<u32> {
+    for line in preamble.lines() {
+        if let Some(n) = protocol_from_keyword_line(line) {
+            return Some(n);
+        }
+    }
+    None
+}
+
+fn protocol_from_keyword_line(line: &str) -> Option<u32> {
+    let rest = strip_file_keyword(line.trim(), PROTOCOL_KEYWORD)?;
+    let mut parts = rest.split_whitespace();
+    let first = parts.next()?;
+    if first.eq_ignore_ascii_case("protocol") {
+        parts.next()?.parse().ok()
+    } else {
+        first
+            .strip_prefix("protocol=")
+            .unwrap_or(first)
+            .parse()
+            .ok()
+    }
+}
+
+fn protocol_stamp_line() -> String {
+    format!("#+{PROTOCOL_KEYWORD}: {PROTOCOL_VERSION}")
+}
+
 /// Whether the preamble already carries `#+NAME:`.
 pub fn preamble_has_keyword(preamble: &str, name: &str) -> bool {
     preamble
@@ -878,12 +919,33 @@ pub fn ensure_org_preamble(preamble: &str, project: &str) -> String {
         lines.insert(insert_at + offset, line);
     }
     ensure_filetags_has_noexport(&mut lines);
+    ensure_protocol_stamp(&mut lines);
     let out = lines.join("\n");
     if out == preamble {
         preamble.to_string()
     } else {
         out
     }
+}
+
+fn ensure_protocol_stamp(lines: &mut Vec<String>) {
+    let stamp = protocol_stamp_line();
+    for line in lines.iter_mut() {
+        if strip_file_keyword(line.trim(), PROTOCOL_KEYWORD).is_none() {
+            continue;
+        }
+        match protocol_from_keyword_line(line) {
+            Some(n) if n >= PROTOCOL_VERSION => {}
+            _ => *line = stamp,
+        }
+        return;
+    }
+    let insert_at = lines
+        .iter()
+        .position(|line| strip_file_keyword(line.trim(), "TITLE").is_some())
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    lines.insert(insert_at, stamp);
 }
 
 fn ensure_filetags_has_noexport(lines: &mut [String]) {
@@ -1586,6 +1648,7 @@ mod tests {
     fn ensure_org_preamble_inserts_category_and_filetags() {
         let raw = "#+TITLE: demo issues\n#+TODO: TODO | DONE";
         let out = ensure_org_preamble(raw, "demo");
+        assert!(out.contains("#+VISSUE: 1"), "{out}");
         assert!(out.contains("#+CATEGORY: demo"), "{out}");
         assert!(out.contains("#+FILETAGS: :issues:demo:noexport:"), "{out}");
         assert!(
@@ -1602,6 +1665,21 @@ mod tests {
             healed.contains("#+FILETAGS: :issues:demo:noexport:"),
             "existing FILETAGS gain noexport: {healed}"
         );
+        let old = "#+TITLE: demo issues\n#+VISSUE: 0\n#+CATEGORY: demo\n";
+        let bumped = ensure_org_preamble(old, "demo");
+        assert!(bumped.contains("#+VISSUE: 1"), "{bumped}");
+        assert!(!bumped.contains("#+VISSUE: 0"), "{bumped}");
+        let future = "#+TITLE: demo issues\n#+VISSUE: 99\n#+CATEGORY: demo\n";
+        let left = ensure_org_preamble(future, "demo");
+        assert!(left.contains("#+VISSUE: 99"), "{left}");
+    }
+
+    #[test]
+    fn protocol_from_preamble_reads_the_vissue_keyword() {
+        assert_eq!(protocol_from_preamble("#+VISSUE: 1\n"), Some(1));
+        assert_eq!(protocol_from_preamble("#+VISSUE: protocol 2\n"), Some(2));
+        assert_eq!(protocol_from_preamble("#+VISSUE: protocol=3\n"), Some(3));
+        assert_eq!(protocol_from_preamble("#+TITLE: x\n"), None);
     }
 
     #[test]

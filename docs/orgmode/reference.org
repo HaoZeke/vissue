@@ -20,7 +20,7 @@
 | =tree=, =graph=, =cycles=, =backlinks=, =waiting-on=                      | Relationships                                                            |
 | =roadmap=, =mirror=                                                       | Markdown roadmap; read-only Org or markdown projection                   |
 | =digest=, =mirror --check=                                                | Corpus digest; whether a mirror is still current                         |
-| =check=, =hygiene=                                                        | Validation                                                               |
+| =check=, =hygiene=, =normalize=                                           | Validation; rewrite a tracker onto the house Org shape                    |
 | =gen=, =events=, =wait=, =ping=                                           | Change stream for pollers; =wait --id= =--until-terminal= watches one issue |
 | =projects=, =identity=                                                    | Layout introspection                                                     |
 | =serve=                                                                   | Own the per-user Unix control socket (= -d=, =stop=, =restart=, =status=) |
@@ -254,8 +254,8 @@ Follow the graph: =vissue_tree=, =vissue_graph=, =vissue_children=,
 Watch for change: =vissue_gen=, =vissue_events=, =vissue_wait=,
 =vissue_ping=, =vissue_digest=.
 
-Check and project: =vissue_check=, =vissue_hygiene=, =vissue_roadmap=,
-=vissue_mirror=, =vissue_mirror_check=.
+Check and project: =vissue_check=, =vissue_hygiene=, =vissue_normalize=,
+=vissue_roadmap=, =vissue_mirror=, =vissue_mirror_check=.
 
 Ask about the layout: =vissue_projects=, =vissue_whoami=, =vissue_identity=.
 

@@ -4,6 +4,7 @@
 #+FILETAGS: :issues:atlas:noexport:
 #+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }
 #+TAGS: docs(d) perf ignore ARCHIVE
+#+PRIORITIES: A C C
 #+EXCLUDE_TAGS: noexport
 #+SELECT_TAGS: export
 #+DATE: [2026-01-12 Mon]

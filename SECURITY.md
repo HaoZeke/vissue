@@ -8,11 +8,11 @@ an agent over stdio.
 
 | Version | Supported |
 |---------|-----------|
+| 0.7.x   | Yes       |
 | 0.6.x   | Yes       |
-| 0.5.x   | Yes       |
-| < 0.5   | No        |
+| < 0.6   | No        |
 
-Security fixes apply to the latest `0.6.x` release and to `main`.
+Security fixes apply to the latest `0.7.x` release and to `main`.
 
 ## Trust boundaries
 

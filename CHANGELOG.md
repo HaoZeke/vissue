@@ -6,6 +6,28 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.7.0](https://github.com/HaoZeke/vissue/releases/tag/v0.7.0) - 2026-08-18
+
+### Changed
+
+- The HUD board opens on the project list. Inside a project the selected
+  issue stays on screen, with properties above a wrapping body and tree,
+  related, and notes as tabs. Search is a field. List titles wrap inside
+  the pane. The tree tab expands or collapses the outline. Related cards
+  and tree double-click open that issue. Escape on the project list
+  unmaps the overlay; `vissue hud --toggle` shows it again. Closing the
+  mapped window quits.
+
+### Fixed
+
+- A HUD Tree pick is the issue keys act on. Confirm remembers that
+  issue through a reject on Ready. Hide then show remaps the overlay.
+  Add from home search writes into the selected hit's project.
+- The HUD list checkbox only flips TODO and DONE and selects that
+  issue. Cancelled and blocked stay as they are. The overlay no longer
+  stalls after a file write.
+
+
 ## [0.6.0](https://github.com/HaoZeke/vissue/releases/tag/v0.6.0) - 2026-08-18
 
 ### Added

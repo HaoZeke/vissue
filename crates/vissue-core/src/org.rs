@@ -846,7 +846,8 @@ pub fn preamble_has_keyword(preamble: &str, name: &str) -> bool {
 /// project's file is `issues.org`. A missing `#+TAGS:` means Emacs
 /// fast-tag selection has no type group. `#+FILETAGS:` includes
 /// `noexport` so a vault publish project skips the tracker (manual 13.2,
-/// 14). Existing FILETAGS are left alone.
+/// 14). A FILETAGS line that already exists but has no `noexport` gets
+/// that tag appended.
 pub fn ensure_org_preamble(preamble: &str, project: &str) -> String {
     if preamble.trim().is_empty() {
         return preamble.to_string();
@@ -873,13 +874,38 @@ pub fn ensure_org_preamble(preamble: &str, project: &str) -> String {
     if !preamble_has_keyword(preamble, "SELECT_TAGS") {
         extra.push("#+SELECT_TAGS: export".to_string());
     }
-    if extra.is_empty() {
-        return preamble.to_string();
-    }
     for (offset, line) in extra.into_iter().enumerate() {
         lines.insert(insert_at + offset, line);
     }
-    lines.join("\n")
+    ensure_filetags_has_noexport(&mut lines);
+    let out = lines.join("\n");
+    if out == preamble {
+        preamble.to_string()
+    } else {
+        out
+    }
+}
+
+fn ensure_filetags_has_noexport(lines: &mut [String]) {
+    for line in lines.iter_mut() {
+        let Some(rest) = strip_file_keyword(line.trim(), "FILETAGS") else {
+            continue;
+        };
+        let tags: Vec<&str> = rest
+            .trim()
+            .trim_matches(':')
+            .split(':')
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .collect();
+        if tags.iter().any(|t| t.eq_ignore_ascii_case("noexport")) {
+            return;
+        }
+        let mut all = tags;
+        all.push("noexport");
+        *line = format!("#+FILETAGS: :{}:", all.join(":"));
+        return;
+    }
 }
 
 /// Move classifiers Org can hold onto the heading: a legal `:TYPE:` and
@@ -1573,12 +1599,8 @@ mod tests {
         let kept = "#+TITLE: demo issues\n#+FILETAGS: :issues:demo:\n#+TODO: TODO | DONE";
         let healed = ensure_org_preamble(kept, "demo");
         assert!(
-            healed.contains("#+FILETAGS: :issues:demo:\n"),
-            "existing FILETAGS stay: {healed}"
-        );
-        assert!(
-            !healed.contains("#+FILETAGS: :issues:demo:noexport:"),
-            "{healed}"
+            healed.contains("#+FILETAGS: :issues:demo:noexport:"),
+            "existing FILETAGS gain noexport: {healed}"
         );
     }
 

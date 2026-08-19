@@ -235,6 +235,8 @@ Full documentation is at **[vissue.rgoswami.me](https://vissue.rgoswami.me)**.
 | [Control](https://vissue.rgoswami.me/control) | Unix socket protocol, framing, and serve / tui / hud |
 | [Explanation](https://vissue.rgoswami.me/explanation) | Why the file is the database, and what the citations justify |
 | [Emacs](https://vissue.rgoswami.me/emacs) | The agenda, tag search, and `id:` links, with nothing installed |
+| [Org syntax](https://vissue.rgoswami.me/org-syntax) | Org 9.8 mapped onto an `issues.org` |
+| [Org ecosystem](https://vissue.rgoswami.me/ecosystem) | ELPA / MELPA names the tracker owns, reads, or preserves |
 
 The sources are Org under `docs/orgmode/`; `bash docs/build.sh` renders the
 site.

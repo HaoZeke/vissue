@@ -99,7 +99,8 @@ grep -q 'publish-new' RELEASING.md
 # the generated CLI assets have to exist for a packager to install them.
 for path in docs/build.sh docs/orgmode/index.org docs/orgmode/getting-started.org \
     docs/orgmode/howto.org docs/orgmode/reference.org docs/orgmode/explanation.org \
-    docs/orgmode/emacs.org docs/source/conf.py man/vissue.1 \
+    docs/orgmode/emacs.org docs/orgmode/org-syntax.org docs/orgmode/ecosystem.org \
+    docs/source/conf.py man/vissue.1 \
     completions/vissue.bash completions/_vissue completions/vissue.fish; do
   test -s "$path" || {
     echo "missing documentation asset: $path" >&2

@@ -13,10 +13,10 @@ writes back.
 The on-disk contract is stamped =#+VISSUE: 1= in the preamble, independent
 of the crate version and of the control-socket =protocolVersion=. 1 is
 the house Org shape in this file: =#+CATEGORY:=, =#+FILETAGS:= with
-=noexport=, the type =#+TAGS:= group, type as a heading tag,
-=:BLOCKED_BY:= as the graph, and =:BLOCKER:= as org-edna (read, never
-minted). =normalize= writes the stamp. =check= names a file that lacks
-it or carries a future number.
+=noexport=, the type =#+TAGS:= group, =#+PRIORITIES: A C C=, type as
+a heading tag, =:BLOCKED_BY:= as the graph, and =:BLOCKER:= as
+org-edna (read, never minted). =normalize= writes the stamp. =check=
+names a file that lacks it or carries a future number.
 
 Protocol 1 is that tracker contract. It is not parity with every Org
 package. A rewrite keeps a property it does not own, so org-noter,
@@ -111,9 +111,13 @@ still only writes the house five.
 
 ** 5.4 Priorities
 
-=[#A]=, =[#B]=, =[#C]= immediately after the keyword. A title that
-opens with a bracket that is not a one-character cookie keeps its
-text. Missing cookie defaults to =C=.
+=[#A]= immediately after the keyword is a one-character cookie. A
+title that opens with a bracket that is not a cookie keeps its text.
+=#+PRIORITIES: highest lowest default= sets the range and the cookie
+written when the heading has none. A fresh file writes =A C C=, so a
+missing cookie is =[#C]=, not Org's own default =B=. A cookie outside
+the file range is refused on =create= / =update= and named by
+=check=.
 
 ** 5.5 Breaking down tasks
 
@@ -126,8 +130,13 @@ Body text. =[/]= and =[%]= cookies on list items are not read.
 
 ** 5.7 TODO dependencies
 
-Org's =ORDERED= property and =org-enforce-todo-dependencies= are not
-the tracker. =:BLOCKED_BY:= is.
+=:BLOCKED_BY:= is the explicit graph. Org's own sibling gate is also
+honoured: a parent with =:ORDERED:= (any value Org treats as true)
+holds later children with the same =:PARENT:= out of =ready= until
+every earlier sibling is =DONE= or =CANCELLED=. =:NOBLOCKING:= on a
+child skips that wait. =check= names a heading that started or closed
+before an earlier ordered sibling, and a =DONE= that still has open
+children.
 
 * 6 Tags
 
@@ -236,7 +245,7 @@ Settable: a heading may put these in the drawer and Org honours them.
 | =ROAM_REFS= =ROAM_ALIASES= =ROAM_EXCLUDE= | org-roam (MELPA) | Cite/link refs and aliases. Preserved. =ID= is already required. |
 | =ORG_GTD_*= =PREVIOUS_ORG_GTD= | org-gtd v4 | Extra GTD keys. Do not fold =ORG_GTD_DEPENDS_ON= into =BLOCKED_BY=. |
 | =DRILL_*= =FC_*= =ANKI_*= =LEARN_DATA= | org-drill / org-fc / anki-editor | Spaced-repetition state. Extra drawer =:REVIEW_DATA:= stays. |
-| =calendar-id= =ETag= | org-gcal | Google event. Its =:ID:= may be =<event>/<calendar>=, not org-id. |
+| =calendar-id= =ETag= | org-gcal | Google event. A slash =:ID:= (=<event>/<calendar>=) is not an issue id; the heading stays Org around the issues. |
 | =BRAIN_*= | org-brain | A different parent/child graph. |
 | =STYLE= | org-habit (Org core) | =habit= |
 
@@ -448,9 +457,12 @@ Emacs. Not interpreted.
 
 ** 17.8 In-buffer settings
 
-=#+TODO:=, =#+FILETAGS:=, =#+CATEGORY:=, =#+TITLE:=, and the other
-keywords in a fresh preamble are written and preserved. =#+TODO:= is
-read (5.2). Unknown keywords stay in the preamble.
+=#+TODO:=, =#+FILETAGS:=, =#+CATEGORY:=, =#+TITLE:=, =#+PRIORITIES:=,
+and the other keywords in a fresh preamble are written and preserved.
+=#+TODO:= is read (5.2). =#+PRIORITIES:= is read (5.4). A local
+=#+SETUPFILE:= contributes its keyword lines to those two, plus
+=#+TAGS:=; a URL is not fetched, and a missing or cyclic file is
+skipped. Unknown keywords stay in the preamble.
 
 ** 17.9 Regular expressions, 17.10 Org syntax
 

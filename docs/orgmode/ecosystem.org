@@ -14,6 +14,7 @@ contrib / MELPA set that writes into the same drawer or preamble.
 |------+-----|
 | =#+VISSUE:= | On-disk protocol. Independent of the crate and of the control socket. |
 | =#+CATEGORY:= =#+FILETAGS:= =#+TAGS:= =#+TODO:= | Agenda label, inherited tags, type group, house cycle. |
+| =#+PRIORITIES:= | House range =A C C=. A missing cookie is =[#C]=. |
 | =#+EXCLUDE_TAGS:= =#+SELECT_TAGS:= | Publish filter defaults (=noexport= / =export=). |
 | =:ID:= | org-id. Required. |
 | =:CREATED:= | org-expiry / capture stamp. |
@@ -30,6 +31,10 @@ contrib / MELPA set that writes into the same drawer or preamble.
 | =:BLOCKER:= | GNU ELPA org-edna; org-contrib org-depend | =ids(...)= and a bare id list feed =ready=. A real edna form (=prev-sibling=, =headings=) stays. Never written. |
 | =:Effort:= / =:EFFORT:= | Org effort; edna sorts by it | Read; =check= rejects a value Org will not parse. |
 | =#+TODO:= extras | Org 5.2 | A file-local keyword is still an issue. Writes stay the house five. |
+| =#+SETUPFILE:= | Org 17.8 | Local files only. Keyword lines merge into TODO / TAGS / PRIORITIES. URLs unread. |
+| =#+PRIORITIES:= | Org 5.4 | File range and default cookie. |
+| =:ORDERED:= =:NOBLOCKING:= | Org 5.7 | Sibling gate in =ready=. |
+| slash =:ID:= | org-gcal | Not an issue id. The heading stays Org around the issues. |
 | FILETAGS inheritance | Org 6.1 | =search= / =show= match inherited tags. Not copied onto the heading. |
 | =#+TAGS:= groups | Org 6.2 / 6.3 | Exclusive braces; =[ group : members ]= expands in =search=. |
 
@@ -116,16 +121,6 @@ are already preserved. There is no on-disk contract to own.
 | =CATEGORY= | Agenda label and org-gtd area of focus share the key. |
 | =TRIGGER= | org-edna and org-gtd. |
 | =PARENT= vs =BRAIN_PARENTS= / =ORG_GTD_DEPENDS_ON= | Different graphs. |
-
-* Also read
-
-| Name | What vissue does |
-|------+------------------|
-| =#+SETUPFILE:= | Local files only. Keyword lines merge into TODO / TAGS / PRIORITIES. URLs are not fetched. |
-| =#+PRIORITIES:= | Highest / lowest / default cookies. A missing =[#X]= uses the default, not always =C=. |
-| =ORDERED= | Children with the same =:PARENT:= wait on earlier open siblings in =ready=. |
-| =NOBLOCKING= | That heading skips the ORDERED wait. |
-| slash =:ID:= | org-gcal =<event>/<calendar>=. Not an issue id. The heading stays Org around the issues. |
 
 * Sources
 

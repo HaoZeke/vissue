@@ -19,6 +19,9 @@ back.
 | File protocol               | =#+VISSUE: 1=                                     | On-disk contract; =check= reads it |
 | File tags                   | =#+FILETAGS: :issues:project:noexport:=           | Inherited by every heading; publish skips the file |
 | Fast tags                   | =#+TAGS:= type group plus =docs= / =perf=         | =C-c C-q= has keys |
+| Priorities                  | =#+PRIORITIES: A C C=                             | Range and default cookie; missing =[#X]= is =C= |
+| Shared settings             | Local =#+SETUPFILE:=                              | TODO / TAGS / PRIORITIES merge; URLs unread |
+| Ordered children            | =:ORDERED:= / =:NOBLOCKING:=                      | =ready= waits on earlier open siblings |
 | Workstream override         | =:CATEGORY:= on that heading only                 | That row's agenda label |
 | Keyword cycle               | File-local =#+TODO:= (TODO STARTED BLOCKED, then DONE CANCELLED) | =C-c C-t= walks that sequence |
 | Closed / cancelled          | The TODO keyword (=DONE=, =CANCELLED=)            | =C-c C-t=                       |
@@ -68,6 +71,9 @@ Org's own shape. Two rules cover it:
   require =:PROPERTIES:= to come first, and the parser no longer does
   either; a rewrite still emits =:PROPERTIES:= then =:LOGBOOK:= then any
   other drawer, which is the order =org-log-into-drawer= produces.
+- Do not put an org-gcal event id (=<event>/<calendar>=) on an issue.
+  A slash =:ID:= is not a vissue id; that heading is left as Org
+  around the issues.
 
 vissue keeps whatever it does not understand. CLOCK entries and other opaque
 drawer lines round-trip verbatim and appear in the JSONL export as =raw=, so

@@ -25,6 +25,8 @@ PAGES = [
     "control",
     "explanation",
     "emacs",
+    "org-syntax",
+    "ecosystem",
 ]
 
 TOCTREE = """

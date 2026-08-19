@@ -25,6 +25,7 @@ That file is ordinary Org:
 #+FILETAGS: :issues:parser:noexport:
 #+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }
 #+TAGS: docs(d) perf ignore ARCHIVE
+#+PRIORITIES: A C C
 #+EXCLUDE_TAGS: noexport
 #+SELECT_TAGS: export
 #+DATE: [2026-08-03 Mon]
@@ -65,7 +66,9 @@ parser-k29f            TODO      [#C]  Reject a manifest with no header
 #+end_src
 
 The blocked issue is gone from the list, which is the whole point of =ready=.
-It is the open frontier, not a schedule.
+It is the open frontier, not a schedule. A parent with =:ORDERED: t=
+holds later children out of that list until the earlier ones are
+=DONE= or =CANCELLED=.
 
 * 4. Work an issue and close it
 

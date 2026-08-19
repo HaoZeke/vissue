@@ -45,25 +45,34 @@ refused rather than guessed at.
 * States and priorities
 
 States are =TODO=, =STARTED=, =BLOCKED=, =DONE=, and =CANCELLED=. An issue is
-/ready/ when it is =TODO= or =STARTED= and no id in its =:BLOCKED_BY:= is
-still open. Priorities are the Org cookies =[#A]=, =[#B]=, and =[#C]=,
-defaulting to =C=.
+/ready/ when it is =TODO= or =STARTED=, no id in its =:BLOCKED_BY:= is
+still open, and no earlier open sibling sits under an =:ORDERED:=
+parent (unless this heading has =:NOBLOCKING:=). Priorities are the
+Org cookies the file names in =#+PRIORITIES: highest lowest default=.
+A fresh file writes =#+PRIORITIES: A C C=, so a missing =[#X]= is
+=[#C]=. =create= without =--priority= uses that default; when the
+file (and its local =#+SETUPFILE:=) has no such line, it uses
+=issues.default_priority= from the config.
 
 * Properties
 
-=:ID:= is required and generated. =:CREATED:= is set on create. =:PARENT:=,
+=:ID:= is required and generated. An org-gcal =<event>/<calendar>=
+value is not an issue id; that heading stays Org around the issues.
+=:CREATED:= is set on create. =:PARENT:=,
 =:BLOCKED_BY:=, =:VISSUE_TAGS:=, =:TYPE:=, =:CLAIMED_BY:=, =:CLAIMED_AT:=,
 and =:DISCOVERED_FROM:= are read by the query verbs. =:TYPE:= is also
 written as a heading tag when Org's tag character class allows it, which
 is the form tag search sees. =:BLOCKED_BY:= is the vissue graph;
-=ready= also reads ids out of a =:BLOCKER:= org-edna form. A rewrite
+=ready= also reads ids out of a =:BLOCKER:= org-edna form, and
+holds later children of an =:ORDERED:= parent. A rewrite
 does not mint =ids(...)=. Any other property is preserved untouched, in
 the order it appears on disk. =check= names a file whose preamble has no =#+VISSUE:= protocol
-stamp, no =#+CATEGORY:=, no =#+TAGS:=, or a =#+FILETAGS:= without
+stamp, no =#+CATEGORY:=, no =#+TAGS:=, no =#+PRIORITIES:=, or a =#+FILETAGS:= without
 =noexport=, and a project whose types never made it onto the
 heading. A =#+VISSUE:= number newer than this vissue is an error. =search= matches inherited FILETAGS and a =#+TAGS:= group
 tag. An Org-format =mirror= drops a heading tagged =noexport=.
-=vissue normalize= rewrites a tracker onto that shape;
+Local =#+SETUPFILE:= keyword lines merge into TODO / TAGS / PRIORITIES;
+a URL is not fetched. =vissue normalize= rewrites a tracker onto that shape;
 =--dry-run= prints the files that would change.
 
 =:BLOCKED_BY:= accepts commas, whitespace, or both. =:PARENT:= may name
@@ -83,6 +92,8 @@ reads them from there and nowhere else.
 | Identity                    | =:ID:=                                                              | =id:= links resolve through =org-id=      |
 | Project                     | =#+CATEGORY:= in the preamble                                       | The agenda labels rows by project         |
 | Workstream override         | =:CATEGORY:= on that heading only                                   | That row's agenda label, not the file's   |
+| Priority range              | =#+PRIORITIES: A C C= in the preamble                               | Missing cookie is =[#C]=; Emacs agrees    |
+| Ordered children            | =:ORDERED:= on the parent                                           | =ready= waits on earlier open siblings    |
 
 A tag Org will not accept in a heading, =needs-review= say, stays in
 =:VISSUE_TAGS:= and still answers =search= and =related=. =create --tags=
@@ -114,7 +125,7 @@ overriding the compiled defaults key by key.
 |------------------------------+------------+---------------------------------------------|
 | =prefix=                     | =Software= | Directory under the root holding projects   |
 | =agent=                      | unset      | Identity a claim records                    |
-| =issues.default_priority=    | =C=        | Cookie applied when =create= gets none      |
+| =issues.default_priority=    | =C=        | Cookie when =create= gets none and the file has no =#+PRIORITIES:= |
 | =issues.id_length=           | =4=        | Base36 characters in a generated id suffix  |
 | =issues.stale_claim_days=    | =7=        | When =hygiene= calls a claim stale          |
 

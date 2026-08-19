@@ -400,10 +400,25 @@ impl IssueDoc {
 
     /// `#+PRIORITIES:` from this file and any local `#+SETUPFILE:`.
     pub fn priority_spec(&self) -> crate::org::PrioritySpec {
-        crate::org::priorities_from_preamble(&crate::org::merge_setupfile_settings(
-            &self.preamble,
-            self.path.parent(),
-        ))
+        crate::org::priorities_from_preamble(&self.merged_inbuffer_settings())
+    }
+
+    /// Whether the file or a local setupfile names `#+PRIORITIES:`.
+    pub fn priorities_are_named(&self) -> bool {
+        crate::org::preamble_has_keyword(&self.merged_inbuffer_settings(), "PRIORITIES")
+    }
+
+    /// Cookie for a new heading: the file default when named, else `cfg_default`.
+    pub fn default_create_priority(&self, cfg_default: char) -> char {
+        if self.priorities_are_named() {
+            self.priority_spec().default
+        } else {
+            cfg_default
+        }
+    }
+
+    fn merged_inbuffer_settings(&self) -> String {
+        crate::org::merge_setupfile_settings(&self.preamble, self.path.parent())
     }
 
     /// Every heading id in this document, in file order.
@@ -671,10 +686,11 @@ fn parse_heading(
 /// spanning several projects would label every row `issues`.
 pub fn default_preamble(project: &str) -> String {
     format!(
-        "#+TITLE: {project} issues\n#+VISSUE: {}\n#+CATEGORY: {project}\n#+FILETAGS: :issues:{project}:noexport:\n{}\n{}\n#+EXCLUDE_TAGS: noexport\n#+SELECT_TAGS: export\n#+DATE: {}\n#+DESCRIPTION: Issue tracking file for {project} specs, plans, and implementation tasks.\n#+STATUS: Active\n{}",
+        "#+TITLE: {project} issues\n#+VISSUE: {}\n#+CATEGORY: {project}\n#+FILETAGS: :issues:{project}:noexport:\n{}\n{}\n{}\n#+EXCLUDE_TAGS: noexport\n#+SELECT_TAGS: export\n#+DATE: {}\n#+DESCRIPTION: Issue tracking file for {project} specs, plans, and implementation tasks.\n#+STATUS: Active\n{}",
         crate::org::PROTOCOL_VERSION,
         crate::org::HOUSE_TAGS_LINES[0],
         crate::org::HOUSE_TAGS_LINES[1],
+        crate::org::HOUSE_PRIORITIES_LINE,
         today_inactive_bracket(),
         TODO_HEADER
     )
@@ -1322,6 +1338,7 @@ mod tests {
             "#+CATEGORY: sample",
             "#+FILETAGS: :issues:sample:noexport:",
             "#+TAGS: { bug(b) feature(f) task(t) chore(c) plan(p) }",
+            "#+PRIORITIES: A C C",
             "#+EXCLUDE_TAGS: noexport",
             "#+SELECT_TAGS: export",
             "#+DATE:",

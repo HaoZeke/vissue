@@ -833,13 +833,19 @@ pub const HOUSE_TAGS_LINES: &[&str] = &[
     "#+TAGS: docs(d) perf ignore ARCHIVE",
 ];
 
+/// House `#+PRIORITIES:`: highest `A`, lowest `C`, default `C`.
+///
+/// Org's own default cookie is `B`. The tracker defaults to `C` so an
+/// unprioritised heading is the lowest cookie, not the middle one.
+pub const HOUSE_PRIORITIES_LINE: &str = "#+PRIORITIES: A C C";
+
 /// On-disk `issues.org` contract. Independent of the crate version and of
 /// the control-socket protocol.
 ///
 /// 1 is the house Org shape: `#+CATEGORY:`, `#+FILETAGS:` with `noexport`,
-/// the type `#+TAGS:` group, `#+SELECT_TAGS:` / `#+EXCLUDE_TAGS:`, type as
-/// a heading tag, `:BLOCKED_BY:` as the graph, and `:BLOCKER:` as org-edna
-/// (read, never minted).
+/// the type `#+TAGS:` group, `#+PRIORITIES: A C C`, `#+SELECT_TAGS:` /
+/// `#+EXCLUDE_TAGS:`, type as a heading tag, `:BLOCKED_BY:` as the graph,
+/// and `:BLOCKER:` as org-edna (read, never minted).
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// In-buffer keyword that carries [`PROTOCOL_VERSION`].
@@ -1059,6 +1065,9 @@ pub fn ensure_org_preamble(preamble: &str, project: &str) -> String {
     }
     if !preamble_has_keyword(preamble, "SELECT_TAGS") {
         extra.push("#+SELECT_TAGS: export".to_string());
+    }
+    if !preamble_has_keyword(preamble, "PRIORITIES") {
+        extra.push(HOUSE_PRIORITIES_LINE.to_string());
     }
     for (offset, line) in extra.into_iter().enumerate() {
         lines.insert(insert_at + offset, line);
@@ -1802,6 +1811,7 @@ mod tests {
         );
         assert!(out.contains("#+EXCLUDE_TAGS: noexport"), "{out}");
         assert!(out.contains("#+SELECT_TAGS: export"), "{out}");
+        assert!(out.contains("#+PRIORITIES: A C C"), "{out}");
         assert!(out.find("#+TITLE:").unwrap() < out.find("#+CATEGORY:").unwrap());
         assert_eq!(ensure_org_preamble(&out, "demo"), out);
         let kept = "#+TITLE: demo issues\n#+FILETAGS: :issues:demo:\n#+TODO: TODO | DONE";

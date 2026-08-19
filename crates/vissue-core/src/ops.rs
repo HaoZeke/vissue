@@ -81,10 +81,16 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
     let project = resolve_existing_project_case(layout, project)?;
     let cfg = VissueConfig::load(layout)?;
     let path = layout.project_issues_path(&project);
-    let spec = IssueDoc::parse_file(&project, &path)
-        .map(|d| d.priority_spec())
-        .unwrap_or_default();
-    let priority = opts.priority.unwrap_or(spec.default);
+    let (spec, named) = match IssueDoc::parse_file(&project, &path) {
+        Ok(doc) => (doc.priority_spec(), doc.priorities_are_named()),
+        Err(_) => (crate::org::PrioritySpec::default(), false),
+    };
+    let house_new = !path.exists();
+    let priority = opts.priority.unwrap_or(if named || house_new {
+        spec.default
+    } else {
+        cfg.issues.default_priority
+    });
     if !spec.contains(priority) {
         return Err(anyhow!(
             "invalid priority {priority:?}; file allows [#{}]..[#{}]",
@@ -1074,7 +1080,7 @@ fn push_successor(
         id: id.clone(),
         title: title.to_string(),
         state: "TODO".into(),
-        priority: cfg.issues.default_priority,
+        priority: doc.default_create_priority(cfg.issues.default_priority),
         properties: props,
         org_tags: Vec::new(),
         statistics: None,
@@ -2124,6 +2130,11 @@ mod tests {
             "{}",
             report.text
         );
+        assert!(
+            report.text.contains("preamble has no #+PRIORITIES:"),
+            "{}",
+            report.text
+        );
     }
 
     #[test]
@@ -2167,6 +2178,7 @@ mod tests {
         assert!(wrote.contains("rewrote"), "{wrote}");
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(after.contains("#+CATEGORY: sample"), "{after}");
+        assert!(after.contains("#+PRIORITIES: A C C"), "{after}");
         assert!(after.contains(":TYPE:       bug"), "{after}");
         assert!(after.contains(":PARENT:"), "{after}");
         assert!(after.contains(":BLOCKED_BY:"), "{after}");

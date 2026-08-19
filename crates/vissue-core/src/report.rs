@@ -1033,6 +1033,16 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             )?;
             warnings += 1;
         }
+        if !crate::org::preamble_has_keyword(
+            &crate::org::merge_setupfile_settings(&doc.preamble, path.parent()),
+            "PRIORITIES",
+        ) {
+            writeln!(
+                out,
+                "[warn] {project}: preamble has no #+PRIORITIES:; cookies default to C and the range is A..C"
+            )?;
+            warnings += 1;
+        }
         let spec = doc.priority_spec();
         let mut type_not_tagged = 0usize;
         let mut exclusive_clash = 0usize;

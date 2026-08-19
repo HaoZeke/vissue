@@ -1362,7 +1362,7 @@ pub fn backlinks(layout: &Layout, target_id: &str) -> Result<String> {
             continue;
         }
         let mut hit = false;
-        if blocker_ids(h).iter().any(|b| *b == target_id) {
+        if blocker_ids(h).contains(&target_id) {
             let _ = writeln!(out, "{:<22} (blocked-by) ({})", h.id, project);
             hit = true;
         }

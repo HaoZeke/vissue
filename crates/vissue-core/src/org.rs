@@ -376,7 +376,7 @@ pub fn noweb_refs(body: &str) -> Vec<&str> {
             break;
         };
         let inner = after[..end].trim();
-        if !inner.is_empty() && !inner.contains('\n') && !refs.iter().any(|seen| *seen == inner) {
+        if !inner.is_empty() && !inner.contains('\n') && !refs.contains(&inner) {
             refs.push(inner);
         }
         rest = &after[end + 2..];
@@ -745,10 +745,8 @@ fn apply_tags_line(settings: &mut TagSettings, rest: &str) {
                         let members: Vec<String> = names_only.into_iter().skip(split).collect();
                         settings.hierarchies.push((group, members));
                     }
-                } else if exclusive {
-                    if names_only.len() >= 2 {
-                        settings.exclusive.push(names_only);
-                    }
+                } else if exclusive && names_only.len() >= 2 {
+                    settings.exclusive.push(names_only);
                 }
                 for spec in names {
                     if !settings.declared.iter().any(|d| d.name == spec.name) {
@@ -1257,7 +1255,7 @@ pub fn edna_blocker_id_refs(raw: &str) -> Vec<&str> {
         let inner = &rest[start + 1..start + 1 + end];
         for id in inner.split(|c: char| c == ',' || c.is_whitespace()) {
             let id = id.trim();
-            if !id.is_empty() && !id.contains('"') && !ids.iter().any(|seen| *seen == id) {
+            if !id.is_empty() && !id.contains('"') && !ids.contains(&id) {
                 ids.push(id);
             }
         }
@@ -1432,10 +1430,7 @@ pub fn parse_priority_cookie(after: &str) -> Option<(char, &str)> {
 pub fn split_statistics_cookies(text: &str) -> (String, Option<String>) {
     let mut trimmed = text.trim_end().to_string();
     let mut cookies = Vec::new();
-    loop {
-        let Some(open) = trimmed.rfind('[') else {
-            break;
-        };
+    while let Some(open) = trimmed.rfind('[') {
         if !trimmed.ends_with(']') {
             break;
         }

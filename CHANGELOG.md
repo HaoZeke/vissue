@@ -6,6 +6,84 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.6.0](https://github.com/HaoZeke/vissue/releases/tag/v0.6.0) - 2026-08-18
+
+### Added
+
+- Every `issues.org` carries `#+VISSUE: 1`, the on-disk protocol
+  number. It is independent of the crate version and of the
+  control-socket `protocolVersion`. `normalize` writes or upgrades it.
+  `check` names a missing stamp and errors on a future number.
+  `identity` prints `protocol: 1`.
+- The Org ecosystem page lists GNU ELPA, org-contrib, and MELPA
+  names a rewrite must own, read, preserve, or ignore. Protocol 1
+  is the tracker contract, not parity with org-noter. Collisions
+  called out: org-gcal `ID`, org-journal `CREATED`, org-gtd
+  `TRIGGER` / `CATEGORY`.
+- The Org syntax map states protocol 1 is the tracker contract, not
+  parity with every ELPA package. org-noter (`NOTER_DOCUMENT`,
+  `NOTER_PAGE`), Interleave's older names, and org-roam
+  (`ROAM_REFS`, `ROAM_ALIASES`) are preserved on rewrite.
+- `#+SETUPFILE:` (local files only) merges TODO keywords, tags, and
+  `#+PRIORITIES:` into the file that names it. A URL is not fetched.
+  A missing or cyclic setup file is skipped so the tracker still
+  parses.
+- `vissue normalize` rewrites a tracker onto the Org and ELPA
+  property names the other tools already read: `#+CATEGORY:`, type
+  as a heading tag, typos (`BLOCKEDBY`, drawer `TAGS`) folded, and
+  a bare `:BLOCKER:` id list moved to `:BLOCKED_BY:`. `--dry-run`
+  prints the files that would change. An org-edna condition stays.
+  vissue does not mint `:BLOCKER: ids(...)`.
+
+### Changed
+
+- A fresh tracker declares Org's tag and publish keywords:
+  `#+FILETAGS:` includes `noexport`, `#+TAGS:` has the type group
+  plus `docs` / `perf` / `ignore` / `ARCHIVE`, and
+  `#+EXCLUDE_TAGS:` / `#+SELECT_TAGS:` are written. A rewrite appends
+  `noexport` to an existing FILETAGS line that lacks it. `search`
+  matches inherited FILETAGS and a group tag. An Org-format `mirror`
+  drops a heading tagged `noexport`. `check` names a file that still
+  lacks those lines.
+- A parent with `:ORDERED:` holds later children with the same
+  `:PARENT:` out of `ready` until every earlier sibling is `DONE` or
+  `CANCELLED`. `:NOBLOCKING:` on a child skips that wait. `check`
+  names a heading that started or closed early, and a `DONE` that
+  still has open children.
+- Type is an Org heading tag when the character class allows it
+  (`:bug:`, `:feature:`, `:task:`). A write inserts a missing
+  `#+CATEGORY:` and `#+FILETAGS:` so the agenda does not label every
+  row `issues`. `vissue check` names a file still in the drawer-only
+  shape.
+- `#+PRIORITIES: highest lowest default` sets the cookie range and the
+  value used when a heading has no `[#X]`. A fresh file writes
+  `#+PRIORITIES: A C C`. `create` without `--priority` uses that
+  default; when the file has no such line it uses
+  `issues.default_priority`. A cookie outside the range is refused.
+- `:BLOCKER:` is GNU ELPA org-edna (and org-depend), not a typo
+  for `:BLOCKED_BY:`. A bare id list still feeds `ready` and is
+  rewritten to `:BLOCKED_BY:`; an edna condition stays. `Effort`
+  is recognised. `check` names computed specials written in a
+  drawer, `:BLOCKEDBY:`, and an Effort value Org will not parse.
+
+### Fixed
+
+- An org-gcal `:ID:` of the form `<event>/<calendar>` is not an issue
+  id. The heading stays in the file around the real issues.
+  `find_org_ids` and `collect_org_ids` skip slash ids. `check` errors
+  if a parsed issue still carries one.
+- Org Babel syntax is recognised without being evaluated. A
+  `#+RESULTS:` payload, a `#+CALL:` line, affiliated `#+NAME:` /
+  `#+HEADER:` keywords, inline `src_lang{}` / `call_name()`, and
+  noweb `<<name>>` no longer split an issue or define a ghost id.
+- The `issues.org` parser now follows Org 9.8 on the constructs that
+  used to fail a file or split an issue: greater and dynamic blocks are
+  literal, a planning line accepts timestamp ranges and repeaters,
+  drawers may arrive in any order, `COMMENT` and notes headings stay
+  Org rather than becoming a missing `:ID:`, and file-local `#+TODO:`
+  keywords are recognised. See `docs/orgmode/org-syntax.org`.
+
+
 ## [0.5.0](https://github.com/HaoZeke/vissue/releases/tag/v0.5.0) - 2026-08-18
 
 ### Added

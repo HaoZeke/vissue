@@ -98,11 +98,14 @@ rather than left implicit.
 | =CUSTOM_ID= =DIR= =ATTACH_DIR= =STYLE= =LAST_REPEAT= | Org core |
 | tag =ATTACH= =ignore= =ARCHIVE= | org-attach; ox-extra; Org archive |
 
-** Ignore (display or Emacs-only)
+** Ignore (nothing to integrate)
 
-org-modern, org-superstar, org-appear, org-tree-slide, consult-org,
-org-ql (saved views are Emacs variables), org-super-agenda, deft,
-org-pomodoro (only leaves =CLOCK:= lines), org-mem, orgalist.
+These packages write no tracker names. org-modern, org-superstar,
+org-appear, and org-tree-slide are overlays. consult-org, org-ql
+saved views, and org-super-agenda live in Emacs variables and
+already read the TODO / tags / properties we write. deft is a
+filename search. org-pomodoro only leaves =CLOCK:= lines, which
+are already preserved. There is no on-disk contract to own.
 
 * Collisions a rewrite must not "fix"
 
@@ -114,18 +117,15 @@ org-pomodoro (only leaves =CLOCK:= lines), org-mem, orgalist.
 | =TRIGGER= | org-edna and org-gtd. |
 | =PARENT= vs =BRAIN_PARENTS= / =ORG_GTD_DEPENDS_ON= | Different graphs. |
 
-* Should-read later (not protocol 1)
+* Also read
 
-These change meaning if a file already carries them. Protocol 1
-preserves the bytes and does not interpret them.
-
-| Name | Why it would matter |
-|------+---------------------|
-| =#+SETUPFILE:= | Recurse in-buffer settings. |
-| =#+PRIORITIES:= | Files that are not =A B C=. |
-| =ORDERED= =NOBLOCKING= =LOGGING= =LOG_INTO_DRAWER= | Org's own child-block, not =:BLOCKED_BY:=. |
-| =#+PROPERTY:= / =*_ALL= | Allowed values; =Effort_ALL=. |
-| =#+ARCHIVE:= | Where archived trees go. |
+| Name | What vissue does |
+|------+------------------|
+| =#+SETUPFILE:= | Local files only. Keyword lines merge into TODO / TAGS / PRIORITIES. URLs are not fetched. |
+| =#+PRIORITIES:= | Highest / lowest / default cookies. A missing =[#X]= uses the default, not always =C=. |
+| =ORDERED= | Children with the same =:PARENT:= wait on earlier open siblings in =ready=. |
+| =NOBLOCKING= | That heading skips the ORDERED wait. |
+| slash =:ID:= | org-gcal =<event>/<calendar>=. Not an issue id. The heading stays Org around the issues. |
 
 * Sources
 

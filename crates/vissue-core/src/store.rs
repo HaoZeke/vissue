@@ -220,15 +220,38 @@ impl IssueDoc {
     /// not a failed parse.
     pub fn parse(project: &str, path: PathBuf, content: &str) -> Result<Self> {
         let lines: Vec<&str> = content.lines().collect();
-        let keywords = todo_keywords_from_lines(&lines);
+        let preamble_end = {
+            let mut nest = OrgScan::new();
+            lines
+                .iter()
+                .position(|line| {
+                    if nest.observe(line) {
+                        return false;
+                    }
+                    is_headline(line)
+                })
+                .unwrap_or(lines.len())
+        };
+        let raw_preamble = if preamble_end == 0 {
+            String::new()
+        } else {
+            lines[..preamble_end].join("\n").trim_end().to_string()
+        };
+        let settings = crate::org::merge_setupfile_settings(&raw_preamble, path.parent());
+        let mut keyword_src = settings.clone();
+        keyword_src.push('\n');
+        keyword_src.push_str(content);
+        let keyword_lines: Vec<&str> = keyword_src.lines().collect();
+        let keywords = todo_keywords_from_lines(&keyword_lines);
         let mut nest = OrgScan::new();
         let first_heading = lines
             .iter()
-            .position(|line| {
+            .enumerate()
+            .position(|(i, line)| {
                 if nest.observe(line) {
                     return false;
                 }
-                is_issue_headline(line, &keywords)
+                is_vissue_headline(&lines, i, &keywords)
             })
             .unwrap_or(lines.len());
         let preamble = if first_heading == 0 {
@@ -240,18 +263,23 @@ impl IssueDoc {
         let mut after = Vec::new();
         let mut i = first_heading;
         while i < lines.len() {
-            if !is_issue_headline(lines[i], &keywords) {
+            if !is_vissue_headline(&lines, i, &keywords) {
                 i += 1;
                 continue;
             }
-            let (heading, body_end) = parse_heading(&lines, i, &keywords)
-                .with_context(|| format!("at {}:{}", path.display(), i + 1))?;
+            let (heading, body_end) = parse_heading(
+                &lines,
+                i,
+                &keywords,
+                crate::org::priorities_from_preamble(&settings).default,
+            )
+            .with_context(|| format!("at {}:{}", path.display(), i + 1))?;
             headings.push(heading);
             i = body_end;
             let inter_start = i;
             let mut nest = OrgScan::new();
             while i < lines.len() {
-                if !nest.observe(lines[i]) && is_issue_headline(lines[i], &keywords) {
+                if !nest.observe(lines[i]) && is_vissue_headline(&lines, i, &keywords) {
                     break;
                 }
                 i += 1;
@@ -263,10 +291,14 @@ impl IssueDoc {
                 raw.trim_start_matches('\n').to_string()
             });
         }
+        let parent = path.parent().map(std::path::Path::to_path_buf);
         Ok(IssueDoc {
             project: project.to_string(),
             path,
-            tag_settings: tag_settings_from_preamble(&preamble),
+            tag_settings: tag_settings_from_preamble(&crate::org::merge_setupfile_settings(
+                &preamble,
+                parent.as_deref(),
+            )),
             preamble,
             headings,
             after,
@@ -366,6 +398,14 @@ impl IssueDoc {
         let _ = crate::events::ensure_gitignore_hint(dir);
     }
 
+    /// `#+PRIORITIES:` from this file and any local `#+SETUPFILE:`.
+    pub fn priority_spec(&self) -> crate::org::PrioritySpec {
+        crate::org::priorities_from_preamble(&crate::org::merge_setupfile_settings(
+            &self.preamble,
+            self.path.parent(),
+        ))
+    }
+
     /// Every heading id in this document, in file order.
     pub fn known_ids(&self) -> Vec<String> {
         self.headings.iter().map(|h| h.id.clone()).collect()
@@ -410,10 +450,62 @@ impl IssueDoc {
     }
 }
 
+fn is_vissue_headline(lines: &[&str], i: usize, keywords: &[String]) -> bool {
+    if !is_issue_headline(lines[i], keywords) {
+        return false;
+    }
+    peek_heading_id(lines, i).is_none_or(|id| !crate::org::is_gcal_event_id(&id))
+}
+
+fn peek_heading_id(lines: &[&str], start: usize) -> Option<String> {
+    let mut i = start + 1;
+    while i < lines.len() && !parse_planning_line(lines[i]).is_empty() {
+        i += 1;
+    }
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        if trimmed.is_empty() {
+            i += 1;
+            continue;
+        }
+        if !opens_a_drawer(trimmed) {
+            break;
+        }
+        if trimmed.eq_ignore_ascii_case(":PROPERTIES:") {
+            i += 1;
+            while i < lines.len() && !lines[i].trim().eq_ignore_ascii_case(":END:") {
+                let line = lines[i].trim();
+                if let Some(rest) = line.strip_prefix(':')
+                    && let Some((key, value)) = rest.split_once(':')
+                {
+                    let (key, _) = property_key_and_append(key.trim());
+                    if key.eq_ignore_ascii_case("ID") {
+                        let value = value.trim();
+                        if !value.is_empty() {
+                            return Some(value.to_string());
+                        }
+                    }
+                }
+                i += 1;
+            }
+            return None;
+        }
+        i += 1;
+        while i < lines.len() && !lines[i].trim().eq_ignore_ascii_case(":END:") {
+            i += 1;
+        }
+        if i < lines.len() {
+            i += 1;
+        }
+    }
+    None
+}
+
 fn parse_heading(
     lines: &[&str],
     start: usize,
     keywords: &[String],
+    default_priority: char,
 ) -> Result<(IssueHeading, usize)> {
     let header = lines[start];
     let stripped = header
@@ -424,7 +516,7 @@ fn parse_heading(
         .keyword
         .ok_or_else(|| anyhow!("not an issue heading"))?
         .to_string();
-    let priority = bits.priority.unwrap_or('C');
+    let priority = bits.priority.unwrap_or(default_priority);
     let (title_and_cookies, org_tags) = crate::model::split_headline_tags(bits.rest);
     let (title, statistics) = split_statistics_cookies(&title_and_cookies);
 
@@ -795,6 +887,9 @@ pub fn find_org_ids(
         let content = fs::read_to_string(entry.path())
             .with_context(|| format!("read {}", entry.path().display()))?;
         for id in org_ids(&content) {
+            if crate::org::is_gcal_event_id(id) {
+                continue;
+            }
             if wanted.contains(id) {
                 found.insert(id.to_string());
                 if found.len() == wanted.len() {
@@ -833,7 +928,9 @@ pub fn collect_org_ids(layout: &Layout) -> Result<std::collections::HashSet<Stri
         let content = fs::read_to_string(entry.path())
             .with_context(|| format!("read {}", entry.path().display()))?;
         for id in org_ids(&content) {
-            ids.insert(id.to_string());
+            if !crate::org::is_gcal_event_id(id) {
+                ids.insert(id.to_string());
+            }
         }
     }
     Ok(ids)
@@ -1148,6 +1245,67 @@ mod tests {
             written.find(":TYPE:").unwrap() < written.find(":PARENT:").unwrap(),
             "{written}"
         );
+    }
+
+    #[test]
+    fn a_gcal_event_heading_is_not_an_issue() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Software/sample/issues.org");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "#+TITLE: sample issues\n#+TODO: TODO STARTED BLOCKED | DONE CANCELLED\n\n* TODO [#A] Calendar dump\n:PROPERTIES:\n:ID:         abc123/primary@group.calendar.google.com\n:END:\n\n* TODO [#B] Real work\n:PROPERTIES:\n:ID:         sample-aaaa\n:END:\n",
+        )
+        .unwrap();
+        let doc = IssueDoc::parse_file("sample", &path).unwrap();
+        assert_eq!(
+            doc.headings.len(),
+            1,
+            "{:?}",
+            doc.headings.iter().map(|h| &h.id).collect::<Vec<_>>()
+        );
+        assert_eq!(doc.headings[0].id, "sample-aaaa");
+        let written = doc.render_string();
+        assert!(
+            written.contains("abc123/primary@group.calendar.google.com"),
+            "{written}"
+        );
+    }
+
+    #[test]
+    fn setupfile_todo_keywords_make_an_issue() {
+        let dir = tempfile::tempdir().unwrap();
+        let setup = dir.path().join("house.org");
+        fs::write(&setup, "#+TODO: TODO HOLD | DONE\n").unwrap();
+        let path = dir.path().join("Software/sample/issues.org");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            format!(
+                "#+TITLE: sample issues\n#+SETUPFILE: {}\n\n* HOLD [#C] Parked\n:PROPERTIES:\n:ID:         sample-hold\n:END:\n",
+                setup.display()
+            ),
+        )
+        .unwrap();
+        let doc = IssueDoc::parse_file("sample", &path).unwrap();
+        assert_eq!(doc.headings.len(), 1);
+        assert_eq!(doc.headings[0].state, "HOLD");
+        assert_eq!(doc.priority_spec().default, 'C');
+    }
+
+    #[test]
+    fn file_priorities_set_the_missing_cookie() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Software/sample/issues.org");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "#+TITLE: sample issues\n#+PRIORITIES: A D B\n#+TODO: TODO | DONE\n\n* TODO No cookie\n:PROPERTIES:\n:ID:         sample-none\n:END:\n",
+        )
+        .unwrap();
+        let doc = IssueDoc::parse_file("sample", &path).unwrap();
+        assert_eq!(doc.headings[0].priority, 'B');
+        assert_eq!(doc.priority_spec().lowest, 'D');
     }
 
     #[test]

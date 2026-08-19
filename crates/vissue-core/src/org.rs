@@ -874,6 +874,151 @@ fn protocol_stamp_line() -> String {
     format!("#+{PROTOCOL_KEYWORD}: {PROTOCOL_VERSION}")
 }
 
+/// File-local priority cookie range (`#+PRIORITIES: highest lowest default`).
+///
+/// Org requires the highest cookie to have a lower ASCII value than the
+/// lowest (`A` before `C`). The third token is the default when a heading
+/// has no `[#X]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrioritySpec {
+    /// Highest priority cookie (`A` in the house file).
+    pub highest: char,
+    /// Lowest priority cookie (`C` in the house file).
+    pub lowest: char,
+    /// Cookie written when the heading has none.
+    pub default: char,
+}
+
+impl Default for PrioritySpec {
+    fn default() -> Self {
+        Self {
+            highest: 'A',
+            lowest: 'C',
+            default: 'C',
+        }
+    }
+}
+
+impl PrioritySpec {
+    /// Whether `cookie` sits in this file's range, inclusive.
+    pub fn contains(self, cookie: char) -> bool {
+        let (lo, hi) = if self.highest <= self.lowest {
+            (self.highest, self.lowest)
+        } else {
+            (self.lowest, self.highest)
+        };
+        cookie >= lo && cookie <= hi
+    }
+}
+
+/// `#+PRIORITIES:` from the preamble, or `A C C`.
+pub fn priorities_from_preamble(preamble: &str) -> PrioritySpec {
+    for line in preamble.lines() {
+        let Some(rest) = strip_file_keyword(line.trim(), "PRIORITIES") else {
+            continue;
+        };
+        let mut toks = rest.split_whitespace();
+        let (Some(h), Some(l), Some(d)) = (toks.next(), toks.next(), toks.next()) else {
+            continue;
+        };
+        let (Some(highest), Some(lowest), Some(default)) =
+            (h.chars().next(), l.chars().next(), d.chars().next())
+        else {
+            continue;
+        };
+        return PrioritySpec {
+            highest,
+            lowest,
+            default,
+        };
+    }
+    PrioritySpec::default()
+}
+
+/// An org-gcal event id (`<event>/<calendar>`), not an org-id / vissue id.
+pub fn is_gcal_event_id(id: &str) -> bool {
+    let id = id.trim();
+    let Some((left, right)) = id.split_once('/') else {
+        return false;
+    };
+    !left.is_empty()
+        && !right.is_empty()
+        && !left.contains(char::is_whitespace)
+        && !right.contains(char::is_whitespace)
+}
+
+/// Org treats a non-empty property other than `nil` / `0` as true.
+pub fn org_property_is_set(
+    properties: &std::collections::BTreeMap<String, String>,
+    key: &str,
+) -> bool {
+    properties.get(key).is_some_and(|raw| {
+        let v = raw.trim();
+        !v.is_empty() && !v.eq_ignore_ascii_case("nil") && v != "0"
+    })
+}
+
+/// In-buffer settings from `#+SETUPFILE:` plus the file's own preamble.
+///
+/// Local files only. A URL is left unread. Cycles and a missing file are
+/// skipped so a tracker still parses.
+pub fn merge_setupfile_settings(preamble: &str, base_dir: Option<&std::path::Path>) -> String {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = String::new();
+    collect_setupfile_settings(preamble, base_dir, &mut seen, 0, &mut out);
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(preamble);
+    out
+}
+
+fn collect_setupfile_settings(
+    text: &str,
+    base_dir: Option<&std::path::Path>,
+    seen: &mut std::collections::HashSet<std::path::PathBuf>,
+    depth: u8,
+    out: &mut String,
+) {
+    if depth > 16 {
+        return;
+    }
+    for line in text.lines() {
+        let Some(rest) = strip_file_keyword(line.trim(), "SETUPFILE") else {
+            continue;
+        };
+        let spec = rest.trim().trim_matches('"').trim_matches('\'').trim();
+        if spec.is_empty()
+            || spec.contains("://")
+            || spec.starts_with("http:")
+            || spec.starts_with("https:")
+        {
+            continue;
+        }
+        let path = match base_dir {
+            Some(dir) => dir.join(spec),
+            None => std::path::PathBuf::from(spec),
+        };
+        let key = path.canonicalize().unwrap_or(path.clone());
+        if !seen.insert(key) {
+            continue;
+        }
+        let Ok(body) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let keywords: String = body
+            .lines()
+            .filter(|l| l.trim_start().starts_with("#+"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !keywords.is_empty() {
+            out.push_str(&keywords);
+            out.push('\n');
+        }
+        collect_setupfile_settings(&keywords, path.parent(), seen, depth + 1, out);
+    }
+}
+
 /// Whether the preamble already carries `#+NAME:`.
 pub fn preamble_has_keyword(preamble: &str, name: &str) -> bool {
     preamble
@@ -1680,6 +1825,47 @@ mod tests {
         assert_eq!(protocol_from_preamble("#+VISSUE: protocol 2\n"), Some(2));
         assert_eq!(protocol_from_preamble("#+VISSUE: protocol=3\n"), Some(3));
         assert_eq!(protocol_from_preamble("#+TITLE: x\n"), None);
+    }
+
+    #[test]
+    fn priorities_from_preamble_reads_highest_lowest_default() {
+        let spec = priorities_from_preamble("#+PRIORITIES: A D B\n");
+        assert_eq!(spec.highest, 'A');
+        assert_eq!(spec.lowest, 'D');
+        assert_eq!(spec.default, 'B');
+        assert!(spec.contains('C'));
+        assert!(!spec.contains('E'));
+        assert_eq!(priorities_from_preamble("").default, 'C');
+    }
+
+    #[test]
+    fn gcal_event_ids_are_not_org_ids() {
+        assert!(is_gcal_event_id("abc123/primary@group.calendar.google.com"));
+        assert!(is_gcal_event_id("evt/cal"));
+        assert!(is_gcal_event_id("abc/def/ghi"));
+        assert!(!is_gcal_event_id("atlas-1a2b"));
+        assert!(!is_gcal_event_id("no-slash"));
+    }
+
+    #[test]
+    fn setupfile_merges_local_inbuffer_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let setup = dir.path().join("house.org");
+        std::fs::write(
+            &setup,
+            "#+TODO: TODO HOLD | DONE\n#+PRIORITIES: A D C\n* not a keyword\n",
+        )
+        .unwrap();
+        let preamble = format!(
+            "#+TITLE: x\n#+SETUPFILE: {}\n#+CATEGORY: x\n",
+            setup.display()
+        );
+        let merged = merge_setupfile_settings(&preamble, Some(dir.path()));
+        assert!(merged.contains("#+TODO: TODO HOLD | DONE"), "{merged}");
+        assert!(merged.contains("#+PRIORITIES: A D C"), "{merged}");
+        assert!(merged.contains("#+CATEGORY: x"), "{merged}");
+        assert!(!merged.contains("* not a keyword"), "{merged}");
+        assert_eq!(priorities_from_preamble(&merged).lowest, 'D');
     }
 
     #[test]

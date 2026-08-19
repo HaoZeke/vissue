@@ -234,6 +234,9 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
             {
                 continue;
             }
+            if ordered_sibling_holds(rec, issues) {
+                continue;
+            }
         }
         if let Some(needle) = q.query.as_deref()
             && !list_query_matches(rec, needle)
@@ -263,6 +266,28 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
         out.truncate(limit);
     }
     Ok(out)
+}
+
+fn ordered_sibling_holds(rec: &IssueRec, issues: &[IssueRec]) -> bool {
+    if crate::org::org_property_is_set(&rec.heading.properties, "NOBLOCKING") {
+        return false;
+    }
+    let Some(parent_id) = rec.heading.parent() else {
+        return false;
+    };
+    let Some(parent) = issues.iter().find(|r| r.heading.id == parent_id) else {
+        return false;
+    };
+    if !crate::org::org_property_is_set(&parent.heading.properties, "ORDERED") {
+        return false;
+    }
+    issues.iter().any(|sib| {
+        sib.heading.id != rec.heading.id
+            && sib.heading.parent() == Some(parent_id)
+            && sib.heading.line_start < rec.heading.line_start
+            && sib.heading.state != "DONE"
+            && sib.heading.state != "CANCELLED"
+    })
 }
 
 fn list_query_matches(rec: &IssueRec, needle: &str) -> bool {

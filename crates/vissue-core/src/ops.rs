@@ -80,11 +80,19 @@ pub struct CreateOpts<'a> {
 pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>) -> Result<String> {
     let project = resolve_existing_project_case(layout, project)?;
     let cfg = VissueConfig::load(layout)?;
-    let priority = opts.priority.unwrap_or(cfg.issues.default_priority);
-    if !"ABC".contains(priority) {
-        return Err(anyhow!("invalid priority {priority:?}; allowed: A B C").into());
-    }
     let path = layout.project_issues_path(&project);
+    let spec = IssueDoc::parse_file(&project, &path)
+        .map(|d| d.priority_spec())
+        .unwrap_or_default();
+    let priority = opts.priority.unwrap_or(spec.default);
+    if !spec.contains(priority) {
+        return Err(anyhow!(
+            "invalid priority {priority:?}; file allows [#{}]..[#{}]",
+            spec.highest,
+            spec.lowest
+        )
+        .into());
+    }
 
     // Parent and body [[id:]] both need the corpus id set; scan once.
     let known_ids = if opts.parent.is_some() || opts.body.is_some() {
@@ -321,6 +329,7 @@ pub fn update_as_pred(
             None
         };
         let mut doc = IssueDoc::parse_file(&project, &path)?;
+        let spec = doc.priority_spec();
         let h = doc
             .headings
             .iter_mut()
@@ -381,8 +390,13 @@ pub fn update_as_pred(
         }
 
         if let Some(p) = new_priority {
-            if !"ABC".contains(p) {
-                return Err(anyhow!("invalid priority {p:?}; allowed: A B C").into());
+            if !spec.contains(p) {
+                return Err(anyhow!(
+                    "invalid priority {p:?}; file allows [#{}]..[#{}]",
+                    spec.highest,
+                    spec.lowest
+                )
+                .into());
             }
             if h.priority != p {
                 h.priority = p;

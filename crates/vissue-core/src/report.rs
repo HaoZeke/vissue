@@ -1033,8 +1033,13 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             )?;
             warnings += 1;
         }
+        let spec = doc.priority_spec();
         let mut type_not_tagged = 0usize;
         let mut exclusive_clash = 0usize;
+        let mut priority_out_of_range = 0usize;
+        let mut ordered_skip = 0usize;
+        let mut done_with_open_children = 0usize;
+        let mut gcal_ids = 0usize;
         let mut priority_in_drawer = 0usize;
         let mut blockedby_typo = 0usize;
         let mut blocker_as_ids = 0usize;
@@ -1060,6 +1065,12 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                     break;
                 }
             }
+            if !spec.contains(h.priority) {
+                priority_out_of_range += 1;
+            }
+            if crate::org::is_gcal_event_id(&h.id) {
+                gcal_ids += 1;
+            }
             if h.properties.contains_key("PRIORITY") {
                 priority_in_drawer += 1;
             }
@@ -1081,6 +1092,29 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                 && !crate::org::is_org_effort(effort)
             {
                 bad_effort += 1;
+            }
+            if let Some(pid) = h.parent()
+                && let Some(parent) = doc.headings.iter().find(|p| p.id == pid)
+                && crate::org::org_property_is_set(&parent.properties, "ORDERED")
+                && !crate::org::org_property_is_set(&h.properties, "NOBLOCKING")
+            {
+                let earlier_open = doc.headings.iter().any(|sib| {
+                    sib.parent() == Some(pid)
+                        && sib.line_start < h.line_start
+                        && sib.state != "DONE"
+                        && sib.state != "CANCELLED"
+                });
+                if earlier_open && (h.state == "STARTED" || h.state == "DONE") {
+                    ordered_skip += 1;
+                }
+            }
+            if h.state == "DONE"
+                && !crate::org::org_property_is_set(&h.properties, "NOBLOCKING")
+                && doc.headings.iter().any(|c| {
+                    c.parent() == Some(h.id.as_str()) && c.state != "DONE" && c.state != "CANCELLED"
+                })
+            {
+                done_with_open_children += 1;
             }
         }
         if type_not_tagged > 0 {
@@ -1131,6 +1165,34 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
                 "[warn] {project}: {bad_effort} heading(s) have an Effort value Org will not parse"
             )?;
             warnings += 1;
+        }
+        if priority_out_of_range > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {priority_out_of_range} heading(s) have a [#prio] outside #+PRIORITIES:"
+            )?;
+            warnings += 1;
+        }
+        if ordered_skip > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {ordered_skip} heading(s) started or closed before an earlier ORDERED sibling"
+            )?;
+            warnings += 1;
+        }
+        if done_with_open_children > 0 {
+            writeln!(
+                out,
+                "[warn] {project}: {done_with_open_children} DONE heading(s) still have open children (Org ORDERED / todo-dependencies)"
+            )?;
+            warnings += 1;
+        }
+        if gcal_ids > 0 {
+            writeln!(
+                out,
+                "[err]  {project}: {gcal_ids} heading(s) use an org-gcal event id as :ID:"
+            )?;
+            errors += 1;
         }
     }
 

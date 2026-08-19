@@ -223,6 +223,44 @@ fn detail_carries_the_tags_and_the_file_range() {
 }
 
 #[test]
+fn ready_waits_on_an_ordered_sibling() {
+    let mut recs = corpus();
+    let parent_id = recs[1].heading.id.clone();
+    recs[1]
+        .heading
+        .properties
+        .insert("ORDERED".into(), "t".into());
+    recs[2]
+        .heading
+        .properties
+        .insert("PARENT".into(), parent_id.clone());
+    recs[2].heading.line_start = 20;
+    recs[3]
+        .heading
+        .properties
+        .insert("PARENT".into(), parent_id);
+    recs[3].heading.line_start = 40;
+    recs[3].heading.state = "TODO".into();
+    recs[3].heading.properties.remove("BLOCKED_BY");
+    let later = recs[3].heading.id.clone();
+    let cat = CatalogService::from_recs(&recs);
+    let held = cat.ready(None).unwrap();
+    let ready = ids(&held);
+    assert!(
+        !ready.contains(&later.as_str()),
+        "later ORDERED sibling was ready: {ready:?}"
+    );
+    recs[2].heading.state = "DONE".into();
+    let cat = CatalogService::from_recs(&recs);
+    let freed = cat.ready(None).unwrap();
+    let ready = ids(&freed);
+    assert!(
+        ready.contains(&later.as_str()),
+        "later sibling still held after earlier DONE: {ready:?}"
+    );
+}
+
+#[test]
 fn search_matches_filetags_and_a_group_tag() {
     let mut recs = corpus();
     recs[0].tag_settings.filetags = vec!["issues".into(), "atlas".into()];

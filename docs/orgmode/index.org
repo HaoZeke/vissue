@@ -52,6 +52,9 @@ the lock that stops two workers taking the same node.
 - [[file:org-syntax.org][Org syntax]] is the Org 9.8 manual mapped onto an
   =issues.org=: what the parser treats as structure, and what it keeps
   as body.
+- [[file:ecosystem.org][Org ecosystem]] is the ELPA / contrib / MELPA inventory:
+  own, read, preserve, ignore. Protocol 1 is the tracker contract, not
+  parity with org-noter.
 - [[file:control.org][Control]] is the optional Unix socket: framing, methods, and
   how the board and HUD attach.
 
@@ -87,4 +90,5 @@ $ vissue man > ~/.local/share/man/man1/vissue.1
    explanation
    emacs
    org-syntax
+   ecosystem
 #+end_export

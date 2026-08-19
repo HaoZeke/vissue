@@ -1891,7 +1891,7 @@ fn a_rewrite_keeps_what_another_tool_put_there() {
         // Properties belonging to something else entirely.
         .replacen(
             ":CREATED:",
-            ":EXTERNAL_REF: abc123\n:CUSTOM_ID:  my-anchor\n:CREATED:",
+            ":EXTERNAL_REF: abc123\n:CUSTOM_ID:  my-anchor\n:NOTER_DOCUMENT:  ~/doc.pdf\n:ROAM_REFS:  cite:key\n:CREATED:",
             1,
         );
     fs::write(&path, &planted).unwrap();
@@ -1907,8 +1907,12 @@ fn a_rewrite_keeps_what_another_tool_put_there() {
         "#+PROPERTY: Effort_ALL 1 2 3",
         ":EXTERNAL_REF:",
         ":CUSTOM_ID:",
+        ":NOTER_DOCUMENT:",
+        ":ROAM_REFS:",
         "abc123",
         "my-anchor",
+        "~/doc.pdf",
+        "cite:key",
     ] {
         assert!(after.contains(kept), "a rewrite dropped {kept:?}");
     }

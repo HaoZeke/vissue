@@ -18,6 +18,13 @@ the house Org shape in this file: =#+CATEGORY:=, =#+FILETAGS:= with
 minted). =normalize= writes the stamp. =check= names a file that lacks
 it or carries a future number.
 
+Protocol 1 is that tracker contract. It is not parity with every Org
+package. A rewrite keeps a property it does not own, so org-noter,
+Interleave, org-roam, org-attach, and org-gtd drawers survive. vissue
+does not open a noter session, resolve a roam backlink, evaluate
+Babel, or publish HTML. Emacs still does those things to the same
+file. The named inventory is [[file:ecosystem.org][Org ecosystem]].
+
 * 1 Introduction
 
 Out of scope. The manual's tour of Org as an editor does not change the
@@ -225,6 +232,12 @@ Settable: a heading may put these in the drawer and Org honours them.
 | =BLOCKER= =TRIGGER= | GNU ELPA *org-edna* (maintained). org-depend in org-contrib is the older copy. | Condition language: =ids(a b)=, =prev-sibling=, =headings("...")=. =ready= takes ids out of =ids(...)= or a bare id list. A rewrite moves a bare id list to =:BLOCKED_BY:= so it does not collide with edna. An edna form stays. |
 | =ORG_GTD= =TRIGGER= =CATEGORY= | org-gtd (MELPA) | GTD bucket and area of focus. Preserved. |
 | =CREATED= =EXPIRY= | org-expiry (org-contrib) | =CREATED= is already the vissue stamp. |
+| =NOTER_DOCUMENT= =NOTER_PAGE= | org-noter (MELPA). Interleave used =INTERLEAVE_PDF= / =INTERLEAVE_PAGE_NOTE=. | PDF path and page. Preserved. A noter note is a child heading, so it stays in the parent issue's body. |
+| =ROAM_REFS= =ROAM_ALIASES= =ROAM_EXCLUDE= | org-roam (MELPA) | Cite/link refs and aliases. Preserved. =ID= is already required. |
+| =ORG_GTD_*= =PREVIOUS_ORG_GTD= | org-gtd v4 | Extra GTD keys. Do not fold =ORG_GTD_DEPENDS_ON= into =BLOCKED_BY=. |
+| =DRILL_*= =FC_*= =ANKI_*= =LEARN_DATA= | org-drill / org-fc / anki-editor | Spaced-repetition state. Extra drawer =:REVIEW_DATA:= stays. |
+| =calendar-id= =ETag= | org-gcal | Google event. Its =:ID:= may be =<event>/<calendar>=, not org-id. |
+| =BRAIN_*= | org-brain | A different parent/child graph. |
 | =STYLE= | org-habit (Org core) | =habit= |
 
 =:BLOCKED_BY:= remains the vissue graph. =:BLOCKEDBY:= is a typo and

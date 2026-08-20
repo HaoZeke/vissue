@@ -404,6 +404,8 @@ pub struct Palette {
     project_sel: usize,
     project_selection: icedtea::collection::Selection,
     project_window: icedtea::collection::VisibleWindow,
+    task_window: icedtea::collection::VisibleWindow,
+    task_heights: Vec<f32>,
     detail_split: icedtea::layout::SplitState,
     sash_drag: icedtea::layout::SashDrag,
     window_h: f32,
@@ -516,6 +518,8 @@ impl Palette {
             project_sel: 0,
             project_selection: icedtea::collection::Selection::None,
             project_window: icedtea::collection::VisibleWindow::new(480.0),
+            task_window: icedtea::collection::VisibleWindow::new(480.0),
+            task_heights: Vec::new(),
             detail_split: icedtea::layout::SplitState::new(icedtea::layout::Axis::Vertical, 0.68),
             sash_drag: icedtea::layout::SashDrag::default(),
             window_h: 760.0,
@@ -829,6 +833,73 @@ impl Palette {
         self.project_window = window;
     }
 
+    /// Scroll window the task board paints.
+    pub fn task_window(&self) -> icedtea::collection::VisibleWindow {
+        self.task_window
+    }
+
+    /// Store the task board scroll window.
+    pub fn set_task_window(&mut self, window: icedtea::collection::VisibleWindow) {
+        self.task_window = window;
+    }
+
+    /// Per-row heights for [`icedtea::widget::virtual_column`].
+    pub fn task_heights(&self) -> &[f32] {
+        &self.task_heights
+    }
+
+    /// Visible task-board rows: group headers, then the open cards.
+    pub fn board_rows(&self) -> Vec<BoardRow<'_>> {
+        let group = self.project.is_none();
+        let searching = !self.query.is_empty();
+        let mut out = Vec::new();
+        for section in self.sections() {
+            if group {
+                out.push(BoardRow::Header {
+                    project: section.project,
+                    count: section.rows.len(),
+                    open: !section.collapsed,
+                    searching,
+                });
+            }
+            if !section.collapsed || !group {
+                for (index, item) in section.rows {
+                    out.push(BoardRow::Task { index, item });
+                }
+            }
+        }
+        out
+    }
+
+    fn refresh_task_list(&mut self) {
+        let rows = self.board_rows();
+        let heights: Vec<f32> = rows.iter().map(|row| row.height()).collect();
+        let cover = rows.iter().position(|row| match row {
+            BoardRow::Task { index, .. } => *index == self.selected,
+            BoardRow::Header { .. } => false,
+        });
+        let viewport = self.task_window.viewport.max(1.0);
+        let mut scroll = self.task_window.scroll;
+        if let Some(i) = cover {
+            let top: f32 = heights.iter().take(i).sum();
+            let h = heights.get(i).copied().unwrap_or(0.0);
+            if top < scroll {
+                scroll = top;
+            } else if top + h > scroll + viewport {
+                scroll = (top + h - viewport).max(0.0);
+            }
+        }
+        self.task_window = icedtea::collection::window_after_scroll_var(
+            self.task_window,
+            scroll,
+            viewport,
+            &heights,
+            2,
+            None,
+        );
+        self.task_heights = heights;
+    }
+
     /// List/detail split the board paints.
     pub fn detail_split(&self) -> icedtea::layout::SplitState {
         self.detail_split
@@ -951,6 +1022,7 @@ impl Palette {
         if !self.collapsed.remove(project) {
             self.collapsed.insert(project.to_string());
         }
+        self.refresh_task_list();
     }
 
     fn seed_collapse(&mut self) {
@@ -1671,6 +1743,7 @@ impl Palette {
                 self.collapsed.remove(&p);
             }
             self.follow_selection();
+            self.refresh_task_list();
         }
     }
 
@@ -1860,6 +1933,7 @@ impl Palette {
             self.tree_focus = None;
             self.related_hits.clear();
             self.related_marks.clear();
+            self.refresh_task_list();
             return Ok(());
         }
         let project = self.project.clone();
@@ -1900,6 +1974,7 @@ impl Palette {
             self.tree_stale = true;
         }
         self.refresh_detail();
+        self.refresh_task_list();
         Ok(())
     }
 
@@ -2077,6 +2152,7 @@ impl Palette {
         if next != self.selected {
             self.selected = next;
             self.follow_selection();
+            self.refresh_task_list();
         }
     }
 
@@ -2170,6 +2246,41 @@ fn excerpt_form(d: &IssueDetail) -> Vec<ExcerptField> {
         push("tags", "Tags", tags.join("  ·  "));
     }
     rows
+}
+
+/// One mounted row on the task board.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoardRow<'a> {
+    /// Project group header when more than one project is on the board.
+    Header {
+        /// Project directory name.
+        project: &'a str,
+        /// How many matching issues sit under this header.
+        count: usize,
+        /// Whether the group's cards are shown.
+        open: bool,
+        /// Search is narrowing the group.
+        searching: bool,
+    },
+    /// Issue card. `index` is the filtered-list cursor.
+    Task {
+        /// Index into [`Palette::filtered_items`].
+        index: usize,
+        /// Issue the card paints.
+        item: &'a HudItem,
+    },
+}
+
+impl BoardRow<'_> {
+    const HEADER_H: f32 = 40.0;
+    const TASK_H: f32 = 56.0;
+
+    fn height(self) -> f32 {
+        match self {
+            Self::Header { .. } => Self::HEADER_H,
+            Self::Task { .. } => Self::TASK_H,
+        }
+    }
 }
 
 /// One project group in the current filter.

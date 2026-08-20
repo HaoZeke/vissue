@@ -8,7 +8,7 @@
 
 use vissue_core::config::{DEFAULT_PREFIX, Layout};
 use vissue_core::ops::{self, CreateOpts};
-use vissue_hud::palette::{BoardFilter, DetailTab, Focus, Palette};
+use vissue_hud::palette::{BoardFilter, BoardRow, DetailTab, Focus, Palette, PaletteKey};
 use vissue_hud::summon::{SummonAction, SummonRequest};
 
 fn tracker() -> (tempfile::TempDir, Layout) {
@@ -87,6 +87,97 @@ fn rows_are_grouped_into_one_section_per_project() {
         assert_eq!(section.start, next, "a gap between sections");
         next = section.end;
     }
+}
+
+#[test]
+fn search_board_rows_are_headers_then_open_project_cards() {
+    let (_dir, mut palette) = across_projects();
+    let rows = palette.board_rows();
+    assert!(
+        rows.iter()
+            .any(|row| matches!(row, BoardRow::Header { .. })),
+        "grouped search paints a header per project"
+    );
+    assert!(
+        rows.iter().any(|row| matches!(row, BoardRow::Task { .. })),
+        "the open section still lists its cards"
+    );
+    assert_eq!(palette.task_heights().len(), rows.len());
+
+    let open: Vec<String> = palette
+        .sections()
+        .iter()
+        .filter(|section| !section.collapsed)
+        .map(|section| section.project.to_string())
+        .collect();
+    let before = rows.len();
+    for name in &open {
+        palette.toggle_project(name);
+    }
+    let collapsed = palette.board_rows();
+    assert!(
+        collapsed
+            .iter()
+            .all(|row| matches!(row, BoardRow::Header { open: false, .. })),
+        "collapsed groups keep the header only"
+    );
+    assert!(
+        collapsed.len() < before,
+        "hiding the open cards should shrink the board"
+    );
+    assert_eq!(palette.task_heights().len(), collapsed.len());
+}
+
+#[test]
+fn moving_down_the_task_list_scrolls_the_window_to_the_cursor() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+    std::fs::create_dir_all(layout.projects_dir()).expect("projects dir");
+    for i in 0..40 {
+        ops::create(
+            &layout,
+            "atlas",
+            &format!("Task {i:02}"),
+            CreateOpts::default(),
+        )
+        .expect("create");
+    }
+    let mut palette = Palette::open_core(layout, "virt".into()).expect("open");
+    palette.show();
+    palette.enter_project("atlas");
+    palette.set_filter(BoardFilter::List);
+
+    assert_eq!(palette.board_rows().len(), 40);
+    assert_eq!(palette.task_heights().len(), 40);
+    let first = palette.task_window();
+    assert!(first.end > 0, "the first paint must mount a window");
+    assert!(
+        first.end < 40,
+        "a short pane must not mount every card: {}..{}",
+        first.start,
+        first.end
+    );
+
+    for _ in 0..30 {
+        palette.handle_key(PaletteKey::Down);
+    }
+    let selected = palette.selected_index();
+    let cover = palette
+        .board_rows()
+        .iter()
+        .position(|row| matches!(row, BoardRow::Task { index, .. } if *index == selected))
+        .expect("cursor on a card");
+    let win = palette.task_window();
+    assert!(
+        cover >= win.start && cover < win.end,
+        "cursor {cover} outside window {}..{}",
+        win.start,
+        win.end
+    );
+    assert!(
+        win.scroll > 0.0 || win.start > 0,
+        "the window must move with the cursor"
+    );
 }
 
 #[test]

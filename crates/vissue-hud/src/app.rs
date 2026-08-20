@@ -76,6 +76,8 @@ pub enum Message {
     PickProject(usize),
     /// Home project list scroll window.
     ProjectScroll(icedtea::collection::VisibleWindow),
+    /// Task board scroll window.
+    TaskScroll(icedtea::collection::VisibleWindow),
     /// Return to the home project list.
     LeaveProject,
     /// Copy a markdown link target.
@@ -236,6 +238,10 @@ impl HudApp {
             }
             Message::ProjectScroll(window) => {
                 self.palette.set_project_window(window);
+                Task::none()
+            }
+            Message::TaskScroll(window) => {
+                self.palette.set_task_window(window);
                 Task::none()
             }
             Message::LeaveProject => {

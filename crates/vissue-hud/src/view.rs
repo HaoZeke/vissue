@@ -13,7 +13,7 @@ use icedtea::variant::Variant;
 use icedtea::widget;
 
 use crate::app::Message;
-use crate::palette::{BoardFilter, DetailTab, Focus, HudItem, Palette, TreeRow};
+use crate::palette::{BoardFilter, BoardRow, DetailTab, Focus, HudItem, Palette, TreeRow};
 use crate::theme;
 
 /// Board face. Hidden state draws nothing so a closed overlay is empty.
@@ -223,39 +223,30 @@ fn project_browser(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     )
 }
 
-fn task_cards<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
-    let selected = palette.selected_index();
-    let group = palette.project().is_none();
-    let mut list = column![].spacing(4).width(Fill);
-    for section in palette.sections() {
-        let mut rows = column![].spacing(4).width(Fill);
-        if !section.collapsed || group {
-            for (i, item) in &section.rows {
-                rows = rows.push(task_row(item, *i == selected, tea));
-            }
-        }
-        if group {
-            list = list.push(project_group(
-                section.project,
-                section.rows.len(),
-                !section.collapsed,
-                !palette.query().is_empty(),
-                rows,
-                tea,
-            ));
-        } else {
-            list = list.push(rows);
-        }
-    }
-    list.into()
-}
-
 fn task_board<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
-    let list = pane_scroll(
-        task_cards(palette, tea),
+    let rows = palette.board_rows();
+    let selected = palette.selected_index();
+    let list = widget::virtual_column(
+        palette.task_heights(),
+        palette.task_window(),
+        2,
+        None,
+        Message::TaskScroll,
+        None,
         tea,
+        move |i| match rows.get(i) {
+            Some(BoardRow::Header {
+                project,
+                count,
+                open,
+                searching,
+            }) => group_header(project, *count, *open, *searching, tea),
+            Some(BoardRow::Task { index, item }) => task_row(item, *index == selected, tea),
+            None => Space::new().height(0).into(),
+        },
         A11y::new("tasks", Role::List),
     );
+    let list = container(list).width(Fill).height(Fill).into();
     if palette.painted_id().is_some() {
         list_detail(palette, list, tea)
     } else {
@@ -287,35 +278,49 @@ fn add_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     }
 }
 
-fn project_group<'a>(
+fn group_header(
     project: &str,
     count: usize,
     open: bool,
     searching: bool,
-    rows: iced::widget::Column<'a, Message>,
     tea: Tokens,
-) -> Element<'a, Message> {
+) -> Element<'static, Message> {
     let name = project.to_string();
-    widget::expander(
-        project.to_string(),
-        Some(badge_mark(
-            count.to_string(),
-            if searching {
-                Variant::Primary
-            } else {
-                Variant::Chip
-            },
-            tea,
-            "count",
-        )),
-        rows.into(),
-        widget::Peek::Pixels(0.0),
-        open,
-        if open { 1.0 } else { 0.0 },
-        move |_| Message::ToggleProject(name.clone()),
+    let twisty: Element<'static, Message> = text(tree_twisty_mark(open, tea.direction))
+        .size(tea.meta())
+        .color(tea.muted)
+        .into();
+    let title: Element<'static, Message> = text(project.to_string())
+        .size(tea.body())
+        .font(icedtea::typo::UI)
+        .color(tea.text)
+        .into();
+    let count = badge_mark(
+        count.to_string(),
+        if searching {
+            Variant::Primary
+        } else {
+            Variant::Chip
+        },
         tea,
-        A11y::new(project.to_string(), Role::Group),
+        "count",
+    );
+    let mut face = row![];
+    for kid in icedtea::i18n::order(tea.direction, [twisty, title, count]) {
+        face = face.push(kid);
+    }
+    mouse_area(
+        container(
+            face.spacing(8)
+                .align_y(Alignment::Center)
+                .width(Fill)
+                .padding([8, 6]),
+        )
+        .width(Fill)
+        .style(move |_| icedtea::style::card(tea, false)),
     )
+    .on_press(Message::ToggleProject(name))
+    .into()
 }
 
 /// Outline indent: four density gaps (16px at Compact), wider than the twisty.
@@ -1012,7 +1017,7 @@ mod tests {
         assert!(src.contains("widget::themed_text_input"));
         assert!(src.contains("widget::search_input_clear"));
         assert!(src.contains("widget::list_view"));
-        assert!(src.contains("widget::expander"));
+        assert!(src.contains("widget::virtual_column"));
         assert!(src.contains("widget::themed_checkbox"));
         assert!(src.contains("split_view"));
         assert!(src.contains("widget::themed_scroll"));

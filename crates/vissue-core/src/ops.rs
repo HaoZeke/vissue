@@ -2245,11 +2245,46 @@ mod tests {
             .find(|h| h.id != parent)
             .map(|h| h.id.clone())
             .unwrap();
-        append_body(&layout, &parent, &format!("done in [[id:{child}]]")).unwrap();
+        // The prose claims a discovery, so the warning would fire on this pair
+        // if the parent edge were not recognised. Without the claim the test
+        // would pass whatever edge_connects does, and asserting the absence of
+        // the old wording would pass even with the fix reverted.
+        append_body(
+            &layout,
+            &parent,
+            &format!("discovered while reading [[id:{child}]]"),
+        )
+        .unwrap();
+        create(&layout, "sample", "unrelated", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let stranger = doc
+            .headings
+            .iter()
+            .find(|h| h.id != parent && h.id != child)
+            .map(|h| h.id.clone())
+            .unwrap();
+        append_body(
+            &layout,
+            &stranger,
+            &format!("discovered while reading [[id:{parent}]]"),
+        )
+        .unwrap();
 
         let report = crate::report::check(&layout).unwrap();
+        let flagged: Vec<&str> = report
+            .text
+            .lines()
+            .filter(|l| l.contains("as discovered or pivoted"))
+            .collect();
         assert!(
-            !report.text.contains("no DISCOVERED_FROM or PIVOTED_TO"),
+            flagged.iter().any(|l| l.contains(&stranger)),
+            "the control pair with no edge was not flagged, so this test proves nothing: {}",
+            report.text
+        );
+        assert!(
+            !flagged
+                .iter()
+                .any(|l| l.contains(&parent) && l.contains(&child)),
             "a parent edge did not count as a relation: {}",
             report.text
         );

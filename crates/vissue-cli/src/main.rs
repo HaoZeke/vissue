@@ -1432,7 +1432,13 @@ fn graph_routed(router: &Router, project: Option<&str>) -> Result<String> {
 }
 
 fn roadmap_routed(router: &Router, project: Option<&str>) -> Result<String> {
-    concat_project_reports(router, project, report::roadmap)
+    // The title belongs to the document, so it goes above the projects rather
+    // than above each one. Concatenating whole roadmaps repeats it per project.
+    if project.is_some() {
+        return concat_project_reports(router, project, report::roadmap);
+    }
+    let body = concat_project_reports(router, project, report::roadmap_body)?;
+    Ok(format!("{}{body}", report::ROADMAP_HEADER))
 }
 
 fn concat_project_reports(

@@ -816,7 +816,33 @@ pub fn graph(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
 /// # Errors
 ///
 /// Returns an error if the corpus cannot be read.
+/// The document furniture a roadmap opens with. Exposed because a caller that
+/// assembles one roadmap out of several projects writes it once rather than once
+/// per project: concatenating whole roadmaps puts a title above every project
+/// section, so a corpus of six carries six titles in one document.
+pub const ROADMAP_HEADER: &str = concat!(
+    "# Roadmap\n\n",
+    "Generated from `vissue roadmap`. Source of truth lives in the per-project issues.org files.\n\n"
+);
+
+/// A markdown roadmap of active and closed work, with its title.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn roadmap(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
+    Ok(format!(
+        "{ROADMAP_HEADER}{}",
+        roadmap_body(layout, project_filter)?
+    ))
+}
+
+/// The roadmap's project sections, without the document title.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
+pub fn roadmap_body(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     let all = load_all(layout)?;
     let mut by_project: BTreeMap<String, Vec<&IssueHeading>> = BTreeMap::new();
     for (project, h) in &all {
@@ -826,13 +852,6 @@ pub fn roadmap(layout: &Layout, project_filter: Option<&str>) -> Result<String> 
         by_project.entry(project.clone()).or_default().push(h);
     }
     let mut out = String::new();
-    writeln!(out, "# Roadmap")?;
-    writeln!(out)?;
-    writeln!(
-        out,
-        "Generated from `vissue roadmap`. Source of truth lives in the per-project issues.org files."
-    )?;
-    writeln!(out)?;
     for (project, mut headings) in by_project {
         headings.sort_by(|a, b| {
             a.priority

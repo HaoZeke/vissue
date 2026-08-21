@@ -370,6 +370,37 @@ fn an_empty_project_does_not_say_nothing_here_next_to_another_project_rows() {
     );
 }
 
+// A title introduces the document, so a roadmap over every project carries one,
+// not one per project. Concatenating whole roadmaps gives a corpus of six six
+// titles, each with its own "generated from" line, sitting between the project
+// sections the title is meant to introduce.
+#[test]
+fn the_roadmap_titles_the_document_once_however_many_projects_it_covers() {
+    let text = String::from_utf8(vissue(&["roadmap"]).stdout).unwrap();
+    assert_eq!(
+        text.lines().filter(|l| *l == "# Roadmap").count(),
+        1,
+        "{text}"
+    );
+    assert_eq!(
+        text.matches("Generated from `vissue roadmap`").count(),
+        1,
+        "{text}"
+    );
+    // Both projects are still in the one document, under their own headings.
+    assert!(text.contains("## atlas"), "{text}");
+    assert!(text.contains("## beacon"), "{text}");
+}
+
+// Asked about one project, the roadmap is still a document and keeps its title.
+#[test]
+fn a_single_project_roadmap_keeps_its_title() {
+    let text = String::from_utf8(vissue(&["roadmap", "--project", "beacon"]).stdout).unwrap();
+    assert!(text.starts_with("# Roadmap"), "{text}");
+    assert!(text.contains("## beacon"), "{text}");
+    assert!(!text.contains("## atlas"), "{text}");
+}
+
 // Asked about one project, the sentinel is the whole answer and stays.
 #[test]
 fn a_project_with_no_claims_still_says_so_when_it_is_the_question() {

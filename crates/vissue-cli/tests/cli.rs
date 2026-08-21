@@ -348,6 +348,35 @@ fn the_shared_issue_root_environment_is_supported() {
     assert_eq!(String::from_utf8(out.stdout).unwrap(), "atlas\nbeacon\n");
 }
 
+// "Nothing here" is an answer about the corpus, not about a project's share of
+// it. Over the fixture's two projects, claims printed atlas's claim and then
+// beacon's "no live claims"; a corpus of six printed it above nine claims, and
+// agenda printed its own sentinel five times above the dated rows.
+#[test]
+fn an_empty_project_does_not_say_nothing_here_next_to_another_project_rows() {
+    let out = vissue(&["claims"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("fixture-agent"), "{text}");
+    assert!(
+        !text.contains("no live claims"),
+        "an empty project printed its sentinel beside another's rows: {text}"
+    );
+
+    let dated = String::from_utf8(vissue(&["agenda", "--days", "5000"]).stdout).unwrap();
+    assert!(dated.contains("beacon-5j6k"), "{dated}");
+    assert!(
+        !dated.contains("nothing dated in range"),
+        "the agenda sentinel survived beside dated rows: {dated}"
+    );
+}
+
+// Asked about one project, the sentinel is the whole answer and stays.
+#[test]
+fn a_project_with_no_claims_still_says_so_when_it_is_the_question() {
+    let text = String::from_utf8(vissue(&["claims", "--project", "beacon"]).stdout).unwrap();
+    assert_eq!(text, "no live claims\n", "{text}");
+}
+
 #[test]
 fn the_read_only_command_surface_dispatches_against_the_fixture() {
     let cases: &[(&[&str], &str)] = &[

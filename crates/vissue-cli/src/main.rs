@@ -1391,19 +1391,28 @@ fn count_routed(
     Ok(format!("{n}\n"))
 }
 
+/// The line a report prints when it has nothing to show. It belongs to the
+/// answer, not to a project's share of it: without this, a run over six
+/// projects printed "no live claims" above a list of nine claims, and
+/// `agenda` printed "nothing dated in range" five times above the dated rows.
+const NO_CLAIMS: &str = "no live claims\n";
+const NOTHING_DATED: &str = "nothing dated in range\n";
+
 fn claims_routed(
     router: &Router,
     by: Option<&str>,
     project: Option<&str>,
     json: bool,
 ) -> Result<String> {
-    concat_project_reports(router, project, |layout, filter| {
+    // JSON is one array per project and has no sentinel to collapse.
+    let marker = if json { None } else { Some(NO_CLAIMS) };
+    concat_project_reports_with(router, project, marker, |layout, filter| {
         report::claims(layout, by, filter, json)
     })
 }
 
 fn agenda_routed(router: &Router, days: i64, project: Option<&str>) -> Result<String> {
-    concat_project_reports(router, project, |layout, filter| {
+    concat_project_reports_with(router, project, Some(NOTHING_DATED), |layout, filter| {
         report::agenda(layout, days, filter)
     })
 }
@@ -1429,6 +1438,23 @@ fn roadmap_routed(router: &Router, project: Option<&str>) -> Result<String> {
 fn concat_project_reports(
     router: &Router,
     project: Option<&str>,
+    f: impl FnMut(&Layout, Option<&str>) -> vissue_core::Result<String>,
+) -> Result<String> {
+    concat_project_reports_with(router, project, None, f)
+}
+
+/// Concatenate a per-project report, collapsing the empty-set line if one is
+/// named.
+///
+/// A report that says "nothing here" says it per project, and a run over a
+/// corpus of six says it up to six times, interleaved with the projects that
+/// did have rows. Asked for one project, the sentinel is the whole answer and
+/// stays; asked for all of them, it is dropped from each fragment and printed
+/// once when every fragment was empty.
+fn concat_project_reports_with(
+    router: &Router,
+    project: Option<&str>,
+    empty_marker: Option<&str>,
     mut f: impl FnMut(&Layout, Option<&str>) -> vissue_core::Result<String>,
 ) -> Result<String> {
     if let Some(p) = project {
@@ -1437,7 +1463,16 @@ fn concat_project_reports(
     }
     let mut out = String::new();
     for pref in router.visible_projects()? {
-        out.push_str(&f(&pref.layout, Some(&pref.dir))?);
+        let part = f(&pref.layout, Some(&pref.dir))?;
+        match empty_marker {
+            Some(marker) if part == marker => {}
+            _ => out.push_str(&part),
+        }
+    }
+    if let Some(marker) = empty_marker
+        && out.is_empty()
+    {
+        out.push_str(marker);
     }
     Ok(out)
 }

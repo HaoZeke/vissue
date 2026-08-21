@@ -99,8 +99,16 @@ $ vissue resolve parser-1a2b --state CANCELLED
 #+end_src
 
 =check= warns when a =DONE= body reads as a reject, when a body =[[id:]]=
-has no =DISCOVERED_FROM= or =PIVOTED_TO= either way, and when a sibling
-terminal is unresolved.
+is connected by no edge at all, and when a sibling terminal is unresolved.
+
+Both of the first two are narrower than they sound, on purpose. "Reads as a
+reject" means the shapes a rejection is written in -- =vissue reject=,
+"superseded by", "rejected in favour of", or a heading naming the outcome -- and
+not the word itself: a bug report about validation says "rejected" in every
+other sentence, and warning about those is how a check gets ignored. And the
+edge can be =DISCOVERED_FROM=, =PIVOTED_TO=, =PARENT= or =BLOCKED_BY=, because a
+parent naming its child is a stated relation already, and asking it for a
+discovery edge can only be answered with a wrong one.
 
 * What merges and what conflicts
 

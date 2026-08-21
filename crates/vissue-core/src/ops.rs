@@ -2080,7 +2080,7 @@ mod tests {
         let shipped = doc.headings[0].id.clone();
         let other = doc.headings[1].id.clone();
         update(&layout, &shipped, Some("DONE"), None, None, None).unwrap();
-        append_body(&layout, &shipped, "rejected in the append, bounced").unwrap();
+        append_body(&layout, &shipped, "superseded by the other one, bounced").unwrap();
         append_body(&layout, &other, &format!("see [[id:{shipped}]]")).unwrap();
 
         let report = crate::report::check(&layout).unwrap();
@@ -2097,6 +2097,103 @@ mod tests {
             report.text
         );
         assert!(report.warnings >= 2, "{}", report.text);
+    }
+
+    // The word is not the finding. Every bug about input validation says
+    // "rejected", and three issues in one corpus were flagged for sentences
+    // about what the software does to bad input.
+    #[test]
+    fn check_is_quiet_about_a_done_issue_that_merely_uses_the_word_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "validation", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let id = doc.headings[0].id.clone();
+        update(&layout, &id, Some("DONE"), None, None, None).unwrap();
+        append_body(
+            &layout,
+            &id,
+            "A compound spec is silently corrupted rather than rejected, and the \
+             alternative parser was rejected as strictly dominated.",
+        )
+        .unwrap();
+
+        let report = crate::report::check(&layout).unwrap();
+        assert!(
+            !report.text.contains("reads as a reject"),
+            "the word alone was read as an outcome: {}",
+            report.text
+        );
+    }
+
+    // A "Supersedes" section rolls up issues this one did not close, which is the
+    // opposite of being superseded, and the two differ by one letter.
+    #[test]
+    fn check_reads_supersedes_as_a_roll_up_and_superseded_by_as_an_outcome() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "umbrella", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "replaced", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let rollup = doc.headings[0].id.clone();
+        let replaced = doc.headings[1].id.clone();
+        update(&layout, &rollup, Some("DONE"), None, None, None).unwrap();
+        update(&layout, &replaced, Some("DONE"), None, None, None).unwrap();
+        append_body(&layout, &rollup, "** Supersedes\nrolls up the pieces").unwrap();
+        append_body(&layout, &replaced, "superseded by the umbrella").unwrap();
+
+        let report = crate::report::check(&layout).unwrap();
+        let flagged: Vec<&str> = report
+            .text
+            .lines()
+            .filter(|l| l.contains("reads as a reject"))
+            .collect();
+
+        assert!(
+            flagged.iter().any(|l| l.contains(&replaced)),
+            "an issue that says it was superseded was not flagged: {}",
+            report.text
+        );
+        assert!(
+            !flagged.iter().any(|l| l.contains(&rollup)),
+            "a Supersedes roll-up was read as its own rejection: {}",
+            report.text
+        );
+    }
+
+    // A parent naming its child is a stated relation the tracker already holds.
+    #[test]
+    fn check_is_quiet_about_a_mention_that_a_parent_edge_already_explains() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "umbrella", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let parent = doc.headings[0].id.clone();
+        create(
+            &layout,
+            "sample",
+            "piece",
+            CreateOpts {
+                parent: Some(parent.as_str()),
+                ..CreateOpts::default()
+            },
+        )
+        .unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let child = doc
+            .headings
+            .iter()
+            .find(|h| h.id != parent)
+            .map(|h| h.id.clone())
+            .unwrap();
+        append_body(&layout, &parent, &format!("done in [[id:{child}]]")).unwrap();
+
+        let report = crate::report::check(&layout).unwrap();
+        assert!(
+            !report.text.contains("no DISCOVERED_FROM or PIVOTED_TO"),
+            "a parent edge did not count as a relation: {}",
+            report.text
+        );
     }
 
     #[test]

@@ -903,22 +903,80 @@ pub fn roadmap(layout: &Layout, project_filter: Option<&str>) -> Result<String> 
     Ok(out)
 }
 
+/// Does this body say *this issue* was rejected, as opposed to using the word.
+///
+/// `contains("rejected")` cannot tell the two apart, and the difference is the
+/// whole finding. Every bug report about input validation says it: "silently
+/// corrupted rather than rejected", "ignored rather than enforced or rejected".
+/// A design note says it too: "a hand-written parser is rejected as strictly
+/// dominated". Three issues in one corpus were flagged for exactly those, all
+/// of them worked and closed properly, and a check that cries wolf about closed
+/// issues is a check nobody re-reads.
+///
+/// So this looks for the shapes a rejection is actually written in: the tool's
+/// own phrasing, a redirect, or a heading that says so.
 fn looks_like_reject_prose(body: &str) -> bool {
     let lower = body.to_ascii_lowercase();
-    lower.contains("rejected") || lower.contains("vissue reject")
+    const CLOSING: &[&str] = &[
+        "vissue reject",
+        "superseded by",
+        "rejected in favour",
+        "rejected in favor",
+        "rejected as a duplicate",
+        "closed as a duplicate",
+        "closed as duplicate",
+        "not doing this",
+        "rejected this",
+        "rejected: ",
+    ];
+    if CLOSING.iter().any(|phrase| lower.contains(phrase)) {
+        return true;
+    }
+    // A heading that names the outcome, which is where a hand-written rejection
+    // goes when it is not one of the phrases above.
+    //
+    // "superseded" and not "supersede": the participle says this issue was
+    // replaced, and the third person says it replaced others. A corpus here has
+    // an issue whose "** Supersedes" section rolls up seven others it did not
+    // close, and reading that as its own rejection is the false positive this
+    // function exists to stop. Do not shorten the stem.
+    lower.lines().any(|line| {
+        line.starts_with('*')
+            && (line.contains("rejected")
+                || line.contains("superseded")
+                || line.contains("reject:"))
+    })
 }
 
+/// Is the relation between these two already held as an edge, in either
+/// direction.
+///
+/// Discovery and a pivot are not the only relations people write. A parent
+/// mentioning a child, or an issue naming what blocks it, is a stated relation
+/// the tracker already holds, and warning that it lacks a DISCOVERED_FROM asks
+/// for an edge nobody can honestly supply: the answer is either a wrong edge or
+/// a warning that gets ignored.
 fn edge_connects(all: &[(String, IssueHeading)], a: &str, b: &str) -> bool {
     all.iter().any(|(_, h)| {
-        if h.id == a {
-            crate::props::get(&h.properties, crate::props::DISCOVERED_FROM) == Some(b)
-                || crate::props::get(&h.properties, crate::props::PIVOTED_TO) == Some(b)
+        let far = if h.id == a {
+            b
         } else if h.id == b {
-            crate::props::get(&h.properties, crate::props::DISCOVERED_FROM) == Some(a)
-                || crate::props::get(&h.properties, crate::props::PIVOTED_TO) == Some(a)
+            a
         } else {
-            false
-        }
+            return false;
+        };
+        [
+            crate::props::DISCOVERED_FROM,
+            crate::props::PIVOTED_TO,
+            crate::props::PARENT,
+            crate::props::BLOCKED_BY,
+            crate::props::EDNA_BLOCKER,
+        ]
+        .iter()
+        .any(|key| {
+            crate::props::get(&h.properties, key)
+                .is_some_and(|value| value.split(&[',', ' '][..]).any(|part| part.trim() == far))
+        })
     })
 }
 

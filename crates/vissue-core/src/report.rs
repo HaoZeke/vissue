@@ -948,6 +948,65 @@ fn looks_like_reject_prose(body: &str) -> bool {
     })
 }
 
+/// Does the prose around this link claim the relation the properties name.
+///
+/// A body mentions other issues for every reason there is: a parent lists its
+/// children, an umbrella rolls up what it does not close, a note says "see
+/// also". Warning that any of those lacks a `DISCOVERED_FROM` asks for an edge
+/// nobody can honestly supply, and the answer is a wrong edge or a warning that
+/// gets ignored. One corpus had twenty-two of these and not one was a discovery.
+///
+/// So the warning is for a body that says discovery or a pivot and has no edge
+/// to match, which is the case the properties exist for.
+fn claims_discovery_or_pivot(body: &str, linked: &str) -> bool {
+    const CLAIMS: &[&str] = &[
+        "discovered from",
+        "discovered while",
+        "discovered during",
+        "found while",
+        "filed from",
+        "split from",
+        "pivoted to",
+        "pivots to",
+        "pivoted from",
+        "replaced by",
+        "moved to",
+    ];
+    let needle = format!("id:{linked}");
+    let lower = body.to_ascii_lowercase();
+    let lower_needle = needle.to_ascii_lowercase();
+    // The claim has to be near the link rather than anywhere in the body: a long
+    // issue can say "discovered while auditing" in one section and link three
+    // unrelated ids in another.
+    let window = 240;
+    let mut from = 0;
+    while let Some(at) = lower[from..].find(&lower_needle) {
+        let hit = from + at;
+        let start = hit.saturating_sub(window);
+        let end = (hit + lower_needle.len() + window).min(lower.len());
+        let near = &lower[floor_char_boundary(&lower, start)..ceil_char_boundary(&lower, end)];
+        if CLAIMS.iter().any(|phrase| near.contains(phrase)) {
+            return true;
+        }
+        from = hit + lower_needle.len();
+    }
+    false
+}
+
+fn floor_char_boundary(s: &str, mut i: usize) -> usize {
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn ceil_char_boundary(s: &str, mut i: usize) -> usize {
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
 /// Is the relation between these two already held as an edge, in either
 /// direction.
 ///
@@ -1340,9 +1399,12 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             if edge_connects(&all, &h.id, &linked) {
                 continue;
             }
+            if !claims_discovery_or_pivot(&h.body, &linked) {
+                continue;
+            }
             writeln!(
                 out,
-                "[warn] {} (in {}) mentions [[id:{}]] with no DISCOVERED_FROM or PIVOTED_TO either way",
+                "[warn] {} (in {}) mentions [[id:{}]] as discovered or pivoted with no edge either way",
                 h.id, project, linked
             )?;
             warnings += 1;

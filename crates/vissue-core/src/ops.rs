@@ -2081,7 +2081,12 @@ mod tests {
         let other = doc.headings[1].id.clone();
         update(&layout, &shipped, Some("DONE"), None, None, None).unwrap();
         append_body(&layout, &shipped, "superseded by the other one, bounced").unwrap();
-        append_body(&layout, &other, &format!("see [[id:{shipped}]]")).unwrap();
+        append_body(
+            &layout,
+            &other,
+            &format!("discovered while reading [[id:{shipped}]]"),
+        )
+        .unwrap();
 
         let report = crate::report::check(&layout).unwrap();
         assert!(
@@ -2092,7 +2097,9 @@ mod tests {
         );
         assert!(
             report.text.contains(&other)
-                && report.text.contains("no DISCOVERED_FROM or PIVOTED_TO"),
+                && report
+                    .text
+                    .contains("as discovered or pivoted with no edge"),
             "{}",
             report.text
         );
@@ -2157,6 +2164,58 @@ mod tests {
         assert!(
             !flagged.iter().any(|l| l.contains(&rollup)),
             "a Supersedes roll-up was read as its own rejection: {}",
+            report.text
+        );
+    }
+
+    // A body links other issues for every reason there is. Only the reason the
+    // properties name is a finding.
+    #[test]
+    fn check_is_quiet_about_a_mention_that_claims_no_relation() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "umbrella", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "piece", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let umbrella = doc.headings[0].id.clone();
+        let piece = doc.headings[1].id.clone();
+        append_body(
+            &layout,
+            &umbrella,
+            &format!("** Supersedes\nRolls up [[id:{piece}]], which it does not close."),
+        )
+        .unwrap();
+
+        let report = crate::report::check(&layout).unwrap();
+        assert!(
+            !report.text.contains("as discovered or pivoted"),
+            "a roll-up was read as a discovery: {}",
+            report.text
+        );
+    }
+
+    // And the claim has to be near the link: a long issue says many things.
+    #[test]
+    fn check_reads_a_discovery_claim_only_near_the_link_it_belongs_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "long", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "elsewhere", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let long = doc.headings[0].id.clone();
+        let elsewhere = doc.headings[1].id.clone();
+        let filler = "prose ".repeat(120);
+        append_body(
+            &layout,
+            &long,
+            &format!("discovered while auditing the loader.\n{filler}\nsee [[id:{elsewhere}]]"),
+        )
+        .unwrap();
+
+        let report = crate::report::check(&layout).unwrap();
+        assert!(
+            !report.text.contains("as discovered or pivoted"),
+            "a claim in another section was attached to this link: {}",
             report.text
         );
     }

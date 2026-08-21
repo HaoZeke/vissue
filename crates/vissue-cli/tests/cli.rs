@@ -392,6 +392,40 @@ fn the_roadmap_titles_the_document_once_however_many_projects_it_covers() {
     assert!(text.contains("## beacon"), "{text}");
 }
 
+// The ratchet for the whole class. Every machine-readable surface promises a
+// consumer one document (or, for the line-oriented ones, one document per
+// line). Routing a report per project breaks that promise without breaking the
+// exit code, which is how a stream of arrays shipped: the flag worked on a
+// one-project corpus and on any corpus where only the last project had rows.
+// A new `--json` command lands in this table or its output is unparsed.
+#[test]
+fn every_machine_readable_surface_over_the_corpus_is_parseable() {
+    // (args, one document per line rather than one document overall)
+    let surfaces: &[(&[&str], bool)] = &[
+        (&["list", "--json"], false),
+        (&["ready", "--json"], false),
+        (&["claims", "--json"], false),
+        (&["digest", "--json"], false),
+        (&["show", "atlas-2c3d", "--json"], false),
+        (&["export"], true),
+    ];
+    for (args, by_line) in surfaces {
+        let out = vissue(args);
+        assert!(out.status.success(), "{args:?} exited {}", out.status);
+        let text = String::from_utf8(out.stdout).unwrap();
+        assert!(!text.trim().is_empty(), "{args:?} printed nothing");
+        if *by_line {
+            for (n, line) in text.lines().enumerate() {
+                serde_json::from_str::<serde_json::Value>(line)
+                    .unwrap_or_else(|e| panic!("{args:?} line {}: {e}: {line}", n + 1));
+            }
+        } else {
+            serde_json::from_str::<serde_json::Value>(&text)
+                .unwrap_or_else(|e| panic!("{args:?} is not one document: {e}: {text}"));
+        }
+    }
+}
+
 // `--json` promises a document a parser can read. A fragment per project makes
 // it a stream of arrays: over the fixture's two projects, `[]` then the array
 // holding atlas's claim, which `json.load` rejects at the second bracket.

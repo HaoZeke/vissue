@@ -1428,7 +1428,18 @@ fn export_routed(router: &Router, project: Option<&str>) -> Result<String> {
 }
 
 fn graph_routed(router: &Router, project: Option<&str>) -> Result<String> {
-    concat_project_reports(router, project, report::graph)
+    // One graph, so `dot` draws every project rather than the first one it
+    // meets. Concatenating whole documents also leaves a cross-project edge
+    // pointing at a node declared in a different `digraph` block.
+    if project.is_some() {
+        return concat_project_reports(router, project, report::graph);
+    }
+    let body = concat_project_reports(router, project, report::graph_body)?;
+    Ok(format!(
+        "{}{body}{}",
+        report::GRAPH_HEADER,
+        report::GRAPH_FOOTER
+    ))
 }
 
 fn roadmap_routed(router: &Router, project: Option<&str>) -> Result<String> {

@@ -392,6 +392,37 @@ fn the_roadmap_titles_the_document_once_however_many_projects_it_covers() {
     assert!(text.contains("## beacon"), "{text}");
 }
 
+// `vissue graph | dot -Tsvg` has to draw the corpus. Concatenating a whole DOT
+// document per project gives dot a file of six graphs, all named the same, and
+// it renders the first and exits zero: five projects leave the picture with no
+// error anywhere. Cross-project edges are the other half, pointing at nodes
+// declared inside a different `digraph` block.
+#[test]
+fn the_graph_is_one_dot_document_however_many_projects_it_covers() {
+    let text = String::from_utf8(vissue(&["graph"]).stdout).unwrap();
+    assert_eq!(
+        text.lines().filter(|l| l.starts_with("digraph ")).count(),
+        1,
+        "{text}"
+    );
+    assert_eq!(text.lines().filter(|l| *l == "}").count(), 1, "{text}");
+    assert!(text.starts_with("digraph vissue_graph {"), "{text}");
+    assert!(text.trim_end().ends_with('}'), "{text}");
+    // Both projects draw inside it.
+    assert!(text.contains("\"atlas-"), "{text}");
+    assert!(text.contains("\"beacon-"), "{text}");
+}
+
+// Asked about one project, the graph is still a document dot can render.
+#[test]
+fn a_single_project_graph_is_a_complete_dot_document() {
+    let text = String::from_utf8(vissue(&["graph", "--project", "beacon"]).stdout).unwrap();
+    assert!(text.starts_with("digraph vissue_graph {"), "{text}");
+    assert!(text.trim_end().ends_with('}'), "{text}");
+    assert!(text.contains("\"beacon-"), "{text}");
+    assert!(!text.contains("\"atlas-"), "{text}");
+}
+
 // Asked about one project, the roadmap is still a document and keeps its title.
 #[test]
 fn a_single_project_roadmap_keeps_its_title() {

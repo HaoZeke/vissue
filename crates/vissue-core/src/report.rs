@@ -754,14 +754,41 @@ pub fn impact(layout: &Layout, id: &str, depth: usize) -> Result<String> {
 /// # Errors
 ///
 /// Returns an error if the corpus cannot be read.
+/// The lines a DOT document opens with, up to and including the graph
+/// attributes. Exposed for the same reason as [`ROADMAP_HEADER`]: a caller
+/// drawing several projects as one graph writes them once. Concatenating whole
+/// documents gives `dot` a file of many graphs, and it renders the first.
+pub const GRAPH_HEADER: &str = concat!(
+    "digraph vissue_graph {\n",
+    "  rankdir=LR;\n",
+    "  node [shape=box, fontname=\"Jost\", style=filled];\n",
+    "  edge [fontname=\"Jost\"];\n"
+);
+
+/// The line that closes a DOT document.
+pub const GRAPH_FOOTER: &str = "}\n";
+
+/// A DOT graph of the corpus: one node per issue, blocker and parent edges.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
 pub fn graph(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
+    Ok(format!(
+        "{GRAPH_HEADER}{}{GRAPH_FOOTER}",
+        graph_body(layout, project_filter)?
+    ))
+}
+
+/// The nodes and edges of the graph, without the enclosing `digraph` block.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read.
+pub fn graph_body(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     let all = load_all(layout)?;
     let graph = GraphIndex::new(&all);
     let mut out = String::new();
-    writeln!(out, "digraph vissue_graph {{")?;
-    writeln!(out, "  rankdir=LR;")?;
-    writeln!(out, "  node [shape=box, fontname=\"Jost\", style=filled];")?;
-    writeln!(out, "  edge [fontname=\"Jost\"];")?;
     for (project, h) in &all {
         if !project_selected(project, project_filter) {
             continue;
@@ -806,7 +833,6 @@ pub fn graph(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
             )?;
         }
     }
-    writeln!(out, "}}")?;
     Ok(out)
 }
 

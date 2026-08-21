@@ -1404,11 +1404,31 @@ fn claims_routed(
     project: Option<&str>,
     json: bool,
 ) -> Result<String> {
-    // JSON is one array per project and has no sentinel to collapse.
-    let marker = if json { None } else { Some(NO_CLAIMS) };
-    concat_project_reports_with(router, project, marker, |layout, filter| {
-        report::claims(layout, by, filter, json)
+    if json {
+        return claims_json_routed(router, by, project);
+    }
+    concat_project_reports_with(router, project, Some(NO_CLAIMS), |layout, filter| {
+        report::claims(layout, by, filter, false)
     })
+}
+
+/// The claims of every project as one JSON array.
+///
+/// A fragment per project is a stream of arrays, which no JSON parser takes as
+/// a document: `json.load` stops at the second `[` and reports extra data.
+fn claims_json_routed(router: &Router, by: Option<&str>, project: Option<&str>) -> Result<String> {
+    if let Some(p) = project {
+        let pref = router.route(p);
+        return Ok(report::claims(&pref.layout, by, Some(&pref.dir), true)?);
+    }
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+    for pref in router.visible_projects()? {
+        let part = report::claims(&pref.layout, by, Some(&pref.dir), true)?;
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&part)
+            .with_context(|| format!("parsing the claims of {}", pref.dir))?;
+        rows.extend(parsed);
+    }
+    Ok(format!("{}\n", serde_json::to_string(&rows)?))
 }
 
 fn agenda_routed(router: &Router, days: i64, project: Option<&str>) -> Result<String> {

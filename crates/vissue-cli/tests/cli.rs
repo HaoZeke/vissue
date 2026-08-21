@@ -392,6 +392,29 @@ fn the_roadmap_titles_the_document_once_however_many_projects_it_covers() {
     assert!(text.contains("## beacon"), "{text}");
 }
 
+// `--json` promises a document a parser can read. A fragment per project makes
+// it a stream of arrays: over the fixture's two projects, `[]` then the array
+// holding atlas's claim, which `json.load` rejects at the second bracket.
+#[test]
+fn routed_claims_json_is_one_array_over_the_corpus() {
+    let text = String::from_utf8(vissue(&["claims", "--json"]).stdout).unwrap();
+    let rows: Vec<serde_json::Value> =
+        serde_json::from_str(&text).unwrap_or_else(|e| panic!("not one document: {e}: {text}"));
+    assert_eq!(rows.len(), 1, "{text}");
+    assert_eq!(rows[0]["project"], "atlas", "{text}");
+    assert_eq!(rows[0]["holder"], "fixture-agent", "{text}");
+}
+
+// Asked about one project, an empty array is the document.
+#[test]
+fn a_single_project_claims_json_is_still_a_document() {
+    let text =
+        String::from_utf8(vissue(&["claims", "--json", "--project", "beacon"]).stdout).unwrap();
+    let rows: Vec<serde_json::Value> =
+        serde_json::from_str(&text).unwrap_or_else(|e| panic!("not one document: {e}: {text}"));
+    assert!(rows.is_empty(), "{text}");
+}
+
 // `vissue graph | dot -Tsvg` has to draw the corpus. Concatenating a whole DOT
 // document per project gives dot a file of six graphs, all named the same, and
 // it renders the first and exits zero: five projects leave the picture with no

@@ -793,6 +793,194 @@ pub fn append_body_as(layout: &Layout, id: &str, text: &str, identity: &str) -> 
     })
 }
 
+/// Name of the drawer votes live in.
+const VOTES_DRAWER: &str = "VOTES";
+
+/// One agent's ballot on one issue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ballot {
+    /// Identity that cast it, as [`crate::config::identity`] reports.
+    pub agent: String,
+    /// What was voted for, verbatim.
+    pub choice: String,
+    /// Inactive org date the vote was cast or last changed.
+    pub stamp: String,
+}
+
+/// Cast or change one agent's vote, or read the tally when `choice` is `None`.
+///
+/// Consensus among several agents is not the same question as what one agent
+/// concluded, and the tracker had no way to hold the difference: an agent could
+/// append prose saying what it thought, and a reader had to read every append
+/// and count by hand.
+///
+/// One ballot per identity, and casting again replaces it. That is last write
+/// wins *per agent*, which is the right rule here and is not the bug the id
+/// reservation had: an agent changing its mind should not leave two ballots, and
+/// two different agents must never overwrite each other. The first is why a
+/// recast replaces, the second is why the whole read-modify-write runs under the
+/// file lock.
+///
+/// Stored as a `:VOTES:` drawer on the heading rather than in the event log,
+/// because a tally a person can read in the file is worth more than one that
+/// needs a scan, and drawers already survive a rewrite untouched.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, `choice` is blank, or the file
+/// cannot be rewritten.
+pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> Result<String> {
+    let (_h, path, project) =
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+    let Some(choice) = choice else {
+        let doc = IssueDoc::parse_file(&project, &path)?;
+        let h = doc
+            .headings
+            .iter()
+            .find(|x| x.id == id)
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+        return Ok(tally_text(id, &read_ballots(h)));
+    };
+    let choice = choice.trim();
+    if choice.is_empty() {
+        return Err(anyhow!("vote needs something to vote for").into());
+    }
+    if choice.contains('\n') {
+        return Err(anyhow!("a vote is one line").into());
+    }
+    with_issues_lock(&path, || {
+        let mut doc = IssueDoc::parse_file(&project, &path)?;
+        let h = doc
+            .headings
+            .iter_mut()
+            .find(|x| x.id == id)
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+        let mut ballots = read_ballots(h);
+        let stamp = today_inactive_bracket();
+        let previous = ballots.iter().position(|b| b.agent == identity);
+        let changed_from = previous.map(|i| ballots[i].choice.clone());
+        let ballot = Ballot {
+            agent: identity.to_string(),
+            choice: choice.to_string(),
+            stamp,
+        };
+        match previous {
+            Some(i) => ballots[i] = ballot,
+            None => ballots.push(ballot),
+        }
+        write_ballots(h, &ballots);
+        doc.write()?;
+        let mut out = match changed_from {
+            Some(old) if old == choice => format!("{id}: {identity} already voted {choice}\n"),
+            Some(old) => format!("{id}: {identity} changed {old} to {choice}\n"),
+            None => format!("{id}: {identity} voted {choice}\n"),
+        };
+        out.push_str(&tally_text(id, &ballots));
+        Ok(out)
+    })
+}
+
+/// Ballots on a heading, in the order the drawer holds them.
+fn read_ballots(h: &IssueHeading) -> Vec<Ballot> {
+    let Some(drawer) = h
+        .extra_drawers
+        .iter()
+        .find(|d| drawer_name_is(d, VOTES_DRAWER))
+    else {
+        return Vec::new();
+    };
+    drawer
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.starts_with(':') {
+                return None;
+            }
+            // `[date] agent: choice`, and the choice may hold colons.
+            let (stamp, rest) = line.strip_prefix('[')?.split_once("] ")?;
+            let (agent, choice) = rest.split_once(": ")?;
+            let agent = agent.trim();
+            let choice = choice.trim();
+            if agent.is_empty() || choice.is_empty() {
+                return None;
+            }
+            Some(Ballot {
+                agent: agent.to_string(),
+                choice: choice.to_string(),
+                stamp: format!("[{stamp}]"),
+            })
+        })
+        .collect()
+}
+
+fn drawer_name_is(drawer: &str, name: &str) -> bool {
+    drawer
+        .lines()
+        .next()
+        .map(str::trim)
+        .and_then(|first| first.strip_prefix(':'))
+        .and_then(|rest| rest.strip_suffix(':'))
+        .is_some_and(|n| n.eq_ignore_ascii_case(name))
+}
+
+/// Replace the heading's votes drawer, dropping it when nobody has voted.
+fn write_ballots(h: &mut IssueHeading, ballots: &[Ballot]) {
+    h.extra_drawers.retain(|d| !drawer_name_is(d, VOTES_DRAWER));
+    if ballots.is_empty() {
+        return;
+    }
+    let mut drawer = format!(":{VOTES_DRAWER}:\n");
+    for b in ballots {
+        drawer.push_str(&format!("{} {}: {}\n", b.stamp, b.agent, b.choice));
+    }
+    drawer.push_str(":END:\n");
+    h.extra_drawers.push(drawer);
+}
+
+/// The tally, and whether it is a consensus.
+///
+/// A plurality is reported as a plurality and not as agreement. Two agents for
+/// one option and two for another is the case a tally exists to make visible, so
+/// it says so rather than picking the first.
+fn tally_text(id: &str, ballots: &[Ballot]) -> String {
+    if ballots.is_empty() {
+        return format!("{id}: no votes\n");
+    }
+    let mut counts: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for b in ballots {
+        counts
+            .entry(b.choice.as_str())
+            .or_default()
+            .push(b.agent.as_str());
+    }
+    let total = ballots.len();
+    let mut rows: Vec<(&&str, &Vec<&str>)> = counts.iter().collect();
+    rows.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(b.0)));
+    let mut out = format!(
+        "{id}: {total} vote{} from {} option{}\n",
+        if total == 1 { "" } else { "s" },
+        counts.len(),
+        if counts.len() == 1 { "" } else { "s" }
+    );
+    for (choice, who) in &rows {
+        let _ = writeln!(out, "  {:<24} {} ({})", choice, who.len(), who.join(", "));
+    }
+    let top = rows[0].1.len();
+    let tied = rows.iter().filter(|(_, who)| who.len() == top).count();
+    if tied > 1 {
+        let _ = writeln!(out, "  no consensus: {tied} options tied at {top}");
+    } else if top * 2 > total {
+        let _ = writeln!(out, "  consensus: {} ({top} of {total})", rows[0].0);
+    } else {
+        let _ = writeln!(
+            out,
+            "  plurality only: {} ({top} of {total}), which is not a majority",
+            rows[0].0
+        );
+    }
+    out
+}
+
 /// Fold an inbox-convention org file into tracked issues.
 ///
 /// Each top-level `* TODO <title>` heading that does not already carry a
@@ -2520,5 +2708,162 @@ mod tests {
         .trim()
         .to_string();
         assert!(id.starts_with("sample-"), "{id}");
+    }
+    // ------------------------------------------------------------------ votes
+
+    fn voted(layout: &Layout, id: &str, who: &str, choice: &str) -> String {
+        vote(layout, id, Some(choice), who).expect("vote failed")
+    }
+
+    #[test]
+    fn one_agent_one_ballot_and_a_recast_replaces_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        voted(&layout, &id, "agent-a", "ship");
+        let out = voted(&layout, &id, "agent-a", "hold");
+        assert!(out.contains("changed ship to hold"), "{out}");
+
+        let tally = vote(&layout, &id, None, "reader").unwrap();
+        assert!(tally.contains("1 vote from 1 option"), "{tally}");
+        assert!(tally.contains("hold"), "{tally}");
+        assert!(!tally.contains("ship"), "{tally}");
+    }
+
+    #[test]
+    fn two_agents_do_not_overwrite_each_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        voted(&layout, &id, "agent-a", "ship");
+        voted(&layout, &id, "agent-b", "ship");
+        let out = voted(&layout, &id, "agent-c", "hold");
+
+        assert!(out.contains("3 votes from 2 options"), "{out}");
+        assert!(out.contains("consensus: ship (2 of 3)"), "{out}");
+    }
+
+    /// A tie is the case a tally exists to surface, so it must not report the
+    /// first option as though the agents agreed.
+    #[test]
+    fn a_tie_is_reported_as_no_consensus() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        voted(&layout, &id, "agent-a", "ship");
+        let out = voted(&layout, &id, "agent-b", "hold");
+
+        assert!(out.contains("no consensus: 2 options tied at 1"), "{out}");
+        assert!(!out.contains("consensus: ship"), "{out}");
+    }
+
+    /// And a lead that is not a majority is a plurality, which is a different
+    /// claim from agreement.
+    #[test]
+    fn a_lead_short_of_a_majority_is_not_called_consensus() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        voted(&layout, &id, "agent-a", "ship");
+        voted(&layout, &id, "agent-b", "ship");
+        voted(&layout, &id, "agent-c", "hold");
+        let out = voted(&layout, &id, "agent-d", "rework");
+
+        // 2 of 4 leads but does not carry.
+        assert!(out.contains("plurality only: ship (2 of 4)"), "{out}");
+        assert!(!out.contains("consensus: ship"), "{out}");
+    }
+
+    #[test]
+    fn votes_survive_a_rewrite_and_are_readable_in_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        voted(&layout, &id, "agent-a", "ship");
+
+        // An unrelated edit rewrites the file; the drawer has to come back.
+        append_body(&layout, &id, "some prose").unwrap();
+        let text = std::fs::read_to_string(layout.project_issues_path("sample")).unwrap();
+        assert!(text.contains(":VOTES:"), "{text}");
+        assert!(text.contains("agent-a: ship"), "{text}");
+
+        let tally = vote(&layout, &id, None, "reader").unwrap();
+        assert!(tally.contains("agent-a"), "{tally}");
+    }
+
+    #[test]
+    fn an_issue_with_no_votes_says_so_rather_than_showing_an_empty_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        assert!(
+            vote(&layout, &id, None, "reader")
+                .unwrap()
+                .contains("no votes")
+        );
+    }
+
+    #[test]
+    fn a_blank_or_multiline_vote_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        assert!(vote(&layout, &id, Some("   "), "agent-a").is_err());
+        assert!(vote(&layout, &id, Some("ship\nhold"), "agent-a").is_err());
+    }
+
+    /// A choice may hold a colon, because "ship: after the audit" is a thing an
+    /// agent will vote for and the line format has to survive it.
+    #[test]
+    fn a_choice_containing_a_colon_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        voted(&layout, &id, "agent-a", "ship: after the audit");
+        let tally = vote(&layout, &id, None, "reader").unwrap();
+        assert!(tally.contains("ship: after the audit"), "{tally}");
+    }
+
+    /// Concurrent voters are the point of the feature, so they are tested the
+    /// way the id reservation is: every ballot has to land.
+    #[test]
+    fn concurrent_voters_all_land() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Arc::new(fresh_layout(dir.path()));
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        let n = 16usize;
+        let handles: Vec<_> = (0..n)
+            .map(|i| {
+                let layout = Arc::clone(&layout);
+                let id = id.clone();
+                thread::spawn(move || vote(&layout, &id, Some("ship"), &format!("agent-{i:02}")))
+            })
+            .collect();
+        for h in handles {
+            h.join().expect("thread panicked").expect("vote failed");
+        }
+
+        let tally = vote(&layout, &id, None, "reader").unwrap();
+        assert!(
+            tally.contains(&format!("{n} votes from 1 option")),
+            "a ballot was lost: {tally}"
+        );
     }
 }

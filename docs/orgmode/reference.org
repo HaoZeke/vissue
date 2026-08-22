@@ -12,6 +12,7 @@
 | =append=                                                                  | Record a dated report under the heading, from =--text=, =--file=, or stdin |
 | =body-excerpt=                                                            | A capped preview of an issue's file range; =show --org= for the whole heading |
 | =claims=                                                                  | Every live claim, oldest first: who holds what, for how long             |
+| =vote=                                                                    | Cast this agent's ballot (=--for=), or read the tally; one ballot per identity |
 | =fold=                                                                    | Turn an inbox file's unstamped =* TODO= headings into issues             |
 | =whoami=                                                                  | The identity a claim would record                                        |
 | =ready=, =count=, =search=, =children=, =ancestors=, =impact=, =related=, =stale= | Query the corpus; bounded dependency and related traversal        |
@@ -281,6 +282,37 @@ The lock covers one project file. Adding a blocker reads the whole corpus for
 the acyclicity check inside that lock, so it sees every write that has landed;
 two blockers added at the same moment in different project files can still
 close a cycle between them. =check= and =cycles= report one if it happens.
+
+A mint locks more than the file it writes. Routing can put one project name on
+several layouts, and an id has to be unique across them, so =create= and a
+=reject= successor lock every twin file for that project and read their ids after
+the locks are held. Reading them before, which is what an eager id list amounts
+to, lets two creates in two roots each see the other's file as it was and choose
+one suffix twice; =find_by_id= then reports =DuplicateId= and neither issue is
+reachable by id.
+
+Votes are per identity and a recast replaces the ballot, so two agents voting at
+once cannot overwrite each other while one agent changing its mind does not leave
+two ballots.
+
+* Votes
+
+=vote ID --for CHOICE= records one ballot for the identity =whoami= reports, and
+=vote ID= prints the tally without casting. Ballots live in a =:VOTES:= drawer on
+the heading, one line each, so the file shows who thinks what without a tool.
+
+One ballot per identity. Casting again replaces it and says what changed, which
+keeps an agent that reconsiders from appearing twice.
+
+The tally distinguishes three outcomes, because a count that calls all three
+agreement is worth nothing:
+
+- *consensus*, when one choice holds more than half the ballots;
+- *plurality only*, when one choice leads without a majority;
+- *no consensus*, when the lead is tied.
+
+A choice is one line and may contain a colon, so ="ship: after the audit"= is a
+vote and not a parse error.
 
 * Crates
 

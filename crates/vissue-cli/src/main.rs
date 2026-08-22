@@ -213,6 +213,16 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Cast this agent's vote on an issue, or show the tally with no `--for`.
+    ///
+    /// One ballot per identity and a recast replaces it, so several agents can
+    /// disagree on the record and a reader sees whether they agree.
+    Vote {
+        id: String,
+        /// What to vote for. Omit to read the tally without casting.
+        #[arg(long = "for", value_name = "CHOICE")]
+        choice: Option<String>,
+    },
     /// Add a dated note to the top of an issue's logbook; state and claim untouched.
     Note {
         id: String,
@@ -809,6 +819,11 @@ fn run() -> Result<()> {
         Command::Claim { id, force } => {
             let found = layout_for_id(&router, &id)?;
             emit!("{}", agent::claim(&found, &id, force)?)
+        }
+        Command::Vote { id, choice } => {
+            let found = layout_for_id(&router, &id)?;
+            let who = vissue_core::config::identity(&found);
+            emit!("{}", ops::vote(&found, &id, choice.as_deref(), &who)?)
         }
         Command::Append { id, text, file } => {
             let body = match (text, file) {

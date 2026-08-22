@@ -287,6 +287,25 @@ impl Router {
         Ok(ids)
     }
 
+    /// The twin files an id reservation has to read, rather than the ids in
+    /// them.
+    ///
+    /// Reading the ids here and minting later is a read outside the lock that
+    /// protects the write. Two creates for the same project in two roots each
+    /// see the other's file before either has written, take different locks,
+    /// because the locks are per file, and can mint the same suffix. A duplicate
+    /// across layouts is not a cosmetic clash: `find_by_id` reports
+    /// `DuplicateId` for it, so the issue becomes unreachable by id.
+    ///
+    /// So the caller hands over paths and the mint reads them under the same
+    /// lock set it writes under.
+    pub fn extra_id_paths_for(&self, dir: &str) -> Vec<PathBuf> {
+        self.unique_layouts()
+            .into_iter()
+            .map(|layout| layout.project_issues_path(dir))
+            .collect()
+    }
+
     /// Locate one id. The longest matching route key or known project
     /// directory is tried first; then every remaining unique layout.
     ///

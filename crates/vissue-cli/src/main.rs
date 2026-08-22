@@ -584,9 +584,11 @@ fn create_routed(
     opts: CreateOpts<'_>,
 ) -> Result<String> {
     let pref = router.route(project);
-    let extra = router.extra_ids_for(&pref.dir)?;
+    // Paths rather than ids: the mint reads them under the lock it writes
+    // under, so a twin create in another root cannot slip between.
+    let twins = router.extra_id_paths_for(&pref.dir);
     let opts = CreateOpts {
-        extra_ids: &extra,
+        extra_id_paths: &twins,
         ..opts
     };
     Ok(ops::create(&pref.layout, &pref.dir, title, opts)?)
@@ -600,7 +602,7 @@ fn layout_for_id(router: &Router, id: &str) -> Result<Layout> {
 struct RejectDest {
     layout: Layout,
     project: Option<String>,
-    extra_ids: Vec<String>,
+    extra_id_paths: Vec<PathBuf>,
 }
 
 /// `--to` names an existing heading, so its own layout wins. Otherwise the
@@ -616,22 +618,22 @@ fn reject_destination(
         return Ok(RejectDest {
             layout: layout_for_id(router, to)?,
             project: project.map(str::to_string),
-            extra_ids: Vec::new(),
+            extra_id_paths: Vec::new(),
         });
     }
     let Some(project) = project else {
         return Ok(RejectDest {
             layout: src.clone(),
             project: None,
-            extra_ids: Vec::new(),
+            extra_id_paths: Vec::new(),
         });
     };
     let pref = router.route(project);
-    let extra_ids = router.extra_ids_for(&pref.dir)?;
+    let extra_id_paths = router.extra_id_paths_for(&pref.dir);
     Ok(RejectDest {
         layout: pref.layout,
         project: Some(pref.dir),
-        extra_ids,
+        extra_id_paths,
     })
 }
 
@@ -784,7 +786,7 @@ fn run() -> Result<()> {
                         title: title.as_deref(),
                         reason: reason.as_deref(),
                         dst_layout: Some(&dst.layout),
-                        dst_extra_ids: &dst.extra_ids,
+                        dst_extra_id_paths: &dst.extra_id_paths,
                     },
                 )?
             )

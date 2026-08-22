@@ -6,6 +6,7 @@ use crate::error::Result;
 use chrono::NaiveDate;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 
 use crate::config::{Layout, VissueConfig};
 use crate::error::Error;
@@ -64,6 +65,19 @@ pub struct CreateOpts<'a> {
     /// Extra ids treated as taken when minting, so a twin file on another
     /// layout cannot share a suffix with this create.
     pub extra_ids: &'a [String],
+    /// Twin files whose ids are read *inside* the lock and treated as taken.
+    ///
+    /// [`Self::extra_ids`] is a snapshot the caller took before calling, which
+    /// is a read outside the lock that guards the write. Two creates for one
+    /// project in two roots each read the other before either writes, hold
+    /// different locks because locks are per file, and can mint one suffix
+    /// twice. `find_by_id` then reports `DuplicateId` and neither issue is
+    /// reachable by id.
+    ///
+    /// Paths given here are locked alongside the file being written and read
+    /// after the lock is held, so a peer's create is either wholly before or
+    /// wholly after this one.
+    pub extra_id_paths: &'a [PathBuf],
 }
 
 /// Append a new TODO issue to the project's file and return the status text.
@@ -112,10 +126,25 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
         return Err(anyhow!("--parent {p} does not refer to any known id").into());
     }
 
-    with_issues_lock(&path, || {
+    // Every file the mint consults is locked, not only the one it writes, so a
+    // twin create in another root cannot land between the read and the write.
+    // with_issues_locks sorts and dedups, so the write path appearing in
+    // extra_id_paths is normal rather than a self-deadlock.
+    let mut lock_paths: Vec<PathBuf> = vec![path.clone()];
+    lock_paths.extend(opts.extra_id_paths.iter().cloned());
+    let lock_refs: Vec<&Path> = lock_paths.iter().map(PathBuf::as_path).collect();
+    with_issues_locks(&lock_refs, || {
         let mut doc = IssueDoc::parse_file(&project, &path)?;
         let mut taken = doc.known_ids();
         taken.extend(opts.extra_ids.iter().cloned());
+        for twin in opts.extra_id_paths {
+            if twin == &path {
+                continue;
+            }
+            if let Ok(doc) = IssueDoc::parse_file(&project, twin) {
+                taken.extend(doc.known_ids());
+            }
+        }
         let id = generate_id(&project, &taken, cfg.issues.id_length)?;
 
         let mut props = BTreeMap::new();
@@ -953,9 +982,10 @@ pub struct RejectOpts<'a> {
     pub reason: Option<&'a str>,
     /// Tracker that holds the destination. `None` keeps the source's.
     pub dst_layout: Option<&'a Layout>,
-    /// Ids treated as taken when minting a successor, so a twin file on
-    /// another layout cannot share a suffix with it.
-    pub dst_extra_ids: &'a [String],
+    /// Twin files read under the lock when minting a successor, so a twin on
+    /// another layout cannot share a suffix with it. Paths and not ids, because
+    /// ids the caller read before the lock can be stale by the time it is held.
+    pub dst_extra_id_paths: &'a [PathBuf],
 }
 
 /// Cancel `src` and point it at a successor in one graph edit.
@@ -1004,7 +1034,12 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
     let dst_title = opts.title.unwrap_or(src0.title.as_str());
     let cfg = VissueConfig::load(layout)?;
 
-    let (dst_id, old_state, new_state) = with_issues_locks(&[&src_path, &dst_path], || {
+    // The twins the mint consults are locked too, or the reservation is read
+    // outside the lock that guards the write and a peer can mint the same id.
+    let mut lock_paths: Vec<PathBuf> = vec![src_path.clone(), dst_path.clone()];
+    lock_paths.extend(opts.dst_extra_id_paths.iter().cloned());
+    let lock_refs: Vec<&Path> = lock_paths.iter().map(PathBuf::as_path).collect();
+    let (dst_id, old_state, new_state) = with_issues_locks(&lock_refs, || {
         if src_path == dst_path {
             let mut doc = IssueDoc::parse_file(&src_project, &src_path)?;
             let dst_id = if creating {
@@ -1014,7 +1049,7 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
                     dst_title,
                     src,
                     &cfg,
-                    opts.dst_extra_ids,
+                    opts.dst_extra_id_paths,
                 )?
             } else {
                 let to = reject_to(opts)?;
@@ -1035,7 +1070,7 @@ pub fn reject(layout: &Layout, src: &str, opts: RejectOpts<'_>) -> Result<String
                     dst_title,
                     src,
                     &cfg,
-                    opts.dst_extra_ids,
+                    opts.dst_extra_id_paths,
                 )?
             } else {
                 let to = reject_to(opts)?;
@@ -1067,10 +1102,18 @@ fn push_successor(
     title: &str,
     src: &str,
     cfg: &VissueConfig,
-    extra_ids: &[String],
+    extra_id_paths: &[PathBuf],
 ) -> Result<String> {
     let mut taken = doc.known_ids();
-    taken.extend(extra_ids.iter().cloned());
+    // Read here rather than by the caller, because here is inside the lock set.
+    for twin in extra_id_paths {
+        if twin == &doc.path {
+            continue;
+        }
+        if let Ok(other) = IssueDoc::parse_file(project, twin) {
+            taken.extend(other.known_ids());
+        }
+    }
     let id = generate_id(project, &taken, cfg.issues.id_length)?;
     let mut props = BTreeMap::new();
     props.insert("ID".into(), id.clone());
@@ -1702,9 +1745,20 @@ mod tests {
             .id
             .clone();
 
-        // A twin id the destination file does not hold yet: the successor
-        // must not mint it, because the routed board already uses it.
-        let taken = vec!["surf-aaaa".to_string()];
+        // A twin id the destination file does not hold yet: the successor must
+        // not mint it, because the routed board already uses it. Handed over as
+        // the file that holds it rather than as the id, so the reservation is
+        // read under the lock that guards the write.
+        let twin_dir = tempfile::tempdir().unwrap();
+        let twin_layout = fresh_layout(twin_dir.path());
+        let twin_path = twin_layout.project_issues_path("surf");
+        std::fs::create_dir_all(twin_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &twin_path,
+            "#+TITLE: surf issues\n\n* TODO taken elsewhere\n:PROPERTIES:\n             :ID:         surf-aaaa\n:END:\n",
+        )
+        .unwrap();
+        let twins = vec![twin_path.clone()];
         let out = reject(
             &src_layout,
             &src,
@@ -1712,7 +1766,7 @@ mod tests {
                 project: Some("surf"),
                 title: Some("new approach"),
                 dst_layout: Some(&dst_layout),
-                dst_extra_ids: &taken,
+                dst_extra_id_paths: &twins,
                 ..Default::default()
             },
         )
@@ -2378,5 +2432,93 @@ mod tests {
             "normalize must not mint edna ids(): {after}"
         );
         assert!(after.contains("prev-sibling"), "{after}");
+    }
+    /// The reservation has to be read after the lock is taken, not before.
+    ///
+    /// Deterministic rather than a stress test, because a stress test has no
+    /// power here: the suffix space is 36^n and two racing creates almost never
+    /// collide by luck, so a run that passes proves nothing. This forces the
+    /// question instead. With `id_length = 2` the space is 1296 suffixes; the
+    /// twin layout is handed 1295 of them, so exactly one is free and a mint
+    /// that reads the twin has no choice but to return it.
+    ///
+    /// A mint that trusts a caller's snapshot, which is what `extra_ids` is,
+    /// picks from the whole space and returns that one suffix with probability
+    /// 1/1296.
+    #[test]
+    fn the_reservation_is_read_after_the_lock_is_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let own_root = dir.path().join("own");
+        let twin_root = dir.path().join("twin");
+        std::fs::create_dir_all(&own_root).unwrap();
+        std::fs::create_dir_all(&twin_root).unwrap();
+        std::fs::write(own_root.join("vissue.toml"), "[issues]\nid_length = 2\n").unwrap();
+        let own = fresh_layout(&own_root);
+        let twin = fresh_layout(&twin_root);
+
+        // Every suffix but "zz", written straight to the twin file.
+        let mut body = String::from("#+TITLE: sample issues\n\n");
+        let alphabet = b"0123456789abcdefghijklmnopqrstuvwxyz";
+        for a in alphabet {
+            for b in alphabet {
+                if *a == b'z' && *b == b'z' {
+                    continue;
+                }
+                let id = format!("sample-{}{}", *a as char, *b as char);
+                body.push_str(&format!(
+                    "* TODO filler {id}\n:PROPERTIES:\n:ID:         {id}\n:END:\n\n"
+                ));
+            }
+        }
+        let twin_path = twin.project_issues_path("sample");
+        std::fs::create_dir_all(twin_path.parent().unwrap()).unwrap();
+        std::fs::write(&twin_path, body).unwrap();
+
+        let twins = vec![twin_path.clone()];
+        let id = create(
+            &own,
+            "sample",
+            "the only suffix left",
+            CreateOpts {
+                quiet: true,
+                extra_id_paths: &twins,
+                ..Default::default()
+            },
+        )
+        .expect("create failed")
+        .trim()
+        .to_string();
+
+        assert_eq!(
+            id, "sample-zz",
+            "the mint did not treat the twin file as taken, so it read the reservation \
+             before the lock rather than after"
+        );
+    }
+
+    /// And the twin being the file under write is ordinary, not a deadlock.
+    /// `extra_id_paths_for` returns every layout for the project including this
+    /// one, so the write path arrives in its own reservation list on every
+    /// routed create.
+    #[test]
+    fn the_written_file_appearing_in_its_own_reservation_is_not_a_deadlock() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        let own_path = layout.project_issues_path("sample");
+        let twins = vec![own_path.clone(), own_path.clone()];
+        let id = create(
+            &layout,
+            "sample",
+            "self referential reservation",
+            CreateOpts {
+                quiet: true,
+                extra_id_paths: &twins,
+                ..Default::default()
+            },
+        )
+        .expect("create deadlocked or failed")
+        .trim()
+        .to_string();
+        assert!(id.starts_with("sample-"), "{id}");
     }
 }

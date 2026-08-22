@@ -12,6 +12,7 @@ use vissue_core::router::Router;
 use vissue_core::{agent, events, report};
 
 use crate::tools::*;
+use std::path::PathBuf;
 
 /// The tool router is built by `#[tool_handler]` through `Self::tool_router()`,
 /// so the server carries the default layout and the user-level project router.
@@ -25,7 +26,7 @@ pub struct VissueServer {
 struct RejectDest {
     layout: Layout,
     project: Option<String>,
-    extra_ids: Vec<String>,
+    extra_id_paths: Vec<PathBuf>,
 }
 
 fn text<E: std::fmt::Display>(result: Result<String, E>) -> Result<CallToolResult, McpError> {
@@ -82,22 +83,22 @@ impl VissueServer {
             return Ok(RejectDest {
                 layout: self.layout_for_id(to)?,
                 project: project.map(str::to_string),
-                extra_ids: Vec::new(),
+                extra_id_paths: Vec::new(),
             });
         }
         let Some(project) = project else {
             return Ok(RejectDest {
                 layout: src.clone(),
                 project: None,
-                extra_ids: Vec::new(),
+                extra_id_paths: Vec::new(),
             });
         };
         let pref = self.router.route(project);
-        let extra_ids = self.router.extra_ids_for(&pref.dir)?;
+        let extra_id_paths = self.router.extra_id_paths_for(&pref.dir);
         Ok(RejectDest {
             layout: pref.layout,
             project: Some(pref.dir),
-            extra_ids,
+            extra_id_paths,
         })
     }
 
@@ -187,7 +188,7 @@ impl VissueServer {
                     title: args.title.as_deref(),
                     reason: args.reason.as_deref(),
                     dst_layout: Some(&dest.layout),
-                    dst_extra_ids: &dest.extra_ids,
+                    dst_extra_id_paths: &dest.extra_id_paths,
                 },
             )
         }))
@@ -662,9 +663,9 @@ fn create_routed(
     opts: CreateOpts<'_>,
 ) -> vissue_core::Result<String> {
     let pref = router.route(project);
-    let extra = router.extra_ids_for(&pref.dir)?;
+    let twins = router.extra_id_paths_for(&pref.dir);
     let opts = CreateOpts {
-        extra_ids: &extra,
+        extra_id_paths: &twins,
         ..opts
     };
     ops::create(&pref.layout, &pref.dir, title, opts)

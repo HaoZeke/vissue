@@ -478,6 +478,8 @@ fn dispatch_create(
             parent: params.parent.as_deref(),
             quiet: false,
             body: params.body.as_deref(),
+            // One layout per server, so there is no twin file to reserve against.
+            extra_id_paths: &[],
             extra_ids: &[],
         },
     )

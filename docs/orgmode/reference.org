@@ -272,6 +272,18 @@ in =note=; the checks skip those, so a deliberate omission reads differently fro
 forgotten one. =normalize= is the only one today, and the reason is that rewriting
 every heading in a corpus is not a thing to hand an agent.
 
+Field names are in there too, per verb, because naming a verb on each surface
+stops the verb going missing and does nothing about the surfaces disagreeing on what
+to call a field. A socket method taking =body= where the subcommand takes =--text=
+is two spellings of one idea, and no verb-level check sees it. Each subcommand's own
+help has to offer every flag the schema names for it, so the parser answers rather
+than a scan of the source that declares it.
+
+Positional arguments are not in that list. =create= and =reject= take their title
+positionally, and the first version of the list said =title= for both, because it was
+written from memory instead of from the parser; the check found all three mistakes on
+its first run.
+
 The schema's constant is compiled into a committed Rust file and read through the
 pure-Rust runtime, so the checks read the schema's own bytes. Building and testing
 need no Cap'n Proto toolchain; regenerating after a schema edit does, and

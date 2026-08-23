@@ -32,6 +32,8 @@ pub struct Operation {
     pub mutates: bool,
     /// Why a surface is empty, when one is.
     pub note: String,
+    /// Command-line flags the verb takes, without the leading dashes.
+    pub flags: Vec<String>,
 }
 
 /// The operation set as the schema states it.
@@ -54,12 +56,21 @@ fn read_one(row: operation::Reader<'_>) -> Operation {
             .and_then(|t| t.to_str().ok().map(str::to_string))
             .unwrap_or_default()
     };
+    let flags = row
+        .get_flags()
+        .map(|list| {
+            list.iter()
+                .filter_map(|f| f.ok().and_then(|t| t.to_str().ok().map(str::to_string)))
+                .collect()
+        })
+        .unwrap_or_default();
     Operation {
         cli: text(row.get_cli()),
         socket: text(row.get_socket()),
         mcp: text(row.get_mcp()),
         mutates: row.get_mutates(),
         note: text(row.get_note()),
+        flags,
     }
 }
 

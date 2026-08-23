@@ -41,19 +41,42 @@ struct Operation {
 
   note @4 :Text;
   # Why a surface is empty, when one is. Empty otherwise.
+
+  flags @5 :List(Text);
+  # Command-line flags the verb takes, without the leading dashes, and only the
+  # ones that name a field rather than a mode. Positional arguments are not in
+  # here: `create` and `reject` take their title positionally, and the first
+  # version of this list said `title` for both because it was written from memory
+  # rather than from the parser. The check found all three mistakes on its first
+  # run, which is the argument for having it. Naming the verb on each surface
+  # stops a verb going missing; it does not stop the surfaces disagreeing about
+  # what to call a field, which is the next way this drifts: a socket method
+  # taking `body` where the subcommand takes `--text` is two spellings of one
+  # idea and no test would notice.
 }
 
 const operations :List(Operation) = [
-  ( cli = "create",    socket = "issue/create",    mcp = "vissue_create",    mutates = true,  note = "" ),
-  ( cli = "update",    socket = "issue/update",    mcp = "vissue_update",    mutates = true,  note = "" ),
-  ( cli = "claim",     socket = "issue/claim",     mcp = "vissue_claim",     mutates = true,  note = "" ),
-  ( cli = "note",      socket = "issue/note",      mcp = "vissue_note",      mutates = true,  note = "" ),
-  ( cli = "append",    socket = "issue/append",    mcp = "vissue_append",    mutates = true,  note = "" ),
-  ( cli = "refile",    socket = "issue/refile",    mcp = "vissue_refile",    mutates = true,  note = "" ),
-  ( cli = "reject",    socket = "issue/reject",    mcp = "vissue_reject",    mutates = true,  note = "" ),
-  ( cli = "resolve",   socket = "issue/resolve",   mcp = "vissue_resolve",   mutates = true,  note = "" ),
-  ( cli = "vote",      socket = "issue/vote",      mcp = "vissue_vote",      mutates = true,  note = "" ),
-  ( cli = "fold",      socket = "issue/fold",      mcp = "vissue_fold",      mutates = true,  note = "" ),
+  ( cli = "create",    socket = "issue/create",    mcp = "vissue_create",    mutates = true,  note = "",
+    flags = ["project", "priority", "type", "tags", "parent", "body", "body-file", "deadline", "scheduled"] ),
+  ( cli = "update",    socket = "issue/update",    mcp = "vissue_update",    mutates = true,  note = "",
+    flags = ["state", "priority", "block", "unblock", "if-state", "if-gen"] ),
+  ( cli = "claim",     socket = "issue/claim",     mcp = "vissue_claim",     mutates = true,  note = "",
+    flags = ["force"] ),
+  ( cli = "note",      socket = "issue/note",      mcp = "vissue_note",      mutates = true,  note = "",
+    flags = [] ),
+  ( cli = "append",    socket = "issue/append",    mcp = "vissue_append",    mutates = true,  note = "",
+    flags = ["text", "file"] ),
+  ( cli = "refile",    socket = "issue/refile",    mcp = "vissue_refile",    mutates = true,  note = "",
+    flags = ["to"] ),
+  ( cli = "reject",    socket = "issue/reject",    mcp = "vissue_reject",    mutates = true,  note = "",
+    flags = ["to", "project", "reason"] ),
+  ( cli = "resolve",   socket = "issue/resolve",   mcp = "vissue_resolve",   mutates = true,  note = "",
+    flags = [] ),
+  ( cli = "vote",      socket = "issue/vote",      mcp = "vissue_vote",      mutates = true,  note = "",
+    flags = ["for"] ),
+  ( cli = "fold",      socket = "issue/fold",      mcp = "vissue_fold",      mutates = true,  note = "",
+    flags = ["project"] ),
   ( cli = "normalize", socket = "issue/normalize", mcp = "",                 mutates = true,
-    note = "no tool: rewriting every heading in a corpus is not a thing to hand an agent" ),
+    note = "no tool: rewriting every heading in a corpus is not a thing to hand an agent",
+    flags = ["project", "dry-run"] ),
 ];

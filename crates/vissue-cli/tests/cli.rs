@@ -1755,3 +1755,33 @@ fn the_command_line_offers_every_verb_the_schema_names() {
         "the schema names these verbs and the command line does not offer them: {missing:?}"
     );
 }
+
+/// Each verb offers the flags the schema names for it.
+///
+/// Naming a verb on each surface stops the verb going missing. It does not stop the
+/// surfaces disagreeing about what to call a field, which is the next way this
+/// drifts: a socket method taking `body` where the subcommand takes `--text` is two
+/// spellings of one idea and nothing would notice.
+///
+/// Read out of each subcommand's own help, so this is the parser answering rather
+/// than a scan of the source that declares it.
+#[test]
+fn each_verb_offers_the_flags_the_schema_names() {
+    let mut wrong = Vec::new();
+    for op in vissue_core::surface::operations() {
+        if op.cli.is_empty() || op.flags.is_empty() {
+            continue;
+        }
+        let help = vissue(&[&op.cli, "--help"]);
+        let text = String::from_utf8_lossy(&help.stdout).to_string();
+        for flag in &op.flags {
+            if !text.contains(&format!("--{flag}")) {
+                wrong.push(format!("{} has no --{flag}", op.cli));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the schema names flags these verbs do not take: {wrong:?}"
+    );
+}

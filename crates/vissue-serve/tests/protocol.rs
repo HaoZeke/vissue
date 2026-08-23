@@ -767,3 +767,74 @@ fn every_method_the_server_dispatches_is_in_the_schema() {
         "these methods are dispatched and no schema row mentions them: {unknown:?}"
     );
 }
+
+/// Every mutating reply has the same shape.
+///
+/// `mut_result` returns `ok`, `report` and the affected issue, and that was a
+/// convention rather than a contract: a method returning a bare string, or omitting
+/// `ok`, would have passed every other check here. A client switching on `ok` and
+/// printing `report` is the normal way to use this socket, so the shape is worth
+/// asserting once across all of them rather than trusting eleven call sites to agree.
+///
+/// Driven from the schema, so a mutating method added later is covered without
+/// anyone remembering to add it here.
+#[test]
+fn every_mutating_reply_has_the_same_shape() {
+    let h = Harness::new();
+    let mut client = h.connect();
+
+    // One issue to act on, and a second so refile and reject have somewhere to go.
+    let made = client
+        .request(
+            "issue/create",
+            json!({"project": "atlas", "title": "shape subject"}),
+        )
+        .unwrap();
+    let id = made["issue"]["id"].as_str().unwrap().to_string();
+
+    // Per verb, the smallest params that reach the operation rather than a
+    // validation error. `fold` and `normalize` act on files rather than an issue.
+    let inbox = h.root.join("shape-inbox.org");
+    std::fs::write(&inbox, "* TODO folded for the shape test\n").unwrap();
+    let calls: Vec<(&str, serde_json::Value)> = vec![
+        ("issue/update", json!({"id": id, "priority": "B"})),
+        ("issue/claim", json!({"id": id, "agent": "shape-agent"})),
+        ("issue/note", json!({"id": id, "text": "a note"})),
+        ("issue/append", json!({"id": id, "text": "a report"})),
+        (
+            "issue/vote",
+            json!({"id": id, "choice": "ship", "agent": "shape-agent"}),
+        ),
+        ("issue/normalize", json!({"dry_run": true})),
+        (
+            "issue/fold",
+            json!({"file": inbox.to_str().unwrap(), "project": "atlas"}),
+        ),
+    ];
+
+    for (method, params) in calls {
+        let got = client
+            .request(method, params)
+            .unwrap_or_else(|e| panic!("{method} failed: {e}"));
+        assert!(
+            got.get("ok").and_then(serde_json::Value::as_bool).is_some(),
+            "{method} has no boolean ok: {got}"
+        );
+        assert!(
+            got.get("report")
+                .and_then(serde_json::Value::as_str)
+                .is_some(),
+            "{method} has no report string: {got}"
+        );
+    }
+
+    // And the ones that name an issue return it, so a client need not re-read.
+    let updated = client
+        .request("issue/update", json!({"id": id, "priority": "C"}))
+        .unwrap();
+    assert_eq!(
+        updated["issue"]["id"].as_str(),
+        Some(id.as_str()),
+        "update did not return the issue it changed: {updated}"
+    );
+}

@@ -825,6 +825,81 @@ pub struct VoteParams {
     pub agent: Option<String>,
 }
 
+/// Params for the reads that take an optional project filter: `issue/export`,
+/// `issue/graph`, `issue/roadmap`, `issue/cycles`, `issue/check`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectFilterParams {
+    /// Only this project; every project when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+}
+
+/// `issue/count` params.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CountParams {
+    /// Only this project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Only this state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    /// Only issues with no live blocker.
+    #[serde(default)]
+    pub ready_only: bool,
+}
+
+/// `issue/stale` params.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StaleParams {
+    /// How many days without a change counts as stale.
+    pub days: i64,
+    /// Only this project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+}
+
+/// `issue/hygiene` params.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HygieneParams {
+    /// Days before a claim counts as stalled; the default when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale_days: Option<i64>,
+}
+
+/// `events/ping` params.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PingParams {
+    /// Which detail to report; the summary when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// `events/wait` params. Waits for the corpus generation to pass `last`, or for
+/// `id` to reach a terminal state when one is given.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaitParams {
+    /// Generation to wait past.
+    #[serde(default)]
+    pub last: u64,
+    /// Wait for this issue to reach a terminal state instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// Poll interval in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll_ms: Option<u64>,
+    /// Give up after this many milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+}
+
+/// `issue/digest` params.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DigestParams {
+    /// Only these projects; every project when empty.
+    #[serde(default)]
+    pub projects: Vec<String>,
+}
+
 /// `issue/append` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppendParams {

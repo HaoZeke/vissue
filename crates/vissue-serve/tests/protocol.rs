@@ -544,6 +544,90 @@ fn every_mutating_verb_is_reachable_over_the_socket() {
     );
 }
 
+/// Every read the schema names answers too, not only every write.
+///
+/// Fourteen read verbs had no method, so a socket client shelled out for `check`,
+/// `graph`, `wait` and the rest. That cost a subprocess rather than correctness,
+/// which is why it outlived the write gap, but `wait` is the case that made it
+/// worth closing: a verb whose whole job is to block until something changes is
+/// exactly what a connection is good at and a subprocess is bad at.
+#[test]
+fn the_reads_the_schema_names_answer_too() {
+    let h = Harness::new();
+    let mut client = h.connect();
+
+    let mut missing = Vec::new();
+    for op in vissue_core::surface::operations() {
+        if op.socket.is_empty() || op.mutates {
+            continue;
+        }
+        if let Err(Error::Rpc(err)) = client.request(&op.socket, json!({}))
+            && err.code == -32601
+        {
+            missing.push(op.socket);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "the schema names these reads and the socket does not answer them: {missing:?}"
+    );
+}
+
+/// And the ones with something to say, say it.
+///
+/// Reachability is not usefulness: a method that answers `method not found` fails
+/// the check above, and one that answers an empty body passes it while being no use
+/// to the client that called it.
+#[test]
+fn the_new_reads_return_something() {
+    let h = Harness::new();
+    let mut client = h.connect();
+
+    let checked = client.request("issue/check", json!({})).unwrap();
+    assert!(checked.get("report").is_some(), "{checked}");
+    assert!(
+        checked.get("errors").is_some(),
+        "check hides its error count"
+    );
+
+    let counted = client.request("issue/count", json!({})).unwrap();
+    assert!(!counted["report"].as_str().unwrap_or_default().is_empty());
+
+    let digest = client.request("issue/digest", json!({})).unwrap();
+    assert!(
+        digest["combined"].as_str().is_some_and(|c| !c.is_empty()),
+        "the digest has no combined hash: {digest}"
+    );
+
+    for method in [
+        "issue/export",
+        "issue/graph",
+        "issue/roadmap",
+        "issue/cycles",
+    ] {
+        let got = client.request(method, json!({})).unwrap();
+        assert!(
+            got["report"].as_str().is_some(),
+            "{method} returned no report: {got}"
+        );
+    }
+
+    let stale = client.request("issue/stale", json!({"days": 7})).unwrap();
+    assert!(stale["report"].as_str().is_some(), "{stale}");
+
+    let pinged = client.request("events/ping", json!({})).unwrap();
+    assert!(pinged["report"].as_str().is_some(), "{pinged}");
+
+    // Waiting on a generation already passed returns at once rather than blocking.
+    let waited = client
+        .request("events/wait", json!({"last": 0, "timeout_ms": 2000}))
+        .unwrap();
+    assert!(
+        waited["generation"].as_u64().is_some(),
+        "wait returned no generation: {waited}"
+    );
+}
+
 /// The socket carries every method the schema names.
 ///
 /// This is the guard that the five-verb gap could not have survived. `append` had

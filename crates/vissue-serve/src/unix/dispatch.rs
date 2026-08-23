@@ -5,19 +5,21 @@ use std::time::Instant;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use vissue_control::rpc::{
-    AgendaParams, AppendParams, ClaimParams, ClaimsParams, CreateParams, EventsGenResult,
-    EventsSinceParams, EventsSinceResult, FoldParams, IdParams, IdentityResult, InitializeResult,
-    IssueGetResult, IssueListParams, IssueListResult, IssueSelected, JsonRpcError, JsonRpcRequest,
-    JsonRpcResponse, MutResult, NormalizeParams, NoteParams, Notification, PROTOCOL_VERSION,
-    ProjectListResult, RefileParams, RejectParams, RelatedParams, ResolveParams, SearchParams,
-    TreeParams, TreeResult, UpdateParams, VoteParams, WalkParams, error_from_core, internal_error,
-    invalid_params, method_not_found, parse_initialize_params,
+    AgendaParams, AppendParams, ClaimParams, ClaimsParams, CountParams, CreateParams, DigestParams,
+    EventsGenResult, EventsSinceParams, EventsSinceResult, FoldParams, HygieneParams, IdParams,
+    IdentityResult, InitializeResult, IssueGetResult, IssueListParams, IssueListResult,
+    IssueSelected, JsonRpcError, JsonRpcRequest, JsonRpcResponse, MutResult, NormalizeParams,
+    NoteParams, Notification, PROTOCOL_VERSION, PingParams, ProjectFilterParams, ProjectListResult,
+    RefileParams, RejectParams, RelatedParams, ResolveParams, SearchParams, StaleParams,
+    TreeParams, TreeResult, UpdateParams, VoteParams, WaitParams, WalkParams, error_from_core,
+    internal_error, invalid_params, method_not_found, parse_initialize_params,
 };
 use vissue_core::catalog::{CatalogService, load_recs, tree_text_from};
 use vissue_core::config::Layout;
 use vissue_core::error::Error as CoreError;
 use vissue_core::events;
 use vissue_core::ops::{self, CreateOpts};
+use vissue_core::report;
 use vissue_core::store::find_by_id;
 use vissue_core::views::{IssueDetail, ListQuery};
 
@@ -67,6 +69,19 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
         "issue/reject" => dispatch_reject(state, session, req.params.as_ref()),
         "issue/fold" => dispatch_fold(state, session, req.params.as_ref()),
         "issue/normalize" => dispatch_normalize(state, session, req.params.as_ref()),
+        "issue/check" => dispatch_check(state, req.params.as_ref()),
+        "issue/count" => dispatch_count(state, req.params.as_ref()),
+        "issue/cycles" => dispatch_cycles(state),
+        "issue/digest" => dispatch_digest(state, req.params.as_ref()),
+        "issue/export" => dispatch_export(state, req.params.as_ref()),
+        "issue/graph" => dispatch_graph(state, req.params.as_ref()),
+        "issue/roadmap" => dispatch_roadmap(state, req.params.as_ref()),
+        "issue/stale" => dispatch_stale(state, req.params.as_ref()),
+        "issue/hygiene" => dispatch_hygiene(state, req.params.as_ref()),
+        "issue/waiting_on" => dispatch_waiting_on(state, req.params.as_ref()),
+        "issue/mirror" => dispatch_mirror(state, req.params.as_ref()),
+        "events/ping" => dispatch_ping(state, req.params.as_ref()),
+        "events/wait" => dispatch_wait(state, req.params.as_ref()),
         "issue/note" => dispatch_note(state, session, req.params.as_ref()),
         "issue/refile" => dispatch_refile(state, session, req.params.as_ref()),
         "project/list" => dispatch_projects(state),
@@ -663,6 +678,142 @@ fn dispatch_normalize(
     let report = ops::normalize(&state.layout, params.project.as_deref(), params.dry_run)
         .map_err(map_core)?;
     mut_result(state, report, None)
+}
+
+/// The reads that had no method, so a socket client had to shell out for them.
+///
+/// One layout per server, so each calls the single-layout core function directly
+/// rather than the routed helper the command line needs. Every one returns text,
+/// because that is what the report functions produce and inventing a structure here
+/// would be a second contract to keep in step with the first.
+fn text_result(report: Result<String, vissue_core::error::Error>) -> Result<Value, JsonRpcError> {
+    Ok(json!({"report": report.map_err(map_core)?}))
+}
+
+fn dispatch_check(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let _params: ProjectFilterParams = decode(params)?;
+    let report = report::check(&state.layout).map_err(map_core)?;
+    // The counts travel beside the text, because the command line exits non-zero on
+    // an error count and a client needs the same signal without parsing prose.
+    Ok(json!({
+        "report": report.text,
+        "errors": report.errors,
+        "warnings": report.warnings,
+    }))
+}
+
+fn dispatch_count(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: CountParams = decode(params)?;
+    text_result(report::count(
+        &state.layout,
+        params.project.as_deref(),
+        params.state.as_deref(),
+        params.ready_only,
+    ))
+}
+
+fn dispatch_cycles(state: &OwnerState) -> Result<Value, JsonRpcError> {
+    text_result(report::cycles(&state.layout))
+}
+
+fn dispatch_digest(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: DigestParams = decode(params)?;
+    let digest =
+        vissue_core::digest::corpus_digest(&state.layout, &params.projects).map_err(map_core)?;
+    Ok(json!({
+        "combined": digest.combined,
+        "issues": digest.issues,
+        "projects": digest
+            .projects
+            .iter()
+            .map(|p| json!({"project": p.project, "digest": p.digest, "issues": p.issues}))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+fn dispatch_export(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: ProjectFilterParams = decode(params)?;
+    text_result(report::export(&state.layout, params.project.as_deref()))
+}
+
+fn dispatch_graph(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: ProjectFilterParams = decode(params)?;
+    text_result(report::graph(&state.layout, params.project.as_deref()))
+}
+
+fn dispatch_roadmap(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: ProjectFilterParams = decode(params)?;
+    text_result(report::roadmap(&state.layout, params.project.as_deref()))
+}
+
+fn dispatch_stale(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: StaleParams = decode(params)?;
+    text_result(report::stale(
+        &state.layout,
+        params.days,
+        params.project.as_deref(),
+    ))
+}
+
+fn dispatch_hygiene(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: HygieneParams = decode(params)?;
+    text_result(vissue_core::agent::hygiene(
+        &state.layout,
+        params.stale_days,
+    ))
+}
+
+fn dispatch_waiting_on(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: IdParams = decode(params)?;
+    text_result(vissue_core::agent::waiting_on(&state.layout, &params.id))
+}
+
+fn dispatch_mirror(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let _params: ProjectFilterParams = decode(params)?;
+    let projects = vissue_core::store::list_projects(&state.layout).map_err(map_core)?;
+    let digest = vissue_core::digest::corpus_digest(&state.layout, &projects).map_err(map_core)?;
+    Ok(json!({"report": digest.combined}))
+}
+
+fn dispatch_ping(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: PingParams = decode(params)?;
+    text_result(vissue_core::events::ping_report(
+        &state.layout,
+        params.detail.as_deref(),
+    ))
+}
+
+fn dispatch_wait(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: WaitParams = decode(params)?;
+    let poll = params.poll_ms.unwrap_or(200);
+    let timeout = params.timeout_ms.unwrap_or(30_000);
+    if let Some(id) = params.id.as_deref() {
+        let reached = vissue_core::events::wait_until_terminal(&state.layout, id, poll, timeout)
+            .map_err(map_core)?;
+        // Matched exhaustively on purpose: a new terminal outcome should fail to
+        // compile here rather than be reported as a timeout.
+        let (state_name, generation, timed_out) = match reached {
+            vissue_core::events::TerminalWait::Done { generation } => {
+                ("DONE".to_string(), generation, false)
+            }
+            vissue_core::events::TerminalWait::Cancelled { generation } => {
+                ("CANCELLED".to_string(), generation, false)
+            }
+            vissue_core::events::TerminalWait::Timeout { generation, state } => {
+                (state, generation, true)
+            }
+        };
+        return Ok(json!({
+            "state": state_name,
+            "generation": generation,
+            "timed_out": timed_out,
+        }));
+    }
+    // `gen` is a reserved word in this edition, so the binding is spelled out.
+    let generation =
+        vissue_core::events::wait_generation(&state.layout, params.last, poll, timeout)
+            .map_err(map_core)?;
+    Ok(json!({"generation": generation}))
 }
 
 fn dispatch_note(

@@ -314,6 +314,28 @@ Every verb that changes a file has a method: =issue/create=, =issue/update=,
 =issue/claim=, =issue/note=, =issue/append=, =issue/refile=, =issue/reject=,
 =issue/resolve=, =issue/vote=, =issue/fold=, =issue/normalize=.
 
+The reads have methods too: =issue/list=, =issue/show=, =issue/get=,
+=issue/search=, =issue/tree=, =issue/ready=, =issue/agenda=, =issue/claims=,
+=issue/children=, =issue/ancestors=, =issue/impact=, =issue/backlinks=,
+=issue/related=, =issue/excerpt=, =issue/open=, =issue/check=, =issue/count=,
+=issue/cycles=, =issue/digest=, =issue/export=, =issue/graph=, =issue/roadmap=,
+=issue/stale=, =issue/hygiene=, =issue/waiting_on=, =issue/mirror=,
+=project/list=, =identity/get=, =events/gen=, =events/since=, =events/ping=,
+=events/wait=.
+
+The last thirteen of those were absent until recently, so a socket client shelled
+out for =check=, =graph=, =wait= and the rest. That cost a subprocess rather than
+correctness, which is why it outlived the write gap. =events/wait= is the one that
+made closing it worthwhile: a verb whose whole job is to block until something
+changes is what a connection is good at and a subprocess is bad at.
+
+Reads that produce a report answer with =report=, the same text the subcommand
+prints, because inventing a structure per report would be a second contract to keep
+in step with the first. =issue/check= adds =errors= and =warnings= beside it, since
+the subcommand exits non-zero on an error count and a client needs that signal
+without reading prose. =issue/digest= and =events/wait= answer with fields, both
+having something better than text to give.
+
 The socket stays optional. Correctness does not need it, because the advisory lock
 serialises a direct write just as well, and a client mixing the two paths is not
 corrupting anything. What being complete buys is that a client no longer has to

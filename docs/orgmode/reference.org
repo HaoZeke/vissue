@@ -182,7 +182,8 @@ socket.
 | =VISSUE_PREFIX=  | Directory under the root holding one directory per project  |
 | =VISSUE_CONFIG=  | Path to the user-level route table; default is =$XDG_CONFIG_HOME/vissue/config.toml= |
 | =VISSUE_NO_ROUTE= | Non-empty (other than =0= / =false=) ignores the route table |
-| =VISSUE_AGENT=   | Identity a claim records, ahead of the config file          |
+| =VISSUE_AGENT=   | Identity a claim or a ballot records, ahead of the config file |
+| =VISSUE_ID_SEED= | Pins the id seed, making a minting sequence reproducible     |
 | =VISSUE_EVENTS=          | =0= suppresses the change stream entirely                          |
 | =VISSUE_CONTROL_SOCKET=  | Unix control socket path                                           |
 | =VISSUE_ACCEPT_TIMEOUT_MS= | Milliseconds to wait for a freshly started owner to accept; default 15000 |
@@ -269,6 +270,26 @@ Ask about the layout: =vissue_projects=, =vissue_whoami=, =vissue_identity=.
 The server grants write access to every project under its root. Point it at a
 tracker root you are willing to let the caller edit, not at a home directory.
 
+* Ids
+
+A suffix is picked by hashing the project name with xxh3, keyed by a seed, and
+then stepping one at a time through the base-36 space from there until a free one
+is found. Hashed start, systematic walk.
+
+The walk is the half that matters for correctness. Hashing every probe
+independently draws with replacement and can miss a free suffix that exists: with
+1295 of 1296 taken, 2592 independent draws find the survivor about six times in
+seven. Stepping visits each suffix once, so a free one is found whenever there is
+one, and a full space is an error rather than a spin.
+
+The seed is the clock unless =VISSUE_ID_SEED= pins it. Pinning makes a minting
+sequence reproducible, which is what lets a test about racing creates have any
+power: with a clock seed two racers never collide by luck, so such a test passes
+whether or not the reservation is read under the lock.
+
+Ids must be unique across every layout a project appears on, which is why a mint
+locks the twin files rather than only the one it writes.
+
 * Concurrency
 
 Every read-modify-write cycle takes a process-local mutex and an advisory lock
@@ -292,12 +313,22 @@ removing the lock it guards:
 
 - every mutating verb at once from separate processes against one file, and all of
   them land; without the file lock three of eleven headings vanish;
-- creates racing across two roots for one project name, all succeeding with
-  distinct ids;
+- creates racing across two roots for one project name, none sharing an id; with
+  the reservation read before the lock instead of after, every id is minted twice;
+- twelve agents claiming one issue at once, exactly one winning and the rest
+  refused; without the file lock six of them believe they hold it;
 - separate processes emitting change events, no sequence handed out twice; without
   the advisory half of the events lock, sequences duplicate heavily.
 
-The third of those needs one project per subject to mean anything. With every
+Two of those need a detail to have any power at all, and both details were found
+by removing the lock and watching the test stay green.
+
+The racing-creates test pins =VISSUE_ID_SEED=. Left to the clock, two racers draw
+from 36^4 suffixes and never collide by luck, so the test passed with the
+reservation bug in place. Pinned, both probe the same suffix first and a stale
+reservation collides on the first attempt.
+
+The events test needs one project per subject to mean anything. With every
 subject in one file the issues lock already serialises the pipeline and the events
 lock never contends, so a version of that test using one project passed with the
 advisory lock removed. Separate files take separate issues locks, which is when the

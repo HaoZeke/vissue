@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use crate::config::Layout;
 use crate::model::{IssueHeading, LogEntry, TODO_HEADER, parse_log_line, today_inactive_bracket};
@@ -825,13 +826,63 @@ pub fn load_all(layout: &Layout) -> Result<Vec<(String, IssueHeading)>> {
 /// # Errors
 ///
 /// Returns an error if every suffix of `length` is already taken.
+/// The seed the id probes are drawn from.
+///
+/// The clock by default, so ids do not repeat between runs. `VISSUE_ID_SEED`
+/// overrides it, which makes a minting sequence reproducible.
+///
+/// That override is not only a convenience for tests, it is what lets a test have
+/// any power over the reservation. With a clock seed two racing creates draw from
+/// 36^4 suffixes and never collide by luck, so a test for a stale reservation
+/// passes whether or not the bug is there. Pin the seed and both racers probe the
+/// same suffix first, which turns that race into a certainty.
+fn id_seed() -> u64 {
+    if let Ok(raw) = crate::process_env::var(ID_SEED_ENV)
+        && let Ok(seed) = raw.trim().parse::<u64>()
+    {
+        return seed;
+    }
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(1)
+}
+
+/// Environment variable that pins the id seed.
+pub const ID_SEED_ENV: &str = "VISSUE_ID_SEED";
+
+/// A free `project-suffix` id, or an error when the space is full.
+///
+/// The starting suffix is xxh3 over the project keyed by [`id_seed`], and each
+/// further probe steps one along the base-36 space from there. Hashed start,
+/// systematic walk, and both halves are load-bearing.
+///
+/// The hash replaces one multiply by Knuth's constant over a nanosecond clock,
+/// whose base-36 digits came off the low bits and whose next probe sat 17 away
+/// from the last: successive probes correlated, and two processes reading the
+/// same coarse clock walked the same short arithmetic sequence. This crate
+/// already depends on xxh3 for the export digest, so the better start costs no
+/// new dependency.
+///
+/// The walk is what the hash cannot replace. Hashing each probe independently
+/// draws with replacement, so it can miss a free suffix that exists: with 1295
+/// of 1296 taken, 2592 independent draws find the survivor about six times in
+/// seven, and a test that had to find it failed one run in seven. Stepping by one
+/// covers every suffix once, so a free one is found whenever a free one is there.
+///
+/// # Errors
+///
+/// Returns an error when every suffix of that length is taken, naming the config
+/// key that widens it.
 pub fn generate_id(project: &str, existing: &[String], length: usize) -> Result<String> {
     let len = length.max(2);
     let taken: std::collections::HashSet<&str> = existing.iter().map(String::as_str).collect();
-    let base = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(1);
+    // The project is in the material so one pinned seed does not hand every
+    // project the same starting suffix.
+    let mut material = Vec::with_capacity(project.len() + 1);
+    material.extend_from_slice(project.as_bytes());
+    material.push(0);
+    let start = xxh3_64_with_seed(&material, id_seed());
     // Bounded by the size of the space, so a full space is reported instead
     // of spun on. 36^len saturates well before it could overflow.
     let attempts = 36usize
@@ -839,13 +890,11 @@ pub fn generate_id(project: &str, existing: &[String], length: usize) -> Result<
         .map(|space| space.saturating_mul(2))
         .unwrap_or(usize::MAX)
         .min(2_000_000);
-    for counter in 0..attempts as u128 {
-        let mut n = base
-            .wrapping_add(counter.wrapping_mul(17))
-            .wrapping_mul(2654435761);
+    for counter in 0..attempts as u64 {
+        let mut n = start.wrapping_add(counter);
         let mut suffix = String::new();
         for _ in 0..len {
-            suffix.push(ID_ALPHABET[(n as usize) % 36] as char);
+            suffix.push(ID_ALPHABET[(n % 36) as usize] as char);
             n /= 36;
         }
         let id = format!("{}-{}", project, suffix);

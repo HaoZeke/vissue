@@ -183,13 +183,13 @@ fn concurrent_writers_of_every_kind_all_land() {
 /// Ids stay unique when creates race across two roots for one project name,
 /// which is the case the per-file lock cannot see on its own.
 ///
-/// A smoke test and not the guard, and the difference is worth stating. At the
-/// default id length the suffix space is 36^4, so two racing creates almost never
-/// collide by luck and this passes with the reservation bug still in; it was run
-/// against a no-op lock and stayed green. What it does check is that concurrent
-/// routed creates across two layouts all succeed and produce distinct ids at all.
-/// The guard with power is `the_reservation_is_read_after_the_lock_is_held` in
-/// `vissue-core`, which shrinks the space until the mint has one choice.
+/// The seed is pinned, and that is what gives this test power.
+///
+/// An earlier version left the seed to the clock. Two racing creates then drew
+/// from 36^4 suffixes and never collided by luck, so it passed with the
+/// reservation bug in place and against a no-op lock: it proved nothing. With
+/// `VISSUE_ID_SEED` fixed, both racers probe the same suffix first, so a stale
+/// reservation collides on the first attempt rather than never.
 #[test]
 fn creates_racing_across_two_roots_do_not_share_an_id() {
     let dir = tempfile::tempdir().unwrap();
@@ -228,6 +228,7 @@ fn creates_racing_across_two_roots_do_not_share_an_id() {
             kids.push(
                 Command::new(env!("CARGO_BIN_EXE_vissue"))
                     .env("VISSUE_CONFIG", cfg)
+                    .env("VISSUE_ID_SEED", "424242")
                     .args([
                         "--root",
                         root.to_str().unwrap(),
@@ -350,5 +351,74 @@ fn concurrent_processes_do_not_reuse_an_event_sequence() {
         unique.len(),
         seqs.len(),
         "a sequence was handed out twice: {seqs:?}"
+    );
+}
+
+/// Exactly one agent wins a contested claim.
+///
+/// This is the property several agents on one tracker actually depend on, and it
+/// is not the same as the file staying intact. Claiming is how an agent says "mine,
+/// nobody else start this". If two claims can both succeed, both agents do the work
+/// and the file is perfectly well formed the whole time, so no integrity test would
+/// ever notice.
+///
+/// `claim_as` does the read and the write inside one lock and returns a conflict to
+/// the loser, which is the right shape; this is the test that it holds when the
+/// claims are simultaneous rather than sequential.
+#[test]
+fn exactly_one_agent_wins_a_contested_claim() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join("Software")).unwrap();
+
+    let out = run(root, &["create", "-p", "atlas", "--quiet", "contested"]);
+    assert!(out.status.success());
+    let id = stdout_of(&out).trim().to_string();
+
+    const AGENTS: usize = 12;
+    let mut kids = Vec::new();
+    for i in 0..AGENTS {
+        kids.push(
+            vissue_cmd()
+                .env("VISSUE_AGENT", format!("agent-{i:02}"))
+                .args(["--root", root.to_str().unwrap(), "claim", &id])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+    }
+
+    let mut winners = Vec::new();
+    let mut losers = 0;
+    for kid in kids {
+        let out = kid.wait_with_output().unwrap();
+        if out.status.success() {
+            winners.push(String::from_utf8_lossy(&out.stdout).to_string());
+        } else {
+            let err = String::from_utf8_lossy(&out.stderr).to_string();
+            assert!(
+                err.contains("claim") || err.contains("held"),
+                "a claim failed for the wrong reason: {err}"
+            );
+            losers += 1;
+        }
+    }
+
+    assert_eq!(
+        winners.len(),
+        1,
+        "{} agents think they hold the same issue; {losers} were refused",
+        winners.len()
+    );
+    assert_eq!(losers, AGENTS - 1, "some agent neither won nor was refused");
+
+    // And the file agrees with whoever won, once.
+    let claims = run(root, &["claims"]);
+    let text = stdout_of(&claims);
+    let holders = text.matches(&id).count();
+    assert_eq!(
+        holders, 1,
+        "the claim list shows the issue {holders} times: {text}"
     );
 }

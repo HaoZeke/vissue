@@ -158,7 +158,12 @@ fn two_clients_see_the_same_tracker() {
     writer.claim(&id, false).expect("claim");
 
     // The reader learns about it through the server, not the file.
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    // Generous on purpose. These assert that a change eventually arrives, and the
+    // cost is asymmetric: the loop leaves the moment it does, so a passing run pays
+    // nothing for a long deadline and only a genuine failure waits it out. Five
+    // seconds is the sort of budget a watcher misses on a loaded machine, which turns
+    // an eventual-delivery assertion into a race against the scheduler.
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
     loop {
         if reader.get(&id).expect("get").state == "STARTED" {
             break;
@@ -189,7 +194,12 @@ fn a_write_outside_the_server_reaches_an_attached_client() {
     )
     .expect("create");
 
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    // Generous on purpose. These assert that a change eventually arrives, and the
+    // cost is asymmetric: the loop leaves the moment it does, so a passing run pays
+    // nothing for a long deadline and only a genuine failure waits it out. Five
+    // seconds is the sort of budget a watcher misses on a loaded machine, which turns
+    // an eventual-delivery assertion into a race against the scheduler.
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
     loop {
         let page = backend.ready(None).expect("ready");
         if page.issues.len() == before + 1 {

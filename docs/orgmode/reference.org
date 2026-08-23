@@ -449,6 +449,28 @@ Votes are per identity and a recast replaces the ballot, so two agents voting at
 once cannot overwrite each other while one agent changing its mind does not leave
 two ballots.
 
+*The change stream is a signal, not a history.* An event is emitted after the file
+lock is released, so sequences are unique, which is tested across processes, and two
+changes to different project files can reach the log in the opposite order to the one
+they reached disk in. A consumer that treats a notification as "something moved, go
+and look" is correct. One that reconstructs history from the order of the log is not,
+and no ordering is promised to it.
+
+Emitting inside the lock would order the log, at the cost of holding a file lock
+across another write for every state change. That trade was declined: the log's
+purpose is to wake a poller, and a poller re-reads state.
+
+*A cycle can be closed across two project files.* Adding a blocker checks acyclicity
+inside the lock on its own file, so it sees every write that has landed there. Two
+blockers added at the same moment in different files can still close a cycle between
+them, and =check= and =cycles= report it afterwards rather than preventing it.
+
+Locking every file the check reads would prevent it and would serialise every blocker
+edit in the corpus against every other, since the check reads all of it. For a
+tracker whose blockers are added by hand a few at a time, an after-the-fact report
+is the better side of that trade. This is a decision rather than an oversight, which
+is why it is written here.
+
 * Votes
 
 Reachable from all three surfaces, because the point is agents rather than a

@@ -164,6 +164,8 @@ impl VissueServer {
                 tags: args.tags.as_deref(),
                 parent: args.parent.as_deref(),
                 body: args.body.as_deref(),
+                deadline: args.deadline.as_deref(),
+                scheduled: args.scheduled.as_deref(),
                 ..Default::default()
             },
         ))
@@ -795,12 +797,18 @@ mod tests {
                 tags: Some("ops,security".into()),
                 parent: None,
                 body: Some("The old one expires this quarter.".into()),
+                deadline: Some("[2026-06-30]".into()),
+                scheduled: None,
             }))
             .await
             .unwrap();
         assert_eq!(made.is_error, Some(false));
 
         let file = std::fs::read_to_string(layout.project_issues_path("atlas")).unwrap();
+        assert!(
+            file.contains("DEADLINE") && file.contains("2026-06-30"),
+            "the tool accepted a deadline and did not write it: {file}"
+        );
         assert!(file.contains("Rotate the signing key"), "{file}");
         assert!(file.contains("[#A]"), "priority not carried: {file}");
         assert!(file.contains(":TYPE:       chore"), "{file}");

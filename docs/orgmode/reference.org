@@ -272,17 +272,28 @@ in =note=; the checks skip those, so a deliberate omission reads differently fro
 forgotten one. =normalize= is the only one today, and the reason is that rewriting
 every heading in a corpus is not a thing to hand an agent.
 
-Field names are in there too, per verb, because naming a verb on each surface
-stops the verb going missing and does nothing about the surfaces disagreeing on what
-to call a field. A socket method taking =body= where the subcommand takes =--text=
-is two spellings of one idea, and no verb-level check sees it. Each subcommand's own
-help has to offer every flag the schema names for it, so the parser answers rather
-than a scan of the source that declares it.
+Fields are in there too, each named per surface, because naming a verb on each
+surface stops the verb going missing and says nothing about the surfaces disagreeing
+on what a field is called or whether they all take it. Two checks: every subcommand's
+help offers the flags named for it, and every tool's argument struct carries the
+arguments named for it.
 
-Positional arguments are not in that list. =create= and =reject= take their title
-positionally, and the first version of the list said =title= for both, because it was
-written from memory instead of from the parser; the check found all three mistakes on
-its first run.
+Two names per field rather than one canonical name, because some divergence is
+forced. =--type= cannot be a Rust field called =type= and =--for= cannot be one
+called =for=, both being keywords, so =create= pairs =type= with =issue_type= and
+=vote= pairs =for= with =choice=. Recording the pair is honest where one name would
+either lie or forbid the flag.
+
+Positional arguments are excluded. =create= and =reject= take their title
+positionally, and the first version of this list said =title= for both because it was
+written from memory instead of from the parser.
+
+Both checks found real gaps on their first run. The flag check caught that pair of
+invented =title= flags and a =--blocked-by= that is really =--block=. The tool check
+caught MCP =create= taking neither =deadline= nor =scheduled=, both of which the
+subcommand has always taken, so an agent could not set a date a person could. Nothing
+was wrong on either side in isolation, which is why only a check across the pair
+finds it.
 
 The schema's constant is compiled into a committed Rust file and read through the
 pure-Rust runtime, so the checks read the schema's own bytes. Building and testing

@@ -39,6 +39,10 @@ pub struct CreateArgs {
     pub parent: Option<String>,
     /// Body prose written under the heading.
     pub body: Option<String>,
+    /// Org deadline like `<2026-05-15 Fri>` or `[2026-05-15]`.
+    pub deadline: Option<String>,
+    /// Org scheduled date like `<2026-05-01 Mon>`.
+    pub scheduled: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]

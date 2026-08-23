@@ -42,41 +42,107 @@ struct Operation {
   note @4 :Text;
   # Why a surface is empty, when one is. Empty otherwise.
 
-  flags @5 :List(Text);
-  # Command-line flags the verb takes, without the leading dashes, and only the
-  # ones that name a field rather than a mode. Positional arguments are not in
-  # here: `create` and `reject` take their title positionally, and the first
-  # version of this list said `title` for both because it was written from memory
-  # rather than from the parser. The check found all three mistakes on its first
-  # run, which is the argument for having it. Naming the verb on each surface
-  # stops a verb going missing; it does not stop the surfaces disagreeing about
-  # what to call a field, which is the next way this drifts: a socket method
-  # taking `body` where the subcommand takes `--text` is two spellings of one
-  # idea and no test would notice.
+  fields @5 :List(Field);
+  # The fields the verb takes, each named on the surfaces that carry it.
+  #
+  # Naming a verb per surface stops the verb going missing. It says nothing about
+  # the surfaces disagreeing on what to call a field, which is the next way this
+  # drifts, and it had already happened: `vote` takes `--for` on the command line
+  # and `choice` as a tool argument, and MCP `create` could set neither a deadline
+  # nor a scheduled date that the subcommand has always taken.
+  #
+  # Positional arguments are not in here. `create` and `reject` take their title
+  # positionally, and the first version of this list said `title` for both because
+  # it was written from memory rather than from the parser.
 }
 
+struct Field {
+  # One field of one verb, named per surface.
+  #
+  # Two names rather than one, because some divergence is forced rather than
+  # sloppy: `--type` cannot be a Rust field called `type`, and `--for` cannot be a
+  # field called `for`, since both are keywords. Recording the pair is honest about
+  # that, where a single canonical name would either lie or forbid the flag.
+
+  cli @0 :Text;
+  # Flag name without the leading dashes, empty when the surface does not take it
+  # or takes it positionally.
+
+  tool @1 :Text;
+  # MCP argument name, empty when the tool deliberately does not take it.
+
+  note @2 :Text;
+  # Why a surface is empty, or why the two names differ. Empty when they agree.
+}
+
+
 const operations :List(Operation) = [
-  ( cli = "create",    socket = "issue/create",    mcp = "vissue_create",    mutates = true,  note = "",
-    flags = ["project", "priority", "type", "tags", "parent", "body", "body-file", "deadline", "scheduled"] ),
-  ( cli = "update",    socket = "issue/update",    mcp = "vissue_update",    mutates = true,  note = "",
-    flags = ["state", "priority", "block", "unblock", "if-state", "if-gen"] ),
-  ( cli = "claim",     socket = "issue/claim",     mcp = "vissue_claim",     mutates = true,  note = "",
-    flags = ["force"] ),
-  ( cli = "note",      socket = "issue/note",      mcp = "vissue_note",      mutates = true,  note = "",
-    flags = [] ),
-  ( cli = "append",    socket = "issue/append",    mcp = "vissue_append",    mutates = true,  note = "",
-    flags = ["text", "file"] ),
-  ( cli = "refile",    socket = "issue/refile",    mcp = "vissue_refile",    mutates = true,  note = "",
-    flags = ["to"] ),
-  ( cli = "reject",    socket = "issue/reject",    mcp = "vissue_reject",    mutates = true,  note = "",
-    flags = ["to", "project", "reason"] ),
-  ( cli = "resolve",   socket = "issue/resolve",   mcp = "vissue_resolve",   mutates = true,  note = "",
-    flags = [] ),
-  ( cli = "vote",      socket = "issue/vote",      mcp = "vissue_vote",      mutates = true,  note = "",
-    flags = ["for"] ),
-  ( cli = "fold",      socket = "issue/fold",      mcp = "vissue_fold",      mutates = true,  note = "",
-    flags = ["project"] ),
-  ( cli = "normalize", socket = "issue/normalize", mcp = "",                 mutates = true,
+  ( cli = "create", socket = "issue/create", mcp = "vissue_create", mutates = true,
+    note = "",
+    fields = [
+      ( cli = "project", tool = "project", note = "" ),
+      ( cli = "priority", tool = "priority", note = "" ),
+      ( cli = "type", tool = "issue_type", note = "the flag cannot be a Rust field of that name, which is a keyword" ),
+      ( cli = "tags", tool = "tags", note = "" ),
+      ( cli = "parent", tool = "parent", note = "" ),
+      ( cli = "body", tool = "body", note = "" ),
+      ( cli = "deadline", tool = "deadline", note = "" ),
+      ( cli = "scheduled", tool = "scheduled", note = "" ),
+      ( cli = "body-file", tool = "", note = "no tool argument: it reads a path on the host running the server, not the caller's" )
+    ] ),
+  ( cli = "update", socket = "issue/update", mcp = "vissue_update", mutates = true,
+    note = "",
+    fields = [
+      ( cli = "state", tool = "state", note = "" ),
+      ( cli = "priority", tool = "priority", note = "" ),
+      ( cli = "block", tool = "block", note = "" ),
+      ( cli = "unblock", tool = "unblock", note = "" ),
+      ( cli = "if-state", tool = "if_state", note = "" ),
+      ( cli = "if-gen", tool = "if_gen", note = "" )
+    ] ),
+  ( cli = "claim", socket = "issue/claim", mcp = "vissue_claim", mutates = true,
+    note = "",
+    fields = [
+      ( cli = "force", tool = "force", note = "" )
+    ] ),
+  ( cli = "note", socket = "issue/note", mcp = "vissue_note", mutates = true,
+    note = "",
+    fields = [] ),
+  ( cli = "append", socket = "issue/append", mcp = "vissue_append", mutates = true,
+    note = "",
+    fields = [
+      ( cli = "text", tool = "text", note = "" ),
+      ( cli = "file", tool = "", note = "no tool argument: it reads a path on the host running the server, not the caller's" )
+    ] ),
+  ( cli = "refile", socket = "issue/refile", mcp = "vissue_refile", mutates = true,
+    note = "",
+    fields = [
+      ( cli = "to", tool = "to", note = "" )
+    ] ),
+  ( cli = "reject", socket = "issue/reject", mcp = "vissue_reject", mutates = true,
+    note = "",
+    fields = [
+      ( cli = "to", tool = "to", note = "" ),
+      ( cli = "project", tool = "project", note = "" ),
+      ( cli = "reason", tool = "reason", note = "" )
+    ] ),
+  ( cli = "resolve", socket = "issue/resolve", mcp = "vissue_resolve", mutates = true,
+    note = "",
+    fields = [] ),
+  ( cli = "vote", socket = "issue/vote", mcp = "vissue_vote", mutates = true,
+    note = "",
+    fields = [
+      ( cli = "for", tool = "choice", note = "the flag cannot be a Rust field of that name, which is a keyword" )
+    ] ),
+  ( cli = "fold", socket = "issue/fold", mcp = "vissue_fold", mutates = true,
+    note = "",
+    fields = [
+      ( cli = "project", tool = "project", note = "" )
+    ] ),
+  ( cli = "normalize", socket = "issue/normalize", mcp = "", mutates = true,
     note = "no tool: rewriting every heading in a corpus is not a thing to hand an agent",
-    flags = ["project", "dry-run"] ),
+    fields = [
+      ( cli = "project", tool = "", note = "the verb has no tool" ),
+      ( cli = "dry-run", tool = "", note = "the verb has no tool" )
+    ] ),
 ];

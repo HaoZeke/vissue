@@ -32,8 +32,19 @@ pub struct Operation {
     pub mutates: bool,
     /// Why a surface is empty, when one is.
     pub note: String,
-    /// Command-line flags the verb takes, without the leading dashes.
-    pub flags: Vec<String>,
+    /// Fields the verb takes, each named per surface.
+    pub fields: Vec<Field>,
+}
+
+/// One field of one verb, named per surface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    /// Flag name without dashes, empty when absent or positional.
+    pub cli: String,
+    /// MCP argument name, empty when the tool does not take it.
+    pub tool: String,
+    /// Why a surface is empty, or why the two names differ.
+    pub note: String,
 }
 
 /// The operation set as the schema states it.
@@ -56,11 +67,15 @@ fn read_one(row: operation::Reader<'_>) -> Operation {
             .and_then(|t| t.to_str().ok().map(str::to_string))
             .unwrap_or_default()
     };
-    let flags = row
-        .get_flags()
+    let fields = row
+        .get_fields()
         .map(|list| {
             list.iter()
-                .filter_map(|f| f.ok().and_then(|t| t.to_str().ok().map(str::to_string)))
+                .map(|f| Field {
+                    cli: text(f.get_cli()),
+                    tool: text(f.get_tool()),
+                    note: text(f.get_note()),
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -70,7 +85,7 @@ fn read_one(row: operation::Reader<'_>) -> Operation {
         mcp: text(row.get_mcp()),
         mutates: row.get_mutates(),
         note: text(row.get_note()),
-        flags,
+        fields,
     }
 }
 

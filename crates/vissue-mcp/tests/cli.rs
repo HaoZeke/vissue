@@ -77,3 +77,59 @@ fn the_tool_list_offers_every_tool_the_schema_names() {
         "the schema names these tools and the server does not expose them: {missing:?}"
     );
 }
+
+/// Each tool takes the arguments the schema names for it.
+///
+/// The verb-level check says `vissue_create` exists. It does not say the tool can
+/// set what the subcommand can set, and it could not: MCP `create` took neither
+/// `deadline` nor `scheduled`, both of which the subcommand has always taken, so an
+/// agent could not set a date a person could. Nothing was wrong on either side in
+/// isolation, which is why only a check across the pair finds it.
+///
+/// The schema holds both spellings because some divergence is forced: `--type`
+/// cannot be a Rust field named `type` and `--for` cannot be one named `for`. The
+/// tool name is what is checked here, and a field the tool deliberately omits leaves
+/// it empty and says why.
+#[test]
+fn each_tool_takes_the_arguments_the_schema_names() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tools_src = std::fs::read_to_string(root.join("src/tools.rs")).expect("tools.rs");
+
+    let mut wrong = Vec::new();
+    for op in vissue_core::surface::operations() {
+        if op.mcp.is_empty() {
+            continue;
+        }
+        // vissue_create -> CreateArgs
+        let stem = op.mcp.trim_start_matches("vissue_");
+        let mut camel = String::new();
+        for part in stem.split('_') {
+            let mut c = part.chars();
+            if let Some(f) = c.next() {
+                camel.push(f.to_ascii_uppercase());
+                camel.push_str(c.as_str());
+            }
+        }
+        let struct_name = format!("{camel}Args");
+        let Some(at) = tools_src.find(&format!("pub struct {struct_name} {{")) else {
+            wrong.push(format!("{}: no {struct_name} to check", op.mcp));
+            continue;
+        };
+        let body_end = tools_src[at..]
+            .find("\n}")
+            .map_or(tools_src.len(), |e| at + e);
+        let body = &tools_src[at..body_end];
+        for field in &op.fields {
+            if field.tool.is_empty() {
+                continue;
+            }
+            if !body.contains(&format!("pub {}:", field.tool)) {
+                wrong.push(format!("{struct_name} has no {}", field.tool));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the schema names arguments these tools do not take: {wrong:?}"
+    );
+}

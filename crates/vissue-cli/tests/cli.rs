@@ -1769,14 +1769,17 @@ fn the_command_line_offers_every_verb_the_schema_names() {
 fn each_verb_offers_the_flags_the_schema_names() {
     let mut wrong = Vec::new();
     for op in vissue_core::surface::operations() {
-        if op.cli.is_empty() || op.flags.is_empty() {
+        if op.cli.is_empty() || op.fields.is_empty() {
             continue;
         }
         let help = vissue(&[&op.cli, "--help"]);
         let text = String::from_utf8_lossy(&help.stdout).to_string();
-        for flag in &op.flags {
-            if !text.contains(&format!("--{flag}")) {
-                wrong.push(format!("{} has no --{flag}", op.cli));
+        for field in &op.fields {
+            if field.cli.is_empty() {
+                continue;
+            }
+            if !text.contains(&format!("--{}", field.cli)) {
+                wrong.push(format!("{} has no --{}", op.cli, field.cli));
             }
         }
     }

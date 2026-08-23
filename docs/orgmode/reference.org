@@ -278,6 +278,12 @@ on what a field is called or whether they all take it. Two checks: every subcomm
 help offers the flags named for it, and every tool's argument struct carries the
 arguments named for it.
 
+Each field also carries its Rust type per surface, because a name check cannot see a
+type change: a field going from a number to a string keeps its name. Per surface
+rather than once, since two genuinely differ, =priority= being =Option<String>= as a
+tool argument and =Option<char>= on the socket, and =force= being =Option<bool>= and
+=bool=.
+
 Three names per field rather than one canonical name, because some divergence is
 forced and some is real. =--type= cannot be a Rust field called =type= and =--for=
 cannot be one called =for=, both being keywords, so =create= pairs =type= with

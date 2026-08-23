@@ -51,6 +51,10 @@ pub struct Field {
     pub socket: String,
     /// Why a surface is empty, or why the names differ.
     pub note: String,
+    /// Rust type of the tool argument, empty when the tool does not take it.
+    pub tool_type: String,
+    /// Rust type of the socket parameter, empty when the method does not take it.
+    pub socket_type: String,
 }
 
 /// The operation set as the schema states it.
@@ -82,6 +86,8 @@ fn read_one(row: operation::Reader<'_>) -> Operation {
                     tool: text(f.get_tool()),
                     socket: text(f.get_socket()),
                     note: text(f.get_note()),
+                    tool_type: text(f.get_tool_type()),
+                    socket_type: text(f.get_socket_type()),
                 })
                 .collect()
         })

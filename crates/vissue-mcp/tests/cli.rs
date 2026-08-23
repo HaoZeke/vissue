@@ -126,8 +126,22 @@ fn each_tool_takes_the_arguments_the_schema_names() {
             if field.tool.is_empty() {
                 continue;
             }
-            if !body.contains(&format!("pub {}:", field.tool)) {
+            let Some(at) = body.find(&format!("pub {}:", field.tool)) else {
                 wrong.push(format!("{struct_name} has no {}", field.tool));
+                continue;
+            };
+            // The type too, not only the name. A field going from a number to a
+            // string keeps its name, so a name check cannot see it.
+            if !field.tool_type.is_empty() {
+                let line = body[at..].lines().next().unwrap_or_default();
+                if !line.contains(&field.tool_type) {
+                    wrong.push(format!(
+                        "{struct_name}.{} is not {}: {}",
+                        field.tool,
+                        field.tool_type,
+                        line.trim()
+                    ));
+                }
             }
         }
     }

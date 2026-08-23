@@ -702,8 +702,22 @@ fn each_method_takes_the_parameters_the_schema_names() {
             if field.socket.is_empty() {
                 continue;
             }
-            if !body.contains(&format!("pub {}:", field.socket)) {
+            let Some(at) = body.find(&format!("pub {}:", field.socket)) else {
                 wrong.push(format!("{struct_name} has no {}", field.socket));
+                continue;
+            };
+            // And its type, since a field going from a number to a string keeps its
+            // name and no name check would notice.
+            if !field.socket_type.is_empty() {
+                let line = body[at..].lines().next().unwrap_or_default();
+                if !line.contains(&field.socket_type) {
+                    wrong.push(format!(
+                        "{struct_name}.{} is not {}: {}",
+                        field.socket,
+                        field.socket_type,
+                        line.trim()
+                    ));
+                }
             }
         }
     }

@@ -275,15 +275,16 @@ every heading in a corpus is not a thing to hand an agent.
 
 Fields are in there too, each named per surface, because naming a verb on each
 surface stops the verb going missing and says nothing about the surfaces disagreeing
-on what a field is called or whether they all take it. Two checks: every subcommand's
-help offers the flags named for it, and every tool's argument struct carries the
-arguments named for it.
+on what a field is called or whether they all take it.
 
 Each field also carries its Rust type per surface, because a name check cannot see a
 type change: a field going from a number to a string keeps its name. Per surface
 rather than once, since two genuinely differ, =priority= being =Option<String>= as a
 tool argument and =Option<char>= on the socket, and =force= being =Option<bool>= and
-=bool=.
+=bool=. A field also carries =omittable= for a parameter a caller may leave out
+whatever its type says: =force=, =dry_run=, =last= and =projects= are plain types
+behind serde's =default=, so the type reads as required while every caller omits
+them, and what a caller must send is the contract.
 
 Three names per field rather than one canonical name, because some divergence is
 forced and some is real. =--type= cannot be a Rust field called =type= and =--for=
@@ -294,30 +295,72 @@ argument, which is a difference a caller has to know. =agent= exists only on the
 socket, because only there is there a connection whose identity can be overridden.
 Recording the set is honest where one name would either lie or forbid a spelling.
 
-Positional arguments are excluded. =create= and =reject= take their title
-positionally, and the first version of this list said =title= for both because it was
-written from memory instead of from the parser.
+A positional argument carries an empty =cli= and its own names on the other two
+surfaces. Six methods were about a parameter no row named, because =Field= was
+written around flags: =issue/create= takes a title, =issue/search= takes a query,
+and =issue/tree=, =issue/ancestors=, =issue/impact= and =issue/related= take an id.
 
-Three checks, one per surface: the subcommand's help offers its flags, the tool's
-argument struct carries its arguments, and the method's param struct carries its
-parameters.
+** Each surface answers for itself
 
-Three more run the other way, and that direction was missing everywhere at first:
-every tool the server exposes, every method it dispatches, and every flag a verb takes
-must appear in a schema row. Flags clap puts on every subcommand are listed once as
-=globalFlags= and subtracted, so a per-verb row stays about what the verb takes, and a
-local-only verb is skipped because its flags are about the process rather than an
-operation.
+Each of the three checks asks its surface rather than reading the source that
+declares it.
+
+The command line answers through =vissue surface=, a hidden subcommand that walks
+the built =clap::Command= and emits every subcommand with its aliases and long flags.
+A flag is checked because the parser accepts it, not because a line of help spelled
+it in a recognisable way.
+
+The tools answer through an MCP =tools/list= over stdio, which returns the same
+schema an agent is given: each argument's name, its JSON type, and whether it is
+required. This catches what a source scan cannot. A =#[serde(rename)]= leaves the
+Rust field name in place, so scanning the struct for it passes while an agent is sent
+a name the tool rejects.
+
+The socket answers by refusing. A parameter is present because the method refuses a
+value of the wrong type for it, and required because the method refuses the request
+without it. Nothing executes: every request is built to fail at decode, and the
+=-32602= that comes back is the parameter check refusing it, so a mutating method can
+be asked this without writing anything.
+
+What makes that last one mean anything is a check on the baseline. If the schema does
+not name every parameter a method requires, a request built from the schema is refused
+whatever else is done to it, and every wrong-type check would pass by refusing a
+request that was already being refused. That guard is what found the six methods
+above.
+
+Reading source was the wrong tool for this, and was wrong three times. Deriving an
+argument type from a tool's name reported six tools as unimplemented, because several
+tools share one struct. The scan for the parameter type a handler decodes found
+something for every method and the right thing for none.
+
+One scan remains, for the list of dispatched method names, because it is the one
+question no handshake can answer. A client can ask whether a named method answers. It
+cannot ask for the names it has not been told.
+
+** The other direction
+
+Three checks run schema to surface, and three run back. That direction was missing
+everywhere at first: every tool the server exposes, every method it dispatches, every
+flag a verb takes and every alias it answers to must appear in a schema row.
+
+Flags clap puts on every subcommand are listed once as =globalFlags= and subtracted,
+so a per-verb row stays about what the verb takes. A local-only verb is skipped
+because its flags are about the process rather than an operation.
+
 A check that only runs schema to surface catches a verb the schema names and the
-surface lacks, and is blind to one that exists and the schema omits, which is the
-same asymmetry that let verbs drift to begin with. Adding the reverse found three:
+surface lacks. It is blind to one that exists and the schema omits, which is the same
+asymmetry that let verbs drift to begin with. Adding the reverse found three:
 =normalize= had a tool the schema denied, and =vissue_org= and =vissue_mirror_check=
-were in no row.
+were in no row. Those last two are operations the command line reaches through a flag
+rather than a verb: =show --org= and =mirror --check=. Such a row carries no
+subcommand, says so in =note=, and has to reach some surface even so.
 
-Those last two are operations the command line reaches through a flag rather than a
-verb: =show --org= and =mirror --check=. Such a row carries no subcommand, says so in
-=note=, and has to reach some surface even so. The last reads =rpc.rs=, where serde decides the wire names, so what is
-checked is what a client has to send.
+An alias is one verb under two spellings, taking the same flags either way. =q= was
+recorded as an alias of =create= and is a subcommand of its own, taking three of
+create's fields and rejecting =--body= and =--priority=, so a row of ten fields
+answered for a verb that accepts three. It has its own row and a =shorthandFor=,
+which has to name a verb that exists, reaches the socket if the shorthand mutates,
+and takes every field the shorthand takes.
 
 They found real gaps on their first runs. The flag check caught that pair of
 invented =title= flags and a =--blocked-by= that is really =--block=. The tool check

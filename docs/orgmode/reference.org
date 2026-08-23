@@ -287,6 +287,27 @@ the acyclicity check inside that lock, so it sees every write that has landed;
 two blockers added at the same moment in different project files can still
 close a cycle between them. =check= and =cycles= report one if it happens.
 
+What holds this up is tested rather than asserted, and each guard was checked by
+removing the lock it guards:
+
+- every mutating verb at once from separate processes against one file, and all of
+  them land; without the file lock three of eleven headings vanish;
+- creates racing across two roots for one project name, all succeeding with
+  distinct ids;
+- separate processes emitting change events, no sequence handed out twice; without
+  the advisory half of the events lock, sequences duplicate heavily.
+
+The third of those needs one project per subject to mean anything. With every
+subject in one file the issues lock already serialises the pipeline and the events
+lock never contends, so a version of that test using one project passed with the
+advisory lock removed. Separate files take separate issues locks, which is when the
+events sequence can actually be raced.
+
+No queue or broker sits in front of this. The advisory lock is the serialisation
+point and any tool writing these files is expected to take it; =serve= exists for
+clients that want one connection and a change stream, not because correctness needs
+a mediator.
+
 A mint locks more than the file it writes. Routing can put one project name on
 several layouts, and an id has to be unique across them, so =create= and a
 =reject= successor lock every twin file for that project and read their ids after

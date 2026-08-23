@@ -35,12 +35,15 @@ constant anywhere.
 After editing `vissue.capnp`:
 
 ```
-capnp compile -o- schema/vissue.capnp > /tmp/cgr.bin
-capnpc-rust < /tmp/cgr.bin          # writes schema/vissue_capnp.rs
-mv schema/vissue_capnp.rs crates/vissue-core/src/schema/vissue_capnp.rs
+schema/regen.sh
 ```
 
-`capnp` and the `capnpc-rust` plugin are both needed for that step and neither is
-needed to build or test. If they are on different machines, the first command only
-needs `capnp` and the second only needs the plugin, so the request file can be moved
-between them.
+That needs `capnp` and the `capnpc-rust` plugin, and neither is needed to build or
+test. Where both are present it is one command. Where only the compiler is, the script
+writes the request file and prints what to run on a machine with the plugin, because
+the two halves can live on different machines and the request moves between them.
+
+Forgetting to run it is caught rather than shipped:
+`the_generated_constant_matches_the_schema_text` reads the schema text and compares it
+with the committed constant, so an edit without a regeneration fails the suite with
+the instruction to regenerate.

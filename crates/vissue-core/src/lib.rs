@@ -24,6 +24,22 @@ pub mod related;
 pub mod report;
 pub mod router;
 pub mod store;
+pub mod surface;
+/// Generated from `schema/vissue.capnp`; the operation set is encoded in here.
+///
+/// Committed rather than built, because `capnp` the compiler is not on the
+/// machines that build this. Regenerating is a maintainer step.
+#[allow(
+    clippy::all,
+    clippy::pedantic,
+    missing_docs,
+    missing_debug_implementations,
+    unused_qualifications
+)]
+#[rustfmt::skip]
+pub mod vissue_capnp {
+    include!("schema/vissue_capnp.rs");
+}
 pub mod views;
 
 pub use config::{DEFAULT_PREFIX, Layout, VissueConfig};

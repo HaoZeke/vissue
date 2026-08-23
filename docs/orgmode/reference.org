@@ -255,6 +255,28 @@ Change one: =vissue_create=, =vissue_update=, =vissue_claim=, =vissue_note=,
 =vissue_append=, =vissue_refile=, =vissue_fold=, =vissue_reject=, =vissue_resolve=,
 =vissue_vote=.
 
+* The operation set
+
+=schema/vissue.capnp= states the verb set once, naming each verb on all three
+surfaces: the subcommand, the socket method, and the MCP tool. Three tests read it
+and fail by name until their surface satisfies it, one per crate.
+
+Each surface used to declare its own verbs in its own idiom, so a verb could exist
+on one and not the others, and did: =vote= shipped on the command line alone, and
+=append= had no socket method for as long as the socket existed. The
+reference-completeness tests stayed green through both, because they ask whether
+the docs list what exists rather than whether what should exist does.
+
+A verb that should not reach a surface leaves that field empty and gives its reason
+in =note=; the checks skip those, so a deliberate omission reads differently from a
+forgotten one. =normalize= is the only one today, and the reason is that rewriting
+every heading in a corpus is not a thing to hand an agent.
+
+The schema's constant is compiled into a committed Rust file and read through the
+pure-Rust runtime, so the checks read the schema's own bytes. Building and testing
+need no Cap'n Proto toolchain; regenerating after a schema edit does, and
+=schema/README.md= says how.
+
 * Control socket coverage
 
 Every verb that changes a file has a method: =issue/create=, =issue/update=,

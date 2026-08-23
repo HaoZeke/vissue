@@ -1728,3 +1728,30 @@ fn a_user_config_route_wins_over_an_explicit_root() {
     );
     assert!(vault.join("Software/parser/issues.org").exists());
 }
+
+/// The command line carries every verb the schema names.
+///
+/// Together with the socket and tool guards, this is what makes a verb impossible
+/// to add to one surface and forget on the others: the schema states the set once,
+/// and three tests in three crates each fail by name until their surface satisfies
+/// it. Before this the docs tests checked that the reference listed what existed,
+/// which is a different question and stayed green through every gap.
+#[test]
+fn the_command_line_offers_every_verb_the_schema_names() {
+    let help = vissue(&["--help"]);
+    let text = String::from_utf8_lossy(&help.stdout).to_string();
+    let missing: Vec<String> = vissue_core::surface::mutating_cli_verbs()
+        .into_iter()
+        .filter(|verb| {
+            // The verb has to appear as a subcommand, so a substring of prose does
+            // not satisfy it: help lists them one per line, indented.
+            !text
+                .lines()
+                .any(|line| line.split_whitespace().next() == Some(verb.as_str()))
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "the schema names these verbs and the command line does not offer them: {missing:?}"
+    );
+}

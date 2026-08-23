@@ -543,3 +543,34 @@ fn every_mutating_verb_is_reachable_over_the_socket() {
         "{listed}"
     );
 }
+
+/// The socket carries every method the schema names.
+///
+/// This is the guard that the five-verb gap could not have survived. `append` had
+/// no socket method for as long as the socket existed, and nothing said so: the
+/// docs tests checked that the reference listed the methods that existed, which is
+/// a different question from whether the methods that should exist do.
+///
+/// Reads the set out of `schema/vissue.capnp` through the encoded constant, so the
+/// schema is the thing being satisfied rather than a list maintained beside it.
+#[test]
+fn the_socket_answers_every_method_the_schema_names() {
+    let h = Harness::new();
+    let mut client = h.connect();
+
+    let mut missing = Vec::new();
+    for method in vissue_core::surface::mutating_socket_methods() {
+        // Called with no params: a method that exists rejects them as invalid
+        // params, and one that does not exist answers method-not-found. Only the
+        // second is a gap, so the code is what decides and not success.
+        if let Err(Error::Rpc(err)) = client.request(&method, json!({}))
+            && err.code == -32601
+        {
+            missing.push(method);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "the schema names these methods and the socket does not answer them: {missing:?}"
+    );
+}

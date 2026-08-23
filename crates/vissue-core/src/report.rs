@@ -1095,6 +1095,33 @@ pub struct CheckReport {
     pub warnings: usize,
 }
 
+/// Findings as they accumulate, each carrying its own severity.
+///
+/// The counts are the point: `check` exits non-zero on an error, and a caller reads
+/// the two numbers without reading the prose. Keeping them beside the text is what
+/// stops a finding being written without being counted, which is a silent way for the
+/// exit code to disagree with the report.
+#[derive(Default)]
+struct Findings {
+    text: String,
+    errors: usize,
+    warnings: usize,
+}
+
+impl Findings {
+    /// A finding a reader has to fix. Writing to a `String` cannot fail.
+    fn err(&mut self, what: std::fmt::Arguments) {
+        let _ = writeln!(self.text, "[err]  {what}");
+        self.errors += 1;
+    }
+
+    /// A finding a reader may leave, which does not change the exit code.
+    fn warn(&mut self, what: std::fmt::Arguments) {
+        let _ = writeln!(self.text, "[warn] {what}");
+        self.warnings += 1;
+    }
+}
+
 /// Validate the corpus: every parent and blocker id resolves, dates parse, open
 /// issues carry a creation date, and ids are unique across projects.
 ///
@@ -1118,346 +1145,31 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
     let elsewhere = find_org_ids(layout, &unresolved)?;
     let resolves = |id: &str| issue_ids.contains(id) || elsewhere.contains(id);
 
-    let mut out = String::new();
-
-    let mut errors = 0usize;
-    let mut warnings = 0usize;
+    let mut f = Findings::default();
 
     let mut by_id: HashMap<String, (String, &IssueHeading)> = HashMap::new();
     for (project, h) in &all {
         if let Some(prev) = by_id.insert(h.id.clone(), (project.clone(), h)) {
             // An error, not a note: an id that names two issues makes every
             // blocker and parent edge pointing at it ambiguous.
-            writeln!(
-                out,
-                "[err]  duplicate id: {} appears in {} and {}",
+            f.err(format_args!(
+                "duplicate id: {} appears in {} and {}",
                 h.id, prev.0, project
-            )?;
-            errors += 1;
+            ));
         }
     }
 
     for project in list_projects(layout)? {
-        let path = layout.project_issues_path(&project);
-        let doc = IssueDoc::parse_file(&project, &path)?;
-        match crate::org::protocol_from_preamble(&doc.preamble) {
-            None => {
-                writeln!(
-                    out,
-                    "[warn] {project}: preamble has no #+VISSUE: protocol stamp"
-                )?;
-                warnings += 1;
-            }
-            Some(n) if n < crate::org::PROTOCOL_VERSION => {
-                writeln!(
-                    out,
-                    "[warn] {project}: #+VISSUE: {n} is behind protocol {}",
-                    crate::org::PROTOCOL_VERSION
-                )?;
-                warnings += 1;
-            }
-            Some(n) if n > crate::org::PROTOCOL_VERSION => {
-                writeln!(
-                    out,
-                    "[err]  {project}: #+VISSUE: {n} is newer than this vissue (protocol {})",
-                    crate::org::PROTOCOL_VERSION
-                )?;
-                errors += 1;
-            }
-            Some(_) => {}
-        }
-        if !crate::org::preamble_has_keyword(&doc.preamble, "CATEGORY") {
-            writeln!(
-                out,
-                "[warn] {project}: preamble has no #+CATEGORY: (org-agenda labels every row \"issues\")"
-            )?;
-            warnings += 1;
-        }
-        if !crate::org::preamble_has_keyword(&doc.preamble, "FILETAGS") {
-            writeln!(out, "[warn] {project}: preamble has no #+FILETAGS:")?;
-            warnings += 1;
-        } else if !doc
-            .tag_settings
-            .filetags
-            .iter()
-            .any(|t| t.eq_ignore_ascii_case("noexport"))
-        {
-            writeln!(
-                out,
-                "[warn] {project}: #+FILETAGS: has no noexport; a vault publish will export this tracker"
-            )?;
-            warnings += 1;
-        }
-        if !crate::org::preamble_has_keyword(&doc.preamble, "TAGS") {
-            writeln!(
-                out,
-                "[warn] {project}: preamble has no #+TAGS:; Emacs fast tag selection has no type group"
-            )?;
-            warnings += 1;
-        }
-        if !crate::org::preamble_has_keyword(
-            &crate::org::merge_setupfile_settings(&doc.preamble, path.parent()),
-            "PRIORITIES",
-        ) {
-            writeln!(
-                out,
-                "[warn] {project}: preamble has no #+PRIORITIES:; cookies default to C and the range is A..C"
-            )?;
-            warnings += 1;
-        }
-        // The loader skips a heading a calendar sync owns, so the parsed headings
-        // cannot hold one and counting them there counted nothing. The heading is
-        // still in the file, and one vissue will not touch is the surprise worth
-        // reporting, so the file is what gets counted.
-        let gcal_ids = crate::store::org_ids(&std::fs::read_to_string(&path)?)
-            .filter(|id| crate::org::is_gcal_event_id(id))
-            .count();
-
-        let spec = doc.priority_spec();
-        let mut type_not_tagged = 0usize;
-        let mut exclusive_clash = 0usize;
-        let mut priority_out_of_range = 0usize;
-        let mut ordered_skip = 0usize;
-        let mut done_with_open_children = 0usize;
-        let mut priority_in_drawer = 0usize;
-        let mut blockedby_typo = 0usize;
-        let mut blocker_as_ids = 0usize;
-        let mut computed_specials = 0usize;
-        let mut bad_effort = 0usize;
-        for h in &doc.headings {
-            if let Some(kind) = crate::props::get(&h.properties, crate::props::TYPE) {
-                let kind = kind.trim();
-                if !kind.is_empty()
-                    && kind.chars().all(crate::model::is_org_tag_char)
-                    && !h.org_tags.iter().any(|t| t == kind)
-                {
-                    type_not_tagged += 1;
-                }
-            }
-            for group in &doc.tag_settings.exclusive {
-                let hits = group
-                    .iter()
-                    .filter(|name| h.org_tags.iter().any(|t| t == *name))
-                    .count();
-                if hits > 1 {
-                    exclusive_clash += 1;
-                    break;
-                }
-            }
-            if !spec.contains(h.priority) {
-                priority_out_of_range += 1;
-            }
-            if h.properties.contains_key("PRIORITY") {
-                priority_in_drawer += 1;
-            }
-            if h.properties.contains_key("BLOCKEDBY") {
-                blockedby_typo += 1;
-            }
-            if let Some(raw) = h.properties.get("BLOCKER")
-                && !crate::org::is_edna_blocker(raw)
-            {
-                blocker_as_ids += 1;
-            }
-            if crate::org::COMPUTED_SPECIALS
-                .iter()
-                .any(|k| *k != "PRIORITY" && h.properties.contains_key(*k))
-            {
-                computed_specials += 1;
-            }
-            if let Some(effort) = h.effort()
-                && !crate::org::is_org_effort(effort)
-            {
-                bad_effort += 1;
-            }
-            if let Some(pid) = h.parent()
-                && let Some(parent) = doc.headings.iter().find(|p| p.id == pid)
-                && crate::org::org_property_is_set(&parent.properties, "ORDERED")
-                && !crate::org::org_property_is_set(&h.properties, "NOBLOCKING")
-            {
-                let earlier_open = doc.headings.iter().any(|sib| {
-                    sib.parent() == Some(pid)
-                        && sib.line_start < h.line_start
-                        && sib.state != "DONE"
-                        && sib.state != "CANCELLED"
-                });
-                if earlier_open && (h.state == "STARTED" || h.state == "DONE") {
-                    ordered_skip += 1;
-                }
-            }
-            if h.state == "DONE"
-                && !crate::org::org_property_is_set(&h.properties, "NOBLOCKING")
-                && doc.headings.iter().any(|c| {
-                    c.parent() == Some(h.id.as_str()) && c.state != "DONE" && c.state != "CANCELLED"
-                })
-            {
-                done_with_open_children += 1;
-            }
-        }
-        if type_not_tagged > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {type_not_tagged} heading(s) have :TYPE: that is a legal Org tag but is not on the heading"
-            )?;
-            warnings += 1;
-        }
-        if exclusive_clash > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {exclusive_clash} heading(s) carry more than one tag from a #+TAGS: exclusive group"
-            )?;
-            warnings += 1;
-        }
-        if priority_in_drawer > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {priority_in_drawer} heading(s) put :PRIORITY: in the drawer; Org reads the [#A] cookie"
-            )?;
-            warnings += 1;
-        }
-        if blockedby_typo > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {blockedby_typo} heading(s) use :BLOCKEDBY: instead of :BLOCKED_BY:"
-            )?;
-            warnings += 1;
-        }
-        if blocker_as_ids > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {blocker_as_ids} heading(s) use :BLOCKER: as a bare id list; a rewrite folds them into :BLOCKED_BY:"
-            )?;
-            warnings += 1;
-        }
-        if computed_specials > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {computed_specials} heading(s) set a computed Org special (TODO/ITEM/TAGS/...) in the drawer; Org ignores it"
-            )?;
-            warnings += 1;
-        }
-        if bad_effort > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {bad_effort} heading(s) have an Effort value Org will not parse"
-            )?;
-            warnings += 1;
-        }
-        if priority_out_of_range > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {priority_out_of_range} heading(s) have a [#prio] outside #+PRIORITIES:"
-            )?;
-            warnings += 1;
-        }
-        if ordered_skip > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {ordered_skip} heading(s) started or closed before an earlier ORDERED sibling"
-            )?;
-            warnings += 1;
-        }
-        if done_with_open_children > 0 {
-            writeln!(
-                out,
-                "[warn] {project}: {done_with_open_children} DONE heading(s) still have open children (Org ORDERED / todo-dependencies)"
-            )?;
-            warnings += 1;
-        }
-        if gcal_ids > 0 {
-            writeln!(
-                out,
-                "[err]  {project}: {gcal_ids} heading(s) use an org-gcal event id as :ID:"
-            )?;
-            errors += 1;
-        }
+        check_project(&project, layout, &mut f)?;
     }
 
     for (project, h) in &all {
-        if let Some(parent) = h.parent()
-            && !resolves(parent)
-        {
-            writeln!(
-                out,
-                "[err]  {} (in {}) :PARENT: {} -> not found",
-                h.id, project, parent
-            )?;
-            errors += 1;
-        }
-        for blk in blocker_ids(h) {
-            if !by_id.contains_key(blk) {
-                writeln!(
-                    out,
-                    "[err]  {} (in {}) :BLOCKED_BY: {} -> not found",
-                    h.id, project, blk
-                )?;
-                errors += 1;
-            }
-        }
-        if let Some(d) = h.deadline()
-            && parse_org_date(d).is_none()
-        {
-            writeln!(
-                out,
-                "[err]  {} (in {}) :DEADLINE: {} -> unparseable",
-                h.id, project, d
-            )?;
-            errors += 1;
-        }
-        if let Some(s) = h.scheduled()
-            && parse_org_date(s).is_none()
-        {
-            writeln!(
-                out,
-                "[err]  {} (in {}) :SCHEDULED: {} -> unparseable",
-                h.id, project, s
-            )?;
-            errors += 1;
-        }
-        if matches!(h.state.as_str(), "TODO" | "STARTED") && !h.properties.contains_key("CREATED") {
-            writeln!(
-                out,
-                "[warn] {} (in {}) state={} but :CREATED: is missing",
-                h.id, project, h.state
-            )?;
-            warnings += 1;
-        }
-        if h.state == "DONE" && looks_like_reject_prose(&h.body) {
-            writeln!(
-                out,
-                "[warn] {} (in {}) is DONE but the body reads as a reject",
-                h.id, project
-            )?;
-            warnings += 1;
-        }
-        if crate::props::get(&h.properties, crate::props::SIBLING_TERMINAL).is_some() {
-            writeln!(
-                out,
-                "[warn] {} (in {}) holds {} and sibling {}",
-                h.id,
-                project,
-                h.state,
-                crate::props::get(&h.properties, crate::props::SIBLING_TERMINAL).unwrap_or("?")
-            )?;
-            warnings += 1;
-        }
+        check_issue(project, h, &resolves, &by_id, &mut f);
     }
 
     let known: HashSet<&str> = all.iter().map(|(_, h)| h.id.as_str()).collect();
     for (project, h) in &all {
-        for linked in crate::related::org_link_targets(&h.body, &known) {
-            if edge_connects(&all, &h.id, &linked) {
-                continue;
-            }
-            if !claims_discovery_or_pivot(&h.body, &linked) {
-                continue;
-            }
-            writeln!(
-                out,
-                "[warn] {} (in {}) mentions [[id:{}]] as discovered or pivoted with no edge either way",
-                h.id, project, linked
-            )?;
-            warnings += 1;
-        }
+        check_provenance_links(&all, project, h, &known, &mut f);
     }
 
     // A :PARENT: loop passes every edge check, because each id resolves, yet
@@ -1466,54 +1178,362 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
     // one from reading as clean.
     let mut settled: HashSet<&str> = HashSet::new();
     for (_, h) in &all {
-        if settled.contains(h.id.as_str()) {
-            continue;
-        }
-        let mut path: Vec<&str> = Vec::new();
-        let mut on_path: HashSet<&str> = HashSet::new();
-        let mut cursor = h.id.as_str();
-        loop {
-            if settled.contains(cursor) {
-                break;
-            }
-            if !on_path.insert(cursor) {
-                let start = path.iter().position(|id| *id == cursor).unwrap_or(0);
-                let mut loop_ids: Vec<&str> = path[start..].to_vec();
-                loop_ids.push(cursor);
-                writeln!(out, "[err]  parent cycle: {}", loop_ids.join(" -> "))?;
-                errors += 1;
-                break;
-            }
-            path.push(cursor);
-            match by_id.get(cursor).and_then(|(_, owner)| owner.parent()) {
-                Some(parent) if by_id.contains_key(parent) => cursor = parent,
-                _ => break,
-            }
-        }
-        settled.extend(path);
+        check_parent_cycle(h, &by_id, &mut settled, &mut f);
     }
 
-    if errors == 0
+    if f.errors == 0
         && let Err(err) = DependencyGraph::from_issues(&all)
     {
-        writeln!(out, "[err]  blocker graph: {err}")?;
-        errors += 1;
+        f.err(format_args!("blocker graph: {err}"));
     }
 
-    writeln!(out)?;
-    writeln!(
-        out,
-        "checked {} issue(s) across {} project(s): {} error(s), {} warning(s)",
+    let _ = writeln!(f.text);
+    let projects = list_projects(layout)?.len();
+    let _ = writeln!(
+        f.text,
+        "checked {} issue(s) across {projects} project(s): {} error(s), {} warning(s)",
         all.len(),
-        list_projects(layout)?.len(),
-        errors,
-        warnings
-    )?;
+        f.errors,
+        f.warnings
+    );
     Ok(CheckReport {
-        text: out,
-        errors,
-        warnings,
+        text: f.text,
+        errors: f.errors,
+        warnings: f.warnings,
     })
+}
+
+/// Validate one project's file: its preamble, and the headings it holds.
+///
+/// The one cohesive thing in `check` that is about a file rather than about the
+/// corpus. Everything here reads one project's own preamble and its own headings and
+/// needs none of the others.
+///
+/// # Errors
+///
+/// Returns an error if the project's file cannot be read or parsed.
+fn check_project(project: &str, layout: &Layout, f: &mut Findings) -> Result<()> {
+    let path = layout.project_issues_path(project);
+    let doc = IssueDoc::parse_file(project, &path)?;
+    check_preamble(project, &doc, &path, f);
+    // The loader skips a heading a calendar sync owns, so the parsed headings cannot
+    // hold one and counting them there counted nothing. The heading is still in the
+    // file, and one the tracker will not touch is the surprise worth reporting, so the
+    // file is what gets counted.
+    let gcal_ids = crate::store::org_ids(&std::fs::read_to_string(&path)?)
+        .filter(|id| crate::org::is_gcal_event_id(id))
+        .count();
+    if gcal_ids > 0 {
+        f.err(format_args!(
+            "{project}: {gcal_ids} heading(s) use an org-gcal event id as :ID:"
+        ));
+    }
+    check_headings(project, &doc, f);
+    Ok(())
+}
+
+/// What Org needs from the file's preamble to render the tracker as intended.
+///
+/// Each of these is a keyword whose absence Org does not complain about and a reader
+/// notices later: an agenda that labels every row `issues`, a publish that exports
+/// the tracker, a priority cookie outside the range the file declares.
+fn check_preamble(project: &str, doc: &IssueDoc, path: &std::path::Path, f: &mut Findings) {
+    match crate::org::protocol_from_preamble(&doc.preamble) {
+        None => {
+            f.warn(format_args!(
+                "{project}: preamble has no #+VISSUE: protocol stamp"
+            ));
+        }
+        Some(n) if n < crate::org::PROTOCOL_VERSION => {
+            f.warn(format_args!(
+                "{project}: #+VISSUE: {n} is behind protocol {}",
+                crate::org::PROTOCOL_VERSION
+            ));
+        }
+        Some(n) if n > crate::org::PROTOCOL_VERSION => {
+            f.err(format_args!(
+                "{project}: #+VISSUE: {n} is newer than this vissue (protocol {})",
+                crate::org::PROTOCOL_VERSION
+            ));
+        }
+        Some(_) => {}
+    }
+    if !crate::org::preamble_has_keyword(&doc.preamble, "CATEGORY") {
+        f.warn(format_args!(
+            "{project}: preamble has no #+CATEGORY: (org-agenda labels every row \"issues\")"
+        ));
+    }
+    if !crate::org::preamble_has_keyword(&doc.preamble, "FILETAGS") {
+        f.warn(format_args!("{project}: preamble has no #+FILETAGS:"));
+    } else if !doc
+        .tag_settings
+        .filetags
+        .iter()
+        .any(|t| t.eq_ignore_ascii_case("noexport"))
+    {
+        f.warn(format_args!(
+            "{project}: #+FILETAGS: has no noexport; a vault publish will export this tracker"
+        ));
+    }
+    if !crate::org::preamble_has_keyword(&doc.preamble, "TAGS") {
+        f.warn(format_args!(
+            "{project}: preamble has no #+TAGS:; Emacs fast tag selection has no type group"
+        ));
+    }
+    if !crate::org::preamble_has_keyword(
+        &crate::org::merge_setupfile_settings(&doc.preamble, path.parent()),
+        "PRIORITIES",
+    ) {
+        f.warn(format_args!(
+            "{project}: preamble has no #+PRIORITIES:; cookies default to C and the range is A..C"
+        ));
+    }
+}
+
+/// What the tracker needs from each heading in the file.
+///
+/// Counted rather than named one by one, because a file with forty headings that all
+/// put `:PRIORITY:` in the drawer wants one line saying so, not forty.
+fn check_headings(project: &str, doc: &IssueDoc, f: &mut Findings) {
+    let spec = doc.priority_spec();
+    let mut type_not_tagged = 0usize;
+    let mut exclusive_clash = 0usize;
+    let mut priority_out_of_range = 0usize;
+    let mut ordered_skip = 0usize;
+    let mut done_with_open_children = 0usize;
+    let mut priority_in_drawer = 0usize;
+    let mut blockedby_typo = 0usize;
+    let mut blocker_as_ids = 0usize;
+    let mut computed_specials = 0usize;
+    let mut bad_effort = 0usize;
+    for h in &doc.headings {
+        if let Some(kind) = crate::props::get(&h.properties, crate::props::TYPE) {
+            let kind = kind.trim();
+            if !kind.is_empty()
+                && kind.chars().all(crate::model::is_org_tag_char)
+                && !h.org_tags.iter().any(|t| t == kind)
+            {
+                type_not_tagged += 1;
+            }
+        }
+        for group in &doc.tag_settings.exclusive {
+            let hits = group
+                .iter()
+                .filter(|name| h.org_tags.iter().any(|t| t == *name))
+                .count();
+            if hits > 1 {
+                exclusive_clash += 1;
+                break;
+            }
+        }
+        if !spec.contains(h.priority) {
+            priority_out_of_range += 1;
+        }
+        if h.properties.contains_key("PRIORITY") {
+            priority_in_drawer += 1;
+        }
+        if h.properties.contains_key("BLOCKEDBY") {
+            blockedby_typo += 1;
+        }
+        if let Some(raw) = h.properties.get("BLOCKER")
+            && !crate::org::is_edna_blocker(raw)
+        {
+            blocker_as_ids += 1;
+        }
+        if crate::org::COMPUTED_SPECIALS
+            .iter()
+            .any(|k| *k != "PRIORITY" && h.properties.contains_key(*k))
+        {
+            computed_specials += 1;
+        }
+        if let Some(effort) = h.effort()
+            && !crate::org::is_org_effort(effort)
+        {
+            bad_effort += 1;
+        }
+        if let Some(pid) = h.parent()
+            && let Some(parent) = doc.headings.iter().find(|p| p.id == pid)
+            && crate::org::org_property_is_set(&parent.properties, "ORDERED")
+            && !crate::org::org_property_is_set(&h.properties, "NOBLOCKING")
+        {
+            let earlier_open = doc.headings.iter().any(|sib| {
+                sib.parent() == Some(pid)
+                    && sib.line_start < h.line_start
+                    && sib.state != "DONE"
+                    && sib.state != "CANCELLED"
+            });
+            if earlier_open && (h.state == "STARTED" || h.state == "DONE") {
+                ordered_skip += 1;
+            }
+        }
+        if h.state == "DONE"
+            && !crate::org::org_property_is_set(&h.properties, "NOBLOCKING")
+            && doc.headings.iter().any(|c| {
+                c.parent() == Some(h.id.as_str()) && c.state != "DONE" && c.state != "CANCELLED"
+            })
+        {
+            done_with_open_children += 1;
+        }
+    }
+    if type_not_tagged > 0 {
+        f.warn(format_args!("{project}: {type_not_tagged} heading(s) have :TYPE: that is a legal Org tag but is not on the heading"));
+    }
+    if exclusive_clash > 0 {
+        f.warn(format_args!("{project}: {exclusive_clash} heading(s) carry more than one tag from a #+TAGS: exclusive group"));
+    }
+    if priority_in_drawer > 0 {
+        f.warn(format_args!("{project}: {priority_in_drawer} heading(s) put :PRIORITY: in the drawer; Org reads the [#A] cookie"));
+    }
+    if blockedby_typo > 0 {
+        f.warn(format_args!(
+            "{project}: {blockedby_typo} heading(s) use :BLOCKEDBY: instead of :BLOCKED_BY:"
+        ));
+    }
+    if blocker_as_ids > 0 {
+        f.warn(format_args!("{project}: {blocker_as_ids} heading(s) use :BLOCKER: as a bare id list; a rewrite folds them into :BLOCKED_BY:"));
+    }
+    if computed_specials > 0 {
+        f.warn(format_args!("{project}: {computed_specials} heading(s) set a computed Org special (TODO/ITEM/TAGS/...) in the drawer; Org ignores it"));
+    }
+    if bad_effort > 0 {
+        f.warn(format_args!(
+            "{project}: {bad_effort} heading(s) have an Effort value Org will not parse"
+        ));
+    }
+    if priority_out_of_range > 0 {
+        f.warn(format_args!(
+            "{project}: {priority_out_of_range} heading(s) have a [#prio] outside #+PRIORITIES:"
+        ));
+    }
+    if ordered_skip > 0 {
+        f.warn(format_args!("{project}: {ordered_skip} heading(s) started or closed before an earlier ORDERED sibling"));
+    }
+    if done_with_open_children > 0 {
+        f.warn(format_args!("{project}: {done_with_open_children} DONE heading(s) still have open children (Org ORDERED / todo-dependencies)"));
+    }
+}
+
+/// Validate one issue on its own: its edges resolve, its dates parse, and its state
+/// agrees with what the drawer and the body say.
+fn check_issue<'a>(
+    project: &str,
+    h: &'a IssueHeading,
+    resolves: &impl Fn(&str) -> bool,
+    by_id: &HashMap<String, (String, &'a IssueHeading)>,
+    f: &mut Findings,
+) {
+    if let Some(parent) = h.parent()
+        && !resolves(parent)
+    {
+        f.err(format_args!(
+            "{} (in {}) :PARENT: {} -> not found",
+            h.id, project, parent
+        ));
+    }
+    for blk in blocker_ids(h) {
+        if !by_id.contains_key(blk) {
+            f.err(format_args!(
+                "{} (in {}) :BLOCKED_BY: {} -> not found",
+                h.id, project, blk
+            ));
+        }
+    }
+    if let Some(d) = h.deadline()
+        && parse_org_date(d).is_none()
+    {
+        f.err(format_args!(
+            "{} (in {}) :DEADLINE: {} -> unparseable",
+            h.id, project, d
+        ));
+    }
+    if let Some(s) = h.scheduled()
+        && parse_org_date(s).is_none()
+    {
+        f.err(format_args!(
+            "{} (in {}) :SCHEDULED: {} -> unparseable",
+            h.id, project, s
+        ));
+    }
+    if matches!(h.state.as_str(), "TODO" | "STARTED") && !h.properties.contains_key("CREATED") {
+        f.warn(format_args!(
+            "{} (in {}) state={} but :CREATED: is missing",
+            h.id, project, h.state
+        ));
+    }
+    if h.state == "DONE" && looks_like_reject_prose(&h.body) {
+        f.warn(format_args!(
+            "{} (in {}) is DONE but the body reads as a reject",
+            h.id, project
+        ));
+    }
+    if crate::props::get(&h.properties, crate::props::SIBLING_TERMINAL).is_some() {
+        f.warn(format_args!(
+            "{} (in {}) holds {} and sibling {}",
+            h.id,
+            project,
+            h.state,
+            crate::props::get(&h.properties, crate::props::SIBLING_TERMINAL).unwrap_or("?")
+        ));
+    }
+}
+
+/// Report a body claiming one issue came out of another with no edge either way.
+fn check_provenance_links<'a>(
+    all: &[(String, IssueHeading)],
+    project: &str,
+    h: &'a IssueHeading,
+    known: &HashSet<&'a str>,
+    f: &mut Findings,
+) {
+    for linked in crate::related::org_link_targets(&h.body, known) {
+        if edge_connects(all, &h.id, &linked) {
+            continue;
+        }
+        if !claims_discovery_or_pivot(&h.body, &linked) {
+            continue;
+        }
+        f.warn(format_args!(
+            "{} (in {}) mentions [[id:{}]] as discovered or pivoted with no edge either way",
+            h.id, project, linked
+        ));
+    }
+}
+
+/// Walk `:PARENT:` from one heading and report a loop.
+///
+/// `settled` carries across headings, so the walk stays linear over the corpus: an id
+/// already reached from somewhere else cannot start a loop that was not already
+/// reported.
+fn check_parent_cycle<'a>(
+    start: &'a IssueHeading,
+    by_id: &HashMap<String, (String, &'a IssueHeading)>,
+    settled: &mut HashSet<&'a str>,
+    f: &mut Findings,
+) {
+    if settled.contains(start.id.as_str()) {
+        return;
+    }
+    let mut path: Vec<&str> = Vec::new();
+    let mut on_path: HashSet<&str> = HashSet::new();
+    let mut cursor = start.id.as_str();
+    loop {
+        if settled.contains(cursor) {
+            break;
+        }
+        if !on_path.insert(cursor) {
+            let start = path.iter().position(|id| *id == cursor).unwrap_or(0);
+            let mut loop_ids: Vec<&str> = path[start..].to_vec();
+            loop_ids.push(cursor);
+            f.err(format_args!("parent cycle: {}", loop_ids.join(" -> ")));
+            break;
+        }
+        path.push(cursor);
+        match by_id.get(cursor).and_then(|(_, owner)| owner.parent()) {
+            Some(parent) if by_id.contains_key(parent) => cursor = parent,
+            _ => break,
+        }
+    }
+    settled.extend(path);
 }
 
 /// Every issue referring to `target_id` through a blocker edge, a parent link,

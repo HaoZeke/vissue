@@ -213,6 +213,45 @@ pub fn parse_schema_text(text: &str) -> Vec<(String, String, String, usize)> {
     out
 }
 
+/// The Rust type name a verb's params or args struct takes.
+///
+/// `("waiting-on", "Params")` is `WaitingOnParams`. Both the tool check and the
+/// socket check need this, and both had their own copy: a copy-paste pair inside the
+/// machinery for stopping copy-paste drift. One implementation, tested once.
+#[must_use]
+pub fn struct_name(verb: &str, suffix: &str) -> String {
+    let mut camel = String::with_capacity(verb.len() + suffix.len());
+    for part in verb.split(['-', '_']) {
+        let mut chars = part.chars();
+        if let Some(first) = chars.next() {
+            camel.extend(first.to_uppercase());
+            camel.push_str(chars.as_str());
+        }
+    }
+    camel.push_str(suffix);
+    camel
+}
+
+/// The body of a `pub struct NAME {` in `src`, or `None` when it is not there.
+///
+/// Deliberately textual. The alternative is a proc macro that registers field names
+/// at compile time, which is more machinery than a check that reads a file and is
+/// harder to be sure of.
+#[must_use]
+pub fn struct_body<'a>(src: &'a str, name: &str) -> Option<&'a str> {
+    let at = src.find(&format!("pub struct {name} {{"))?;
+    let rest = &src[at..];
+    let end = rest.find("\n}").unwrap_or(rest.len());
+    Some(&rest[..end])
+}
+
+/// Whether a struct body declares `field`, and the line it declares it on.
+#[must_use]
+pub fn declared_field<'a>(body: &'a str, field: &str) -> Option<&'a str> {
+    let at = body.find(&format!("pub {field}:"))?;
+    body[at..].lines().next()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +284,27 @@ mod tests {
             "schema/vissue.capnp and the committed vissue_capnp.rs disagree; \
              regenerate it, see schema/README.md"
         );
+    }
+
+    /// The helpers three checks now share, so their own behaviour is pinned rather
+    /// than assumed by each caller.
+    #[test]
+    fn struct_names_and_bodies_are_found() {
+        assert_eq!(struct_name("waiting-on", "Params"), "WaitingOnParams");
+        assert_eq!(struct_name("create", "Args"), "CreateArgs");
+        assert_eq!(struct_name("dry_run", "Params"), "DryRunParams");
+        assert_eq!(struct_name("", "Params"), "Params");
+
+        let src = "pub struct CreateArgs {\n    pub project: String,\n    pub body: Option<String>,\n}\n\npub struct Other {}\n";
+        let body = struct_body(src, "CreateArgs").expect("body");
+        assert!(body.contains("pub project"));
+        // Stops at its own closing brace rather than running into the next struct.
+        assert!(!body.contains("pub struct Other"));
+        assert!(struct_body(src, "Nope").is_none());
+
+        let line = declared_field(body, "body").expect("field");
+        assert!(line.contains("Option<String>"), "{line}");
+        assert!(declared_field(body, "missing").is_none());
     }
 
     #[test]

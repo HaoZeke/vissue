@@ -103,45 +103,29 @@ fn each_tool_takes_the_arguments_the_schema_names() {
         if op.mcp.is_empty() || !op.fields.iter().any(|f| !f.tool.is_empty()) {
             continue;
         }
-        // vissue_create -> CreateArgs
         let stem = op.mcp.trim_start_matches("vissue_");
-        let mut camel = String::new();
-        for part in stem.split('_') {
-            let mut c = part.chars();
-            if let Some(f) = c.next() {
-                camel.push(f.to_ascii_uppercase());
-                camel.push_str(c.as_str());
-            }
-        }
-        let struct_name = format!("{camel}Args");
-        let Some(at) = tools_src.find(&format!("pub struct {struct_name} {{")) else {
+        let struct_name = vissue_core::surface::struct_name(stem, "Args");
+        let Some(body) = vissue_core::surface::struct_body(&tools_src, &struct_name) else {
             wrong.push(format!("{}: no {struct_name} to check", op.mcp));
             continue;
         };
-        let body_end = tools_src[at..]
-            .find("\n}")
-            .map_or(tools_src.len(), |e| at + e);
-        let body = &tools_src[at..body_end];
         for field in &op.fields {
             if field.tool.is_empty() {
                 continue;
             }
-            let Some(at) = body.find(&format!("pub {}:", field.tool)) else {
+            let Some(line) = vissue_core::surface::declared_field(body, &field.tool) else {
                 wrong.push(format!("{struct_name} has no {}", field.tool));
                 continue;
             };
             // The type too, not only the name. A field going from a number to a
             // string keeps its name, so a name check cannot see it.
-            if !field.tool_type.is_empty() {
-                let line = body[at..].lines().next().unwrap_or_default();
-                if !line.contains(&field.tool_type) {
-                    wrong.push(format!(
-                        "{struct_name}.{} is not {}: {}",
-                        field.tool,
-                        field.tool_type,
-                        line.trim()
-                    ));
-                }
+            if !field.tool_type.is_empty() && !line.contains(&field.tool_type) {
+                wrong.push(format!(
+                    "{struct_name}.{} is not {}: {}",
+                    field.tool,
+                    field.tool_type,
+                    line.trim()
+                ));
             }
         }
     }

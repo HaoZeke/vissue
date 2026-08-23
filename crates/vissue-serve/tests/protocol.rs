@@ -682,42 +682,28 @@ fn each_method_takes_the_parameters_the_schema_names() {
         if op.socket.is_empty() || !op.fields.iter().any(|f| !f.socket.is_empty()) {
             continue;
         }
-        let stem = op.cli.replace('-', "_");
-        let mut camel = String::new();
-        for part in stem.split('_') {
-            let mut c = part.chars();
-            if let Some(f) = c.next() {
-                camel.push(f.to_ascii_uppercase());
-                camel.push_str(c.as_str());
-            }
-        }
-        let struct_name = format!("{camel}Params");
-        let Some(at) = rpc.find(&format!("pub struct {struct_name} {{")) else {
+        let struct_name = vissue_core::surface::struct_name(&op.cli, "Params");
+        let Some(body) = vissue_core::surface::struct_body(&rpc, &struct_name) else {
             wrong.push(format!("{}: no {struct_name} to check", op.socket));
             continue;
         };
-        let end = rpc[at..].find("\n}").map_or(rpc.len(), |e| at + e);
-        let body = &rpc[at..end];
         for field in &op.fields {
             if field.socket.is_empty() {
                 continue;
             }
-            let Some(at) = body.find(&format!("pub {}:", field.socket)) else {
+            let Some(line) = vissue_core::surface::declared_field(body, &field.socket) else {
                 wrong.push(format!("{struct_name} has no {}", field.socket));
                 continue;
             };
             // And its type, since a field going from a number to a string keeps its
             // name and no name check would notice.
-            if !field.socket_type.is_empty() {
-                let line = body[at..].lines().next().unwrap_or_default();
-                if !line.contains(&field.socket_type) {
-                    wrong.push(format!(
-                        "{struct_name}.{} is not {}: {}",
-                        field.socket,
-                        field.socket_type,
-                        line.trim()
-                    ));
-                }
+            if !field.socket_type.is_empty() && !line.contains(&field.socket_type) {
+                wrong.push(format!(
+                    "{struct_name}.{} is not {}: {}",
+                    field.socket,
+                    field.socket_type,
+                    line.trim()
+                ));
             }
         }
     }

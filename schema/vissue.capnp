@@ -198,19 +198,29 @@ const operations :List(Operation) = [
     ] ),
   ( cli = "agenda", socket = "issue/agenda", mcp = "vissue_agenda", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "ancestors", socket = "issue/ancestors", mcp = "vissue_ancestors", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "backlinks", socket = "issue/backlinks", mcp = "vissue_backlinks", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "body-excerpt", socket = "issue/excerpt", mcp = "vissue_body_excerpt", mutates = false, local = false,
     note = "the method is named for the excerpt and the tool for the body it comes from",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "children", socket = "issue/children", mcp = "vissue_children", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "claims", socket = "issue/claims", mcp = "vissue_claims", mutates = false, local = false,
     note = "",
     fields = [] ),
@@ -228,13 +238,17 @@ const operations :List(Operation) = [
     fields = [] ),
   ( cli = "impact", socket = "issue/impact", mcp = "vissue_impact", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "list", socket = "issue/list", mcp = "vissue_list", mutates = false, local = false,
     note = "",
     fields = [] ),
   ( cli = "projects", socket = "project/list", mcp = "vissue_projects", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "ready", socket = "issue/ready", mcp = "vissue_ready", mutates = false, local = false,
     note = "",
     fields = [] ),
@@ -243,13 +257,17 @@ const operations :List(Operation) = [
     fields = [] ),
   ( cli = "search", socket = "issue/search", mcp = "vissue_search", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "show", socket = "issue/show", mcp = "vissue_show", mutates = false, local = false,
     note = "",
     fields = [] ),
   ( cli = "tree", socket = "issue/tree", mcp = "vissue_tree", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "check", socket = "issue/check", mcp = "vissue_check", mutates = false, local = false,
     note = "",
     fields = [] ),

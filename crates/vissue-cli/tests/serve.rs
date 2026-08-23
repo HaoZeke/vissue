@@ -710,3 +710,128 @@ fn the_structured_reads_match_the_json_mode() {
         "the two digests disagree about the corpus"
     );
 }
+
+/// The nine reads that had no JSON mode now have one, and it matches the socket.
+///
+/// They answered in prose on the command line and in structure over the socket, so
+/// there was nothing to compare and they went unaudited while every other read was
+/// checked. The `--json` modes go through the same `CatalogService` the socket answers
+/// from, so this asserts one computation rather than reconciling two — which is the
+/// point of adding them this way round.
+#[test]
+fn the_json_modes_match_their_socket_methods() {
+    let h = Harness::new();
+    assert!(h.start_d().status.success(), "server did not start");
+    assert!(
+        wait_accepts(&h.socket, Duration::from_secs(30)),
+        "server never accepted"
+    );
+
+    let mut client = vissue_control::client::Client::connect(&h.socket).expect("connect");
+    client
+        .request(
+            "initialize",
+            serde_json::json!({"protocolVersion": vissue_control::rpc::PROTOCOL_VERSION,
+                              "client": "json-modes", "agent": "json-modes"}),
+        )
+        .expect("initialize");
+
+    let cli_json = |args: &[&str]| -> serde_json::Value {
+        let out = Command::new(bin())
+            .arg("--root")
+            .arg(&h.root)
+            .arg("--prefix")
+            .arg("Software")
+            .args(args)
+            .arg("--json")
+            .output()
+            .expect("run vissue");
+        assert!(
+            out.status.success(),
+            "{args:?} --json failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout)
+            .unwrap_or_else(|e| panic!("{args:?} --json did not emit JSON: {e}"))
+    };
+
+    // The id is one the fixture has, with a parent, a blocker and a backlink.
+    const ID: &str = "atlas-1a2b";
+
+    // (cli args, method, params, the field of the reply to compare)
+    let cases: Vec<(Vec<&str>, &str, serde_json::Value, &str)> = vec![
+        (
+            vec!["search", "parser"],
+            "issue/search",
+            serde_json::json!({"query": "parser", "limit": 20}),
+            "",
+        ),
+        (
+            vec!["children", ID],
+            "issue/children",
+            serde_json::json!({"id": ID}),
+            "hits",
+        ),
+        (
+            vec!["ancestors", "atlas-3e4f", "--depth", "3"],
+            "issue/ancestors",
+            serde_json::json!({"id": "atlas-3e4f", "depth": 3}),
+            "hits",
+        ),
+        (
+            vec!["impact", ID, "--depth", "3"],
+            "issue/impact",
+            serde_json::json!({"id": ID, "depth": 3}),
+            "hits",
+        ),
+        (
+            vec!["backlinks", ID],
+            "issue/backlinks",
+            serde_json::json!({"id": ID}),
+            "hits",
+        ),
+        (
+            vec!["agenda", "--days", "14"],
+            "issue/agenda",
+            serde_json::json!({"days": 14}),
+            "rows",
+        ),
+        (
+            vec!["body-excerpt", ID],
+            "issue/excerpt",
+            serde_json::json!({"id": ID}),
+            "",
+        ),
+        (
+            vec!["tree", ID],
+            "issue/tree",
+            serde_json::json!({"id": ID}),
+            "",
+        ),
+        // projects: the socket wraps its list in a revision, which the command line
+        // has no notion of.
+        (
+            vec!["projects"],
+            "project/list",
+            serde_json::json!({}),
+            "projects",
+        ),
+    ];
+
+    for (args, method, params, field) in cases {
+        let from_cli = cli_json(&args);
+        let reply = client
+            .request(method, params)
+            .unwrap_or_else(|e| panic!("{method} failed: {e}"));
+        // A socket reply may wrap its payload; the command line prints the payload.
+        let from_socket = if field.is_empty() {
+            &reply
+        } else {
+            reply.get(field).unwrap_or(&reply)
+        };
+        assert_eq!(
+            from_socket, &from_cli,
+            "{args:?} --json and {method} disagree\n  cli:    {from_cli}\n  socket: {from_socket}"
+        );
+    }
+}

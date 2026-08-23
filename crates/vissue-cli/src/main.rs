@@ -274,6 +274,9 @@ enum Command {
         days: i64,
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
+        /// Emit a JSON array instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Checklist for agents and CI: stalled claims plus corpus validation.
     Hygiene {
@@ -288,26 +291,45 @@ enum Command {
     WaitingOn { id: String },
     /// The first lines of an issue's file range.
     #[command(name = "body-excerpt")]
-    BodyExcerpt { id: String },
+    BodyExcerpt {
+        id: String,
+        /// Emit a JSON object instead of text
+        #[arg(long)]
+        json: bool,
+    },
     /// Substring search over ids, titles, properties, and bodies.
     Search {
         query: String,
         #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
+        /// Emit a JSON array instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Issues whose `:PARENT:` matches this id.
-    Children { id: String },
+    Children {
+        id: String,
+        /// Emit a JSON array instead of text
+        #[arg(long)]
+        json: bool,
+    },
     /// Blockers transitively required by this issue.
     Ancestors {
         id: String,
         #[arg(short, long, default_value = "3")]
         depth: usize,
+        /// Emit a JSON array instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Issues transitively waiting on this issue.
     Impact {
         id: String,
         #[arg(short, long, default_value = "3")]
         depth: usize,
+        /// Emit a JSON array instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Explain bounded Org and lexical connections around an issue.
     Related {
@@ -348,6 +370,9 @@ enum Command {
         /// ascii or dot
         #[arg(short, long, default_value = "ascii")]
         format: String,
+        /// Emit the tree as JSON instead of ascii or dot
+        #[arg(long, conflicts_with = "format")]
+        json: bool,
     },
     /// Cycles in the blocker graph.
     Cycles,
@@ -364,7 +389,12 @@ enum Command {
         to: String,
     },
     /// Issues referring to this id.
-    Backlinks { id: String },
+    Backlinks {
+        id: String,
+        /// Emit a JSON array instead of text
+        #[arg(long)]
+        json: bool,
+    },
     /// A markdown roadmap of active and closed work.
     Roadmap {
         #[arg(short = 'p', short_alias = 'P', long)]
@@ -444,7 +474,11 @@ enum Command {
     /// Print the current generation counter.
     Gen,
     /// List the projects found under the layout prefix.
-    Projects,
+    Projects {
+        /// Emit a JSON array instead of one name per line
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the resolved binary, root, and prefix.
     Identity,
     /// Own the per-user Unix control socket.
@@ -602,6 +636,21 @@ fn create_routed(
         ..opts
     };
     Ok(ops::create(&pref.layout, &pref.dir, title, opts)?)
+}
+
+/// The catalog service for one layout, which is what the control socket answers from.
+///
+/// The `--json` modes go through this rather than through the text reports, so the two
+/// surfaces are the same computation and not two that have to be kept in agreement.
+/// The text reports stay as they are: they are what a person reads, and they group by
+/// project because the command line can span layouts.
+fn with_catalog<T>(
+    layout: &Layout,
+    f: impl FnOnce(&vissue_core::catalog::CatalogService<'_>) -> vissue_core::Result<T>,
+) -> Result<T> {
+    let recs = vissue_core::catalog::load_recs(layout)?;
+    let svc = vissue_core::catalog::CatalogService::from_recs(&recs);
+    Ok(f(&svc)?)
 }
 
 fn layout_for_id(router: &Router, id: &str) -> Result<Layout> {
@@ -850,8 +899,17 @@ fn run() -> Result<()> {
             let pref = router.route(&project);
             emit!("{}", ops::fold(&pref.layout, &file, &pref.dir)?)
         }
-        Command::Agenda { days, project } => {
-            emit!("{}", agenda_routed(&router, days, project.as_deref())?)
+        Command::Agenda {
+            days,
+            project,
+            json,
+        } => {
+            if json {
+                let rows = with_catalog(&layout, |svc| svc.agenda(days, project.as_deref()))?;
+                emitln!("{}", serde_json::to_string_pretty(&rows)?);
+            } else {
+                emit!("{}", agenda_routed(&router, days, project.as_deref())?);
+            }
         }
         Command::Hygiene { stale_days } => emit!("{}", hygiene_routed(&router, stale_days)?),
         Command::Whoami => emitln!("{}", vissue_core::config::identity(&layout)),
@@ -859,24 +917,49 @@ fn run() -> Result<()> {
             let found = layout_for_id(&router, &id)?;
             emit!("{}", agent::waiting_on(&found, &id)?)
         }
-        Command::BodyExcerpt { id } => {
+        Command::BodyExcerpt { id, json } => {
             let found = layout_for_id(&router, &id)?;
-            emit!("{}", agent::body_excerpt(&found, &id)?)
+            if json {
+                let excerpt = with_catalog(&found, |svc| svc.excerpt(&id))?;
+                emitln!("{}", serde_json::to_string_pretty(&excerpt)?);
+            } else {
+                emit!("{}", agent::body_excerpt(&found, &id)?);
+            }
         }
-        Command::Search { query, limit } => {
-            emit!("{}", search_routed(&router, &query, limit)?)
+        Command::Search { query, limit, json } => {
+            if json {
+                let hits = with_catalog(&layout, |svc| svc.search(&query, limit))?;
+                emitln!("{}", serde_json::to_string_pretty(&hits)?);
+            } else {
+                emit!("{}", search_routed(&router, &query, limit)?);
+            }
         }
-        Command::Children { id } => {
+        Command::Children { id, json } => {
             let found = layout_for_id(&router, &id)?;
-            emit!("{}", report::children(&found, &id)?)
+            if json {
+                let hits = with_catalog(&found, |svc| svc.children(&id))?;
+                emitln!("{}", serde_json::to_string_pretty(&hits)?);
+            } else {
+                emit!("{}", report::children(&found, &id)?);
+            }
         }
-        Command::Ancestors { id, depth } => {
+        Command::Ancestors { id, depth, json } => {
             let found = layout_for_id(&router, &id)?;
-            emit!("{}", report::ancestors(&found, &id, depth)?)
+            if json {
+                let hits = with_catalog(&found, |svc| svc.ancestors(&id, depth))?;
+                emitln!("{}", serde_json::to_string_pretty(&hits)?);
+            } else {
+                emit!("{}", report::ancestors(&found, &id, depth)?);
+            }
         }
-        Command::Impact { id, depth } => {
+        Command::Impact { id, depth, json } => {
             let found = layout_for_id(&router, &id)?;
-            emit!("{}", report::impact(&found, &id, depth)?)
+            if json {
+                let hits = with_catalog(&found, |svc| svc.impact(&id, depth))?;
+                emitln!("{}", serde_json::to_string_pretty(&hits)?);
+            } else {
+                emit!("{}", report::impact(&found, &id, depth)?);
+            }
         }
         Command::Related {
             id,
@@ -899,9 +982,14 @@ fn run() -> Result<()> {
             count_routed(&router, project.as_deref(), state.as_deref(), ready)?
         ),
         Command::Export { project } => emit!("{}", export_routed(&router, project.as_deref())?),
-        Command::Tree { id, format } => {
+        Command::Tree { id, format, json } => {
             let found = layout_for_id(&router, &id)?;
-            emit!("{}", report::tree(&found, &id, &format)?)
+            if json {
+                let node = with_catalog(&found, |svc| svc.tree(&id))?;
+                emitln!("{}", serde_json::to_string_pretty(&node)?);
+            } else {
+                emit!("{}", report::tree(&found, &id, &format)?);
+            }
         }
         Command::Cycles => emit!("{}", cycles_routed(&router)?),
         Command::Graph { project } => emit!("{}", graph_routed(&router, project.as_deref())?),
@@ -910,9 +998,14 @@ fn run() -> Result<()> {
             let dest = router.route(&to);
             emit!("{}", ops::refile_to(&found, &id, &dest.layout, &dest.dir)?)
         }
-        Command::Backlinks { id } => {
+        Command::Backlinks { id, json } => {
             let found = layout_for_id(&router, &id)?;
-            emit!("{}", report::backlinks(&found, &id)?)
+            if json {
+                let hits = with_catalog(&found, |svc| svc.backlinks(&id))?;
+                emitln!("{}", serde_json::to_string_pretty(&hits)?);
+            } else {
+                emit!("{}", report::backlinks(&found, &id)?);
+            }
         }
         Command::Roadmap { project } => {
             emit!("{}", roadmap_routed(&router, project.as_deref())?)
@@ -1017,9 +1110,15 @@ fn run() -> Result<()> {
             }
         }
         Command::Gen => emitln!("{}", events::generation(&layout)),
-        Command::Projects => {
-            for project in router.visible_projects()? {
-                emitln!("{}", project.key);
+        Command::Projects { json } => {
+            let visible = router.visible_projects()?;
+            if json {
+                let names: Vec<&str> = visible.iter().map(|p| p.key.as_str()).collect();
+                emitln!("{}", serde_json::to_string_pretty(&names)?);
+            } else {
+                for project in visible {
+                    emitln!("{}", project.key);
+                }
             }
         }
         Command::Completions { shell } => {

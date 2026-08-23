@@ -1205,13 +1205,20 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             )?;
             warnings += 1;
         }
+        // The loader skips a heading a calendar sync owns, so the parsed headings
+        // cannot hold one and counting them there counted nothing. The heading is
+        // still in the file, and one vissue will not touch is the surprise worth
+        // reporting, so the file is what gets counted.
+        let gcal_ids = crate::store::org_ids(&std::fs::read_to_string(&path)?)
+            .filter(|id| crate::org::is_gcal_event_id(id))
+            .count();
+
         let spec = doc.priority_spec();
         let mut type_not_tagged = 0usize;
         let mut exclusive_clash = 0usize;
         let mut priority_out_of_range = 0usize;
         let mut ordered_skip = 0usize;
         let mut done_with_open_children = 0usize;
-        let mut gcal_ids = 0usize;
         let mut priority_in_drawer = 0usize;
         let mut blockedby_typo = 0usize;
         let mut blocker_as_ids = 0usize;
@@ -1239,9 +1246,6 @@ pub fn check(layout: &Layout) -> Result<CheckReport> {
             }
             if !spec.contains(h.priority) {
                 priority_out_of_range += 1;
-            }
-            if crate::org::is_gcal_event_id(&h.id) {
-                gcal_ids += 1;
             }
             if h.properties.contains_key("PRIORITY") {
                 priority_in_drawer += 1;

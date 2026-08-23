@@ -1063,7 +1063,7 @@ fn org_id_property_value(line: &str) -> Option<&str> {
 /// one. Agents write their reports into issue bodies, those reports quote org,
 /// and taking every `:ID:` line makes quoted text define an id: a `:PARENT:`
 /// pointing at nothing resolves against a report that merely mentions it.
-fn org_ids(content: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn org_ids(content: &str) -> impl Iterator<Item = &str> {
     // The top of a file is a drawer site: org reads a file-level drawer there.
     let mut at_drawer_site = true;
     let mut in_drawer = false;

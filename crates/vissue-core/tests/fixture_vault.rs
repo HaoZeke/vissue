@@ -1948,3 +1948,267 @@ fn a_rewrite_keeps_what_another_tool_put_there() {
         "the drawer was reshuffled: {drawer:?}"
     );
 }
+
+/// Replace text in a project's raw file, once.
+///
+/// `check` guards against what a person types by hand, and much of that cannot be
+/// produced through `IssueDoc`: a preamble keyword the writer always emits, a
+/// priority cookie outside the declared range, a second tag from an exclusive group.
+fn edit_raw(layout: &Layout, project: &str, from: &str, to: &str) {
+    let path = layout.project_issues_path(project);
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains(from), "no {from:?} in {path:?}");
+    fs::write(&path, text.replacen(from, to, 1)).unwrap();
+}
+
+/// Drop every preamble line starting with `prefix`.
+///
+/// Every, not the first: `#+TAGS:` is on two lines in the fixture, and a check for
+/// whether the keyword is present at all is unmoved by dropping one of them.
+fn drop_preamble_lines(layout: &Layout, project: &str, prefix: &str) {
+    let path = layout.project_issues_path(project);
+    let text = fs::read_to_string(&path).unwrap();
+    let kept: Vec<&str> = text.lines().filter(|l| !l.starts_with(prefix)).collect();
+    assert!(kept.len() < text.lines().count(), "no {prefix} in {path:?}");
+    fs::write(&path, format!("{}\n", kept.join("\n"))).unwrap();
+}
+
+/// Remove one property line from one issue.
+fn drop_property_line(layout: &Layout, project: &str, id: &str, key: &str) {
+    let path = layout.project_issues_path(project);
+    let text = fs::read_to_string(&path).unwrap();
+    let at = text
+        .find(&format!(":ID:         {id}"))
+        .unwrap_or_else(|| panic!("no {id} in {path:?}"));
+    let end = text[at..].find(":END:").expect("a drawer end") + at;
+    let drawer = &text[at..end];
+    let line = drawer
+        .lines()
+        .find(|l| l.trim_start().starts_with(&format!(":{key}:")))
+        .unwrap_or_else(|| panic!("no :{key}: on {id}"));
+    let cut = format!("{line}\n");
+    fs::write(&path, text.replacen(&cut, "", 1)).unwrap();
+}
+
+/// A finding names the project and the reader can act on it.
+///
+/// One assertion per finding rather than a count, because a count says a warning
+/// arrived and not which: several of these fire on the same corpus, and a test that
+/// only counts passes when the wrong one fires.
+fn assert_finds(out: &report::CheckReport, needle: &str) {
+    assert!(out.text.contains(needle), "no {needle:?} in:\n{}", out.text);
+}
+
+#[test]
+fn check_wants_a_protocol_stamp_and_reads_the_one_it_finds() {
+    let missing = check_after(|l| drop_preamble_lines(l, "atlas", "#+VISSUE:"));
+    assert_finds(
+        &missing,
+        "[warn] atlas: preamble has no #+VISSUE: protocol stamp",
+    );
+
+    // Behind, which a reader can fix by normalising.
+    let behind = check_after(|l| edit_raw(l, "atlas", "#+VISSUE: 1", "#+VISSUE: 0"));
+    assert_finds(&behind, "[warn] atlas: #+VISSUE: 0 is behind protocol 1");
+    assert_eq!(behind.errors, 0, "{}", behind.text);
+
+    // Ahead, which it cannot: this binary does not know what the newer one wrote.
+    let ahead = check_after(|l| edit_raw(l, "atlas", "#+VISSUE: 1", "#+VISSUE: 9"));
+    assert_finds(&ahead, "[err]  atlas: #+VISSUE: 9 is newer than this");
+    assert_eq!(ahead.errors, 1, "{}", ahead.text);
+}
+
+#[test]
+fn check_names_each_preamble_keyword_org_needs() {
+    let category = check_after(|l| drop_preamble_lines(l, "atlas", "#+CATEGORY:"));
+    assert_finds(&category, "[warn] atlas: preamble has no #+CATEGORY:");
+
+    let filetags = check_after(|l| drop_preamble_lines(l, "atlas", "#+FILETAGS:"));
+    assert_finds(&filetags, "[warn] atlas: preamble has no #+FILETAGS:");
+
+    let tags = check_after(|l| drop_preamble_lines(l, "atlas", "#+TAGS:"));
+    assert_finds(&tags, "[warn] atlas: preamble has no #+TAGS:");
+
+    let priorities = check_after(|l| drop_preamble_lines(l, "atlas", "#+PRIORITIES:"));
+    assert_finds(&priorities, "[warn] atlas: preamble has no #+PRIORITIES:");
+}
+
+/// A tracker without `noexport` is one a vault publish will put on the web, which is
+/// the one preamble warning that is about disclosure rather than about Org's
+/// conveniences.
+#[test]
+fn check_says_when_a_publish_would_export_the_tracker() {
+    let out = check_after(|l| {
+        edit_raw(
+            l,
+            "atlas",
+            "#+FILETAGS: :issues:atlas:noexport:",
+            "#+FILETAGS: :issues:atlas:",
+        )
+    });
+    assert_finds(&out, "[warn] atlas: #+FILETAGS: has no noexport");
+}
+
+#[test]
+fn check_counts_headings_that_fight_org_over_a_property() {
+    let in_drawer = check_after(|l| set_property(l, "atlas", "atlas-2c3d", "PRIORITY", "A"));
+    assert_finds(
+        &in_drawer,
+        "[warn] atlas: 1 heading(s) put :PRIORITY: in the drawer",
+    );
+
+    let computed = check_after(|l| set_property(l, "atlas", "atlas-2c3d", "BLOCKED", "t"));
+    assert_finds(&computed, "[warn] atlas: 1 heading(s) set a compute");
+
+    let effort =
+        check_after(|l| insert_property_line(l, "atlas", "atlas-2c3d", ":Effort:     a while"));
+    assert_finds(&effort, "[warn] atlas: 1 heading(s) have an Effort value");
+}
+
+#[test]
+fn check_counts_the_two_ways_a_blocker_is_spelled_wrong() {
+    // The property Org reads is BLOCKED_BY, and BLOCKEDBY is silently nothing.
+    // Raw, because a write through IssueDoc folds the alias into :BLOCKED_BY: and
+    // there would be nothing left to find.
+    let typo =
+        check_after(|l| insert_property_line(l, "atlas", "atlas-2c3d", ":BLOCKEDBY: atlas-1a2b"));
+    assert_finds(&typo, "[warn] atlas: 1 heading(s) use :BLOCKEDBY:");
+
+    // :BLOCKER: is org-edna's, and an id list in it is not an edna form.
+    let as_ids =
+        check_after(|l| insert_property_line(l, "atlas", "atlas-2c3d", ":BLOCKER:   atlas-1a2b"));
+    assert_finds(&as_ids, "[warn] atlas: 1 heading(s) use :BLOCKER: as");
+}
+
+#[test]
+fn check_counts_a_type_that_is_not_on_the_heading() {
+    // Through IssueDoc the two stay in step, because the writer renders the tag from
+    // the property. A person deleting the tag by hand is what this is about.
+    let out = check_after(|l| edit_raw(l, "atlas", ":reporting:feature:", ":reporting:"));
+    assert_finds(&out, "[warn] atlas: 1 heading(s) have :TYPE:");
+}
+
+/// `#+TAGS: { bug feature task chore plan }` is an exclusive group, so two of them on
+/// one heading is a choice Org will not let a person make through its own interface.
+#[test]
+fn check_counts_a_heading_carrying_two_tags_from_one_exclusive_group() {
+    let out = check_after(|l| {
+        edit_raw(
+            l,
+            "atlas",
+            ":parser:core:feature:",
+            ":parser:core:feature:task:",
+        )
+    });
+    assert_finds(&out, "[warn] atlas: 1 heading(s) carry more than one tag");
+}
+
+#[test]
+fn check_counts_a_priority_outside_the_declared_range() {
+    let out = check_after(|l| edit_raw(l, "atlas", "[#B] Emit a summary", "[#D] Emit a summary"));
+    assert_finds(&out, "[warn] atlas: 1 heading(s) have a [#");
+}
+
+/// An id with a slash is an org-gcal event, which means a calendar sync owns the
+/// heading and a tracker write would fight it.
+#[test]
+fn check_reports_an_id_a_calendar_sync_owns() {
+    let out = check_after(|l| edit_raw(l, "atlas", "atlas-3e4f", "cal/2026abc"));
+    assert_finds(&out, "[err]  atlas: 1 heading(s) use an org-gcal event");
+}
+
+#[test]
+fn check_counts_a_done_parent_with_an_open_child() {
+    // atlas-4g5h is DONE and atlas-2c3d is TODO.
+    let out = check_after(|l| set_property(l, "atlas", "atlas-2c3d", "PARENT", "atlas-4g5h"));
+    assert_finds(&out, "[warn] atlas: 1 DONE heading(s) st");
+    assert_eq!(out.errors, 0, "{}", out.text);
+}
+
+#[test]
+fn check_wants_a_creation_date_on_work_that_is_open() {
+    let out = check_after(|l| drop_property_line(l, "atlas", "atlas-2c3d", "CREATED"));
+    assert_finds(
+        &out,
+        "[warn] atlas-2c3d (in atlas) state=TODO but :CREATED: is missing",
+    );
+}
+
+/// A heading that is DONE while its body says it was rejected records the wrong
+/// thing: the state a reader sees and the reason underneath it disagree.
+#[test]
+fn check_reads_a_done_body_that_says_it_was_rejected() {
+    let out = check_after(|l| {
+        let path = l.project_issues_path("atlas");
+        let text = fs::read_to_string(&path).unwrap();
+        let at = text.find(":ID:         atlas-4g5h").unwrap();
+        let end = text[at..].find(":END:").unwrap() + at + ":END:".len();
+        let mut edited = String::from(&text[..end]);
+        edited.push_str("\nSuperseded by atlas-1a2b, so not doing this.\n");
+        edited.push_str(&text[end..]);
+        fs::write(&path, edited).unwrap();
+    });
+    assert_finds(
+        &out,
+        "[warn] atlas-4g5h (in atlas) is DONE but the body reads as a reject",
+    );
+}
+
+#[test]
+fn check_reports_a_heading_holding_a_state_a_sibling_already_settled() {
+    let out = check_after(|l| {
+        set_property(
+            l,
+            "atlas",
+            "atlas-2c3d",
+            "SIBLING_TERMINAL",
+            "atlas-4g5h DONE",
+        );
+    });
+    assert_finds(&out, "[warn] atlas-2c3d (in atlas) holds TODO and sibling");
+}
+
+/// A body claiming one issue came out of another, with no edge either way, is a
+/// claim the graph does not carry: `related` and `impact` cannot see it.
+#[test]
+fn check_reports_a_discovery_claim_with_no_edge_behind_it() {
+    let out = check_after(|l| {
+        let path = l.project_issues_path("atlas");
+        let text = fs::read_to_string(&path).unwrap();
+        let at = text.find(":ID:         atlas-3e4f").unwrap();
+        let end = text[at..].find(":END:").unwrap() + at + ":END:".len();
+        let mut edited = String::from(&text[..end]);
+        edited.push_str("\nDiscovered while reading [[id:atlas-4g5h][the rename]].\n");
+        edited.push_str(&text[end..]);
+        fs::write(&path, edited).unwrap();
+    });
+    assert_finds(
+        &out,
+        "[warn] atlas-3e4f (in atlas) mentions [[id:atlas-4g5h]] as discovered",
+    );
+}
+
+/// An ORDERED parent means the children are a sequence, so starting the second while
+/// the first is open is the one thing that ordering forbids.
+#[test]
+fn check_counts_work_started_out_of_order_under_an_ordered_parent() {
+    let out = check_after(|l| {
+        // atlas-4g5h is DONE and sits after atlas-2c3d, which is TODO.
+        set_property(l, "atlas", "atlas-4g5h", "PARENT", "atlas-1a2b");
+        set_property(l, "atlas", "atlas-1a2b", "ORDERED", "t");
+    });
+    assert_finds(&out, "[warn] atlas: 1 heading(s) started or closed ");
+    assert_eq!(out.errors, 0, "{}", out.text);
+}
+
+/// A blocker ring resolves edge by edge and still cannot be scheduled, so it is the
+/// graph rather than any one heading that has to report it.
+#[test]
+fn check_reports_a_blocker_ring_the_edge_checks_all_pass() {
+    let out = check_after(|l| {
+        // atlas-3e4f is already blocked by atlas-1a2b.
+        set_property(l, "atlas", "atlas-1a2b", "BLOCKED_BY", "atlas-3e4f");
+    });
+    assert_finds(&out, "[err]  blocker graph:");
+    assert_eq!(out.errors, 1, "{}", out.text);
+}

@@ -28,4 +28,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "sig
 vissue-core.workspace = true
 
 [dev-dependencies]
+serde = { workspace = true }
+serde_json.workspace = true
 tempfile.workspace = true

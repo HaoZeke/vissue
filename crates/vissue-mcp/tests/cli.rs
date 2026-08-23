@@ -17,49 +17,139 @@ fn version_flag_prints_the_binary_version() {
     assert!(output.stderr.is_empty());
 }
 
+/// Every tool the server advertises, asked of the server itself.
+///
+/// The list comes from an MCP `tools/list` over stdio, which is the same answer any
+/// agent gets: names, descriptions, and the input schema each tool's arguments are
+/// validated against. Reading `server.rs` as text is a guess at that answer, and it
+/// was a wrong guess three times -- deriving an args struct from a tool's name
+/// reported six tools as unimplemented when several share one struct, and scanning
+/// for a Rust type in a source line says nothing about what the tool actually
+/// accepts from a caller.
+///
+/// One handshake answers for all forty-three tools, and the process ends when its
+/// stdin closes.
+fn advertised_tools() -> &'static Vec<Tool> {
+    static TOOLS: std::sync::OnceLock<Vec<Tool>> = std::sync::OnceLock::new();
+    TOOLS.get_or_init(|| {
+        use std::io::Write as _;
+
+        let mut child = Command::new(env!("CARGO_BIN_EXE_vissue-mcp"))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn vissue-mcp");
+
+        let mut stdin = child.stdin.take().expect("stdin");
+        for line in [
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"surface-check","version":"0"}}}"#,
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
+        ] {
+            writeln!(stdin, "{line}").expect("write to vissue-mcp");
+        }
+        drop(stdin); // the server reads to end of input, so this is what ends it
+
+        let out = child.wait_with_output().expect("wait for vissue-mcp");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let listed = stdout
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find(|msg| msg["id"] == 2)
+            .unwrap_or_else(|| {
+                panic!(
+                    "no reply to tools/list. stdout: {stdout}\nstderr: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                )
+            });
+        let tools: Vec<Tool> = serde_json::from_value(listed["result"]["tools"].clone())
+            .expect("tools/list carries a tool array");
+        assert!(
+            tools.len() > 20,
+            "the server advertises {} tools, too few to be the real surface",
+            tools.len()
+        );
+        tools
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct Tool {
+    name: String,
+    #[serde(rename = "inputSchema")]
+    input_schema: InputSchema,
+}
+
+#[derive(serde::Deserialize)]
+struct InputSchema {
+    #[serde(default)]
+    properties: std::collections::BTreeMap<String, Property>,
+    #[serde(default)]
+    required: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct Property {
+    /// One name, or a name and `"null"` for an argument a caller may omit.
+    #[serde(default)]
+    r#type: serde_json::Value,
+}
+
+impl Property {
+    /// The JSON type names this property accepts.
+    fn types(&self) -> Vec<String> {
+        match &self.r#type {
+            serde_json::Value::String(one) => vec![one.clone()],
+            serde_json::Value::Array(many) => many
+                .iter()
+                .filter_map(|t| t.as_str().map(str::to_string))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+}
+
+/// The JSON type a Rust type is advertised as, and whether it may be omitted.
+///
+/// The schema records the Rust type because that is what a maintainer edits. What a
+/// caller sees is the JSON Schema the server derives from it, so the comparison
+/// happens there: `Option<String>` has to arrive as a string a caller may omit, and
+/// a field that quietly becomes required is a break in the tool's contract that
+/// matching the Rust text would miss.
+fn advertised_as(rust: &str) -> Option<(&'static str, bool)> {
+    let (inner, optional) = match rust
+        .strip_prefix("Option<")
+        .and_then(|r| r.strip_suffix('>'))
+    {
+        Some(inner) => (inner.trim(), true),
+        None => (rust.trim(), false),
+    };
+    let json = match inner {
+        "String" | "char" | "&str" => "string",
+        "bool" => "boolean",
+        "u8" | "u16" | "u32" | "u64" | "usize" | "i32" | "i64" => "integer",
+        "f32" | "f64" => "number",
+        _ if inner.starts_with("Vec<") => "array",
+        _ => return None,
+    };
+    Some((json, optional))
+}
+
 /// The reference documents every tool the server exposes.
 ///
 /// A tool nobody wrote down is one an agent will not find, and the reference
 /// is where the surface is published. Reading the source rather than a second
 /// list keeps the two from drifting the way a hand-maintained copy does.
-/// The args type a tool takes, read from `Parameters<..>` in its signature.
-fn tool_args_type(server: &str, tool: &str) -> Option<String> {
-    let at = server.find(&format!("async fn {tool}("))?;
-    let rest = &server[at..];
-    let end = rest.find(") -> ")?;
-    let sig = &rest[..end];
-    let open = sig.find("Parameters<")? + "Parameters<".len();
-    let close = sig[open..].find('>')?;
-    Some(sig[open..open + close].trim().to_string())
-}
-
-/// Tool names the server declares, read off the `#[tool]` functions.
-fn tool_names(server: &str) -> Vec<String> {
-    let mut tools: Vec<String> = server
-        .lines()
-        .filter_map(|l| l.trim().strip_prefix("async fn "))
-        .filter_map(|rest| rest.split('(').next())
-        .filter(|name| name.starts_with("vissue_"))
-        .map(str::to_string)
-        .collect();
-    tools.sort_unstable();
-    tools.dedup();
-    tools
-}
-
 #[test]
 fn the_reference_lists_every_tool() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let server = std::fs::read_to_string(root.join("src/server.rs")).expect("server.rs");
     let reference =
         std::fs::read_to_string(root.join("../../docs/orgmode/reference.org")).expect("reference");
 
-    let tools = tool_names(&server);
-    assert!(tools.len() > 20, "no tools found: {tools:?}");
-
-    let missing: Vec<&str> = tools
+    let missing: Vec<&str> = advertised_tools()
         .iter()
-        .map(String::as_str)
+        .map(|t| t.name.as_str())
         .filter(|name| !reference.contains(&format!("={name}=")))
         .collect();
     assert!(
@@ -76,12 +166,10 @@ fn the_reference_lists_every_tool() {
 /// this fails only for an omission nobody wrote down.
 #[test]
 fn the_tool_list_offers_every_tool_the_schema_names() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let server = std::fs::read_to_string(root.join("src/server.rs")).expect("server.rs");
-    let tools = tool_names(&server);
+    let tools = advertised_tools();
     let missing: Vec<String> = vissue_core::surface::mutating_mcp_tools()
         .into_iter()
-        .filter(|name| !tools.iter().any(|t| t == name))
+        .filter(|name| !tools.iter().any(|t| &t.name == name))
         .collect();
     assert!(
         missing.is_empty(),
@@ -103,47 +191,51 @@ fn the_tool_list_offers_every_tool_the_schema_names() {
 /// it empty and says why.
 #[test]
 fn each_tool_takes_the_arguments_the_schema_names() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let tools_src = std::fs::read_to_string(root.join("src/tools.rs")).expect("tools.rs");
-    let server_src = std::fs::read_to_string(root.join("src/server.rs")).expect("server.rs");
-
+    let tools = advertised_tools();
     let mut wrong = Vec::new();
     for op in vissue_core::surface::operations() {
         // Only verbs whose fields the schema names. A read verb takes shared or no
-        // arguments and declares none, so there is nothing here to satisfy and no
-        // `<Verb>Args` struct to look for.
+        // arguments and declares none, so there is nothing here to satisfy.
         if op.mcp.is_empty() || !op.fields.iter().any(|f| !f.tool.is_empty()) {
             continue;
         }
-        // The args type comes from the tool's own signature rather than from its
-        // name. Several tools share one struct: ancestors and impact both take
-        // DepthArgs, ready takes ListArgs, and export, graph and roadmap all take
-        // ProjectArgs. Deriving `<Verb>Args` reported six tools as unimplemented
-        // when what was wrong was the guess.
-        let Some(struct_name) = tool_args_type(&server_src, &op.mcp) else {
-            wrong.push(format!("{}: no Parameters<..> in its signature", op.mcp));
-            continue;
-        };
-        let Some(body) = vissue_core::surface::struct_body(&tools_src, &struct_name) else {
-            wrong.push(format!("{}: no {struct_name} to check", op.mcp));
-            continue;
+        let Some(tool) = tools.iter().find(|t| t.name == op.mcp) else {
+            continue; // the_tool_list_offers_every_tool_the_schema_names owns this
         };
         for field in &op.fields {
             if field.tool.is_empty() {
                 continue;
             }
-            let Some(line) = vissue_core::surface::declared_field(body, &field.tool) else {
-                wrong.push(format!("{struct_name} has no {}", field.tool));
+            let Some(property) = tool.input_schema.properties.get(&field.tool) else {
+                wrong.push(format!("{} takes no {}", op.mcp, field.tool));
                 continue;
             };
             // The type too, not only the name. A field going from a number to a
             // string keeps its name, so a name check cannot see it.
-            if !field.tool_type.is_empty() && !line.contains(&field.tool_type) {
+            let Some((json, optional)) = advertised_as(&field.tool_type) else {
+                continue; // a type the schema leaves empty, or one with no JSON shape
+            };
+            let advertised = property.types();
+            if !advertised.iter().any(|t| t == json) {
                 wrong.push(format!(
-                    "{struct_name}.{} is not {}: {}",
-                    field.tool,
-                    field.tool_type,
-                    line.trim()
+                    "{}.{} is {} and arrives as {advertised:?}",
+                    op.mcp, field.tool, field.tool_type
+                ));
+            }
+            // Optionality is part of the contract a caller relies on: a field that
+            // becomes required breaks every caller that omitted it, and one that
+            // stops being required is a validation the tool no longer does.
+            let required = tool.input_schema.required.contains(&field.tool);
+            if optional && required {
+                wrong.push(format!(
+                    "{}.{} is {} and the tool requires it",
+                    op.mcp, field.tool, field.tool_type
+                ));
+            }
+            if !optional && !required {
+                wrong.push(format!(
+                    "{}.{} is {} and the tool takes it as optional",
+                    op.mcp, field.tool, field.tool_type
                 ));
             }
         }
@@ -163,19 +255,16 @@ fn each_tool_takes_the_arguments_the_schema_names() {
 /// while `vissue_normalize` was sitting in the server, and every check passed.
 #[test]
 fn every_tool_the_server_exposes_is_in_the_schema() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let server = std::fs::read_to_string(root.join("src/server.rs")).expect("server.rs");
-    let exposed = tool_names(&server);
-
     let known: Vec<String> = vissue_core::surface::operations()
         .into_iter()
         .filter(|o| !o.mcp.is_empty())
         .map(|o| o.mcp)
         .collect();
 
-    let unknown: Vec<&String> = exposed
+    let unknown: Vec<&str> = advertised_tools()
         .iter()
-        .filter(|t| !known.iter().any(|k| k == *t))
+        .map(|t| t.name.as_str())
+        .filter(|t| !known.iter().any(|k| k == t))
         .collect();
     assert!(
         unknown.is_empty(),

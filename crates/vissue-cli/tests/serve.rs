@@ -603,3 +603,110 @@ fn the_socket_reports_match_the_subcommand() {
         }
     }
 }
+
+/// The structured reads agree with `--json` too.
+///
+/// The report comparison covers the reads that answer in prose. These answer with
+/// objects, and the same class of divergence applies: `issue/digest` omitted the
+/// `generation` field that `digest --json` has always carried, which no name or type
+/// check could see because the schema described what I wrote rather than what the
+/// verb means.
+///
+/// The envelope is allowed to differ and the content is not. A socket reply carries
+/// `revision`, which is the server's notion of how many writes it has seen and has no
+/// command-line equivalent; the rows inside it have to match.
+#[test]
+fn the_structured_reads_match_the_json_mode() {
+    let h = Harness::new();
+    assert!(h.start_d().status.success(), "server did not start");
+    assert!(
+        wait_accepts(&h.socket, Duration::from_secs(30)),
+        "server never accepted"
+    );
+
+    let mut client = vissue_control::client::Client::connect(&h.socket).expect("connect");
+    client
+        .request(
+            "initialize",
+            serde_json::json!({"protocolVersion": vissue_control::rpc::PROTOCOL_VERSION,
+                              "client": "json-equivalence", "agent": "json-equivalence"}),
+        )
+        .expect("initialize");
+
+    let cli_json = |args: &[&str]| -> serde_json::Value {
+        let out = Command::new(bin())
+            .arg("--root")
+            .arg(&h.root)
+            .arg("--prefix")
+            .arg("Software")
+            .args(args)
+            .arg("--json")
+            .output()
+            .expect("run vissue");
+        assert!(
+            out.status.success(),
+            "{args:?} --json failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).expect("the command line did not emit JSON")
+    };
+
+    // list: the rows have to match, whatever the envelope adds.
+    let cli_rows = cli_json(&["list"]);
+    let reply = client.request("issue/list", serde_json::json!({})).unwrap();
+    let socket_rows = &reply["issues"];
+    assert_eq!(
+        socket_rows.as_array().map(Vec::len),
+        cli_rows.as_array().map(Vec::len),
+        "list row counts differ\n  cli: {cli_rows}\n  socket: {socket_rows}"
+    );
+    let ids = |v: &serde_json::Value| -> Vec<String> {
+        let mut out: Vec<String> = v
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|r| r["id"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.sort();
+        out
+    };
+    // As sets, not sequences, and the order is where they legitimately differ. Both
+    // sort by priority, then state, then id. The command line applies that within
+    // each project and concatenates, because it can span layouts and a global sort
+    // across them would interleave two trackers. The socket serves one layout and
+    // sorts across the whole of it, which is what a client asking for a frontier
+    // wants and what the terminal UI relies on.
+    //
+    // So the rows are the same rows and the sequence is not, which is a difference
+    // worth pinning as intended rather than quietly tolerating or breaking a working
+    // client to remove.
+    assert_eq!(
+        ids(&cli_rows),
+        ids(socket_rows),
+        "list returns different issues, not merely a different order"
+    );
+
+    // digest: every field the command line reports, the socket reports.
+    let cli_digest = cli_json(&["digest"]);
+    let socket_digest = client
+        .request("issue/digest", serde_json::json!({}))
+        .unwrap();
+    let missing: Vec<&String> = cli_digest
+        .as_object()
+        .map(|o| {
+            o.keys()
+                .filter(|k| socket_digest.get(*k).is_none())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        missing.is_empty(),
+        "digest --json reports these and the method does not: {missing:?}"
+    );
+    assert_eq!(
+        socket_digest["combined"], cli_digest["combined"],
+        "the two digests disagree about the corpus"
+    );
+}

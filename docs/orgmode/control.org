@@ -173,6 +173,12 @@ has to match the schema, in both directions.
 
 ** Reads
 
+=issue/list= sorts by priority, then state, then id, across every project in the
+layout. The =list= subcommand applies the same order within each project and
+concatenates, because it can span several layouts and a global sort across them would
+interleave two trackers. Same rows, different sequence, and a client wanting a
+frontier wants the socket's.
+
 =issue/list= takes optional =project=, =state=, =ready=, =query=,
 =limit=, =offset=, =since_revision=. =query= is a case-insensitive
 substring over id, title, tags, and properties, not the body. Matching

@@ -1064,6 +1064,9 @@ pub struct DigestResult {
     pub combined: String,
     /// Sum of the per-project issue counts.
     pub issues: usize,
+    /// Event-log generation the digest was taken at, so two digests can be placed in
+    /// time relative to each other.
+    pub generation: u64,
     /// Per project, sorted by name.
     pub projects: Vec<ProjectDigestResult>,
 }
@@ -2229,6 +2232,7 @@ mod tests {
             Response::IssueDigest(DigestResult {
                 combined: "abcd".into(),
                 issues: 3,
+                generation: 4,
                 projects: vec![ProjectDigestResult {
                     project: "atlas".into(),
                     digest: "beef".into(),

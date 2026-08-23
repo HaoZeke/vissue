@@ -720,9 +720,13 @@ fn dispatch_digest(state: &OwnerState, params: Option<&Value>) -> Result<Value, 
     let params: DigestParams = decode(params)?;
     let digest =
         vissue_core::digest::corpus_digest(&state.layout, &params.projects).map_err(map_core)?;
+    // generation as well, which `digest --json` has always carried and this method
+    // omitted: a client comparing a digest across time needs to know which event-log
+    // generation it was taken at, and had no way to see that it was missing.
     Ok(json!({
         "combined": digest.combined,
         "issues": digest.issues,
+        "generation": digest.generation,
         "projects": digest
             .projects
             .iter()

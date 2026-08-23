@@ -657,3 +657,206 @@ fn backlinks_of_an_unknown_id_is_an_error() {
         Error::IssueNotFound { .. }
     ));
 }
+
+/// The score of one hit.
+fn tagged_score(hits: &[vissue_core::views::RelatedHit], id: &str) -> f64 {
+    hits.iter().find(|h| h.id == id).map_or(0.0, |h| h.score)
+}
+
+/// Evidence recorded for one hit, or a panic naming what did come back.
+fn evidence_for(hits: &[vissue_core::views::RelatedHit], id: &str) -> Vec<String> {
+    hits.iter()
+        .find(|h| h.id == id)
+        .unwrap_or_else(|| {
+            panic!(
+                "no {id} among {:?}",
+                hits.iter().map(|h| h.id.as_str()).collect::<Vec<_>>()
+            )
+        })
+        .evidence
+        .clone()
+}
+
+/// An edge is named from both ends, and differently from each.
+///
+/// `blocks` and `blocked_by` are the same edge read from opposite directions, as are
+/// `parent` and `child`. A reader asking about the blocked issue wants to know it is
+/// waiting, and one asking about the blocker wants to know something waits on it, so
+/// naming both ends the same would lose which.
+#[test]
+fn related_names_a_declared_edge_from_the_end_it_is_asked_from() {
+    let recs = corpus();
+    let service = CatalogService::from_recs(&recs);
+
+    // atlas-3e4f is BLOCKED_BY atlas-1a2b, and atlas-2c3d has it as PARENT.
+    let from_blocked = service.related("atlas-3e4f", 2, 10).unwrap();
+    assert!(
+        evidence_for(&from_blocked, "atlas-1a2b").contains(&"blocked_by".to_string()),
+        "{:?}",
+        evidence_for(&from_blocked, "atlas-1a2b")
+    );
+
+    let from_child = service.related("atlas-2c3d", 2, 10).unwrap();
+    assert!(
+        evidence_for(&from_child, "atlas-1a2b").contains(&"parent".to_string()),
+        "{:?}",
+        evidence_for(&from_child, "atlas-1a2b")
+    );
+
+    // And the other way round, which is the direction already relied on.
+    let from_blocker = service.related("atlas-1a2b", 2, 10).unwrap();
+    let back = evidence_for(&from_blocker, "atlas-3e4f");
+    assert!(back.contains(&"blocks".to_string()), "{back:?}");
+    let down = evidence_for(&from_blocker, "atlas-2c3d");
+    assert!(down.contains(&"child".to_string()), "{down:?}");
+}
+
+/// Provenance is an edge too, and it also reads differently from each end.
+#[test]
+fn related_names_provenance_from_the_end_it_is_asked_from() {
+    let mut recs = corpus();
+    // atlas-4g5h came out of atlas-1a2b, and beacon-5j6k replaced atlas-2c3d.
+    recs[3] = with_property(recs[3].clone(), "DISCOVERED_FROM", "atlas-1a2b");
+    recs[2] = with_property(recs[2].clone(), "PIVOTED_TO", "beacon-5j6k");
+    let service = CatalogService::from_recs(&recs);
+
+    let from_origin = service.related("atlas-1a2b", 1, 10).unwrap();
+    let found = evidence_for(&from_origin, "atlas-4g5h");
+    assert!(found.contains(&"discovered_from".to_string()), "{found:?}");
+
+    let from_discovery = service.related("atlas-4g5h", 1, 10).unwrap();
+    let source = evidence_for(&from_discovery, "atlas-1a2b");
+    assert!(source.contains(&"source_of".to_string()), "{source:?}");
+
+    let from_abandoned = service.related("atlas-2c3d", 1, 10).unwrap();
+    let onwards = evidence_for(&from_abandoned, "beacon-5j6k");
+    assert!(onwards.contains(&"pivoted_to".to_string()), "{onwards:?}");
+
+    let from_successor = service.related("beacon-5j6k", 1, 10).unwrap();
+    let back = evidence_for(&from_successor, "atlas-2c3d");
+    assert!(back.contains(&"successor_of".to_string()), "{back:?}");
+}
+
+/// Two issues carrying the same tag are related by that alone, and two in one project
+/// are weakly related by that alone. Both are weak on purpose: a shared tag scores far
+/// under a declared edge, and a shared project barely registers.
+#[test]
+fn related_scores_a_shared_tag_and_a_shared_project() {
+    let mut recs = corpus();
+    recs[3] = with_org_tags(recs[3].clone(), &["parser", "docs"]);
+    let hits = CatalogService::from_recs(&recs)
+        .related("atlas-1a2b", 1, 10)
+        .unwrap();
+
+    let tagged = evidence_for(&hits, "atlas-4g5h");
+    assert!(tagged.contains(&"shared_tags".to_string()), "{tagged:?}");
+    assert!(tagged.contains(&"same_project".to_string()), "{tagged:?}");
+
+    // The other project shares neither, so it is here on its words or not at all.
+    let elsewhere = hits.iter().find(|h| h.id == "beacon-5j6k");
+    assert!(
+        elsewhere.is_none_or(|h| !h.evidence.contains(&"same_project".to_string())),
+        "{:?}",
+        elsewhere.map(|h| &h.evidence)
+    );
+
+    // A declared edge outranks both, which is what the weights are for. Two of them
+    // tie here and the id settles it, so the assertion is on the score rather than on
+    // which of the pair came first.
+    let declared = hits[0].score;
+    assert!(
+        declared > 1_000.0 && declared > tagged_score(&hits, "atlas-4g5h") * 10.0,
+        "{hits:?}"
+    );
+}
+
+/// The shared tag carries weight, not just a label.
+///
+/// Two issues alike in every way the scorer looks at, one of them carrying a tag the
+/// target also carries. Asserting the label alone would pass with the weight set to
+/// zero, which is a scorer that records the reason and ignores it.
+#[test]
+fn a_shared_tag_is_worth_more_than_the_words_that_come_with_it() {
+    let recs = vec![
+        with_org_tags(
+            issue("atlas", "atlas-target", "TODO", "Parse the header"),
+            &["parser", "core"],
+        ),
+        with_org_tags(
+            issue("atlas", "atlas-tagged", "TODO", "Unrelated wording here"),
+            &["parser"],
+        ),
+        issue("atlas", "atlas-plain", "TODO", "Unrelated wording here"),
+    ];
+    let hits = CatalogService::from_recs(&recs)
+        .related("atlas-target", 1, 10)
+        .unwrap();
+    let tagged = tagged_score(&hits, "atlas-tagged");
+    let plain = tagged_score(&hits, "atlas-plain");
+    assert!(
+        tagged - plain >= 25.0,
+        "the tag is worth {}, and matching its word alone would be worth a few: {hits:?}",
+        tagged - plain
+    );
+}
+
+#[test]
+fn related_returns_no_more_hits_than_the_limit() {
+    let recs = corpus();
+    let service = CatalogService::from_recs(&recs);
+    let all = service.related("atlas-1a2b", 2, 10).unwrap();
+    assert!(all.len() > 1, "{all:?}");
+
+    let capped = service.related("atlas-1a2b", 2, 1).unwrap();
+    assert_eq!(capped.len(), 1);
+    // The one kept is the one that ranked first, not an arbitrary survivor.
+    assert_eq!(capped[0].id, all[0].id);
+}
+
+/// Two hits that score the same are ordered by id, so the ranking is total and a
+/// caller reading the top of the list twice reads the same thing.
+#[test]
+fn related_breaks_a_score_tie_on_the_id() {
+    let recs = vec![
+        issue("atlas", "atlas-target", "TODO", "Parse the header"),
+        issue("atlas", "atlas-zzzz", "TODO", "Unrelated wording here"),
+        issue("atlas", "atlas-aaaa", "TODO", "Unrelated wording here"),
+    ];
+    let hits = CatalogService::from_recs(&recs)
+        .related("atlas-target", 1, 10)
+        .unwrap();
+    assert_eq!(hits.len(), 2, "{hits:?}");
+    assert!(
+        (hits[0].score - hits[1].score).abs() < f64::EPSILON,
+        "{hits:?}"
+    );
+    assert_eq!(
+        [hits[0].id.as_str(), hits[1].id.as_str()],
+        ["atlas-aaaa", "atlas-zzzz"],
+        "{hits:?}"
+    );
+}
+
+/// Sharing a project is worth something, and barely anything.
+///
+/// Two issues alike in every way the scorer looks at, one of them in the target's
+/// project. The gap is the whole weight, which is small on purpose: a tracker where
+/// most issues sit in one project would otherwise rank every one of them as related.
+#[test]
+fn sharing_a_project_is_worth_a_little_and_not_nothing() {
+    let recs = vec![
+        issue("atlas", "atlas-target", "TODO", "Parse the header"),
+        issue("atlas", "atlas-near", "TODO", "Unrelated wording here"),
+        issue("beacon", "beacon-far", "TODO", "Unrelated wording here"),
+    ];
+    let hits = CatalogService::from_recs(&recs)
+        .related("atlas-target", 1, 10)
+        .unwrap();
+    let near = tagged_score(&hits, "atlas-near");
+    let far = tagged_score(&hits, "beacon-far");
+    assert!(
+        (near - far - 2.0).abs() < 1e-9,
+        "the project is worth {}: {hits:?}",
+        near - far
+    );
+}

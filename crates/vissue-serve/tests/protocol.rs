@@ -838,3 +838,47 @@ fn every_mutating_reply_has_the_same_shape() {
         "update did not return the issue it changed: {updated}"
     );
 }
+
+/// What the server advertises is what the schema says it has.
+///
+/// `initialize` returns a capability list, and that is the fourth place the method
+/// set is written down after the dispatch table, the schema and the reference. It is
+/// also the one a client reads to decide what it may call, and it had fallen nineteen
+/// methods behind while the other three agreed with each other. A client inspecting
+/// capabilities would have concluded that `append`, `vote`, `fold` and every read
+/// added beside them did not exist.
+///
+/// Both directions, because either is a lie: advertising a method that is not
+/// dispatched sends a client at something that will answer method-not-found, and
+/// dispatching one that is not advertised hides it from anyone who asks first.
+#[test]
+fn capabilities_match_the_schema() {
+    use std::collections::BTreeSet;
+
+    let advertised: BTreeSet<&str> = vissue_serve::LIVE_CAPABILITIES.iter().copied().collect();
+    let from_schema: BTreeSet<String> =
+        vissue_core::surface::socket_methods().into_iter().collect();
+
+    // `issue/get` and `issue/open` are protocol rather than operations: one is the
+    // detail fetch behind `issue/show`, the other is the shared selection a client
+    // uses to point its peers at an issue. The schema is about operations.
+    const PROTOCOL: &[&str] = &["issue/get", "issue/open"];
+
+    let unadvertised: Vec<&String> = from_schema
+        .iter()
+        .filter(|m| !advertised.contains(m.as_str()))
+        .collect();
+    assert!(
+        unadvertised.is_empty(),
+        "the schema has these methods and initialize does not advertise them: {unadvertised:?}"
+    );
+
+    let unknown: Vec<&&str> = advertised
+        .iter()
+        .filter(|m| !from_schema.contains(**m) && !PROTOCOL.contains(m))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "initialize advertises these and no schema row mentions them: {unknown:?}"
+    );
+}

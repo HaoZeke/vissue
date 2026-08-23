@@ -260,6 +260,29 @@ pub fn decode_response(method: &str, value: Value) -> Result<Response, Error> {
             Ok(Response::EventsSince(serde_json::from_value(value)?))
         }
         crate::rpc::Method::EventsGen => Ok(Response::EventsGen(serde_json::from_value(value)?)),
+        // No typed response form. Listed rather than wildcarded, so a new method
+        // has to be decided about here instead of silently landing in a default.
+        crate::rpc::Method::IssueAppend
+        | crate::rpc::Method::IssueReject
+        | crate::rpc::Method::IssueResolve
+        | crate::rpc::Method::IssueVote
+        | crate::rpc::Method::IssueFold
+        | crate::rpc::Method::IssueNormalize
+        | crate::rpc::Method::IssueCheck
+        | crate::rpc::Method::IssueCount
+        | crate::rpc::Method::IssueCycles
+        | crate::rpc::Method::IssueDigest
+        | crate::rpc::Method::IssueExport
+        | crate::rpc::Method::IssueGraph
+        | crate::rpc::Method::IssueRoadmap
+        | crate::rpc::Method::IssueStale
+        | crate::rpc::Method::IssueHygiene
+        | crate::rpc::Method::IssueWaitingOn
+        | crate::rpc::Method::IssueMirror
+        | crate::rpc::Method::EventsPing
+        | crate::rpc::Method::EventsWait => Err(Error::Rpc(crate::rpc::invalid_params(&*format!(
+            "{method} has no typed response form; read the raw value"
+        )))),
     }
 }
 

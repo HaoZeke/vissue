@@ -367,6 +367,44 @@ pub enum Method {
     IssueNote,
     /// Move to another project.
     IssueRefile,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueAppend,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueReject,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueResolve,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueVote,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueFold,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueNormalize,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueCheck,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueCount,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueCycles,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueDigest,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueExport,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueGraph,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueRoadmap,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueStale,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueHygiene,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueWaitingOn,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueMirror,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    EventsPing,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    EventsWait,
     /// Project names plus revision.
     ProjectList,
     /// Pull of the on-disk event log.
@@ -404,6 +442,25 @@ impl Method {
             Self::ProjectList => "project/list",
             Self::EventsSince => "events/since",
             Self::EventsGen => "events/gen",
+            Self::IssueAppend => "issue/append",
+            Self::IssueReject => "issue/reject",
+            Self::IssueResolve => "issue/resolve",
+            Self::IssueVote => "issue/vote",
+            Self::IssueFold => "issue/fold",
+            Self::IssueNormalize => "issue/normalize",
+            Self::IssueCheck => "issue/check",
+            Self::IssueCount => "issue/count",
+            Self::IssueCycles => "issue/cycles",
+            Self::IssueDigest => "issue/digest",
+            Self::IssueExport => "issue/export",
+            Self::IssueGraph => "issue/graph",
+            Self::IssueRoadmap => "issue/roadmap",
+            Self::IssueStale => "issue/stale",
+            Self::IssueHygiene => "issue/hygiene",
+            Self::IssueWaitingOn => "issue/waiting_on",
+            Self::IssueMirror => "issue/mirror",
+            Self::EventsPing => "events/ping",
+            Self::EventsWait => "events/wait",
         }
     }
 
@@ -439,12 +496,39 @@ impl Method {
             "project/list" => Ok(Self::ProjectList),
             "events/since" => Ok(Self::EventsSince),
             "events/gen" => Ok(Self::EventsGen),
+            "issue/append" => Ok(Self::IssueAppend),
+            "issue/reject" => Ok(Self::IssueReject),
+            "issue/resolve" => Ok(Self::IssueResolve),
+            "issue/vote" => Ok(Self::IssueVote),
+            "issue/fold" => Ok(Self::IssueFold),
+            "issue/normalize" => Ok(Self::IssueNormalize),
+            "issue/check" => Ok(Self::IssueCheck),
+            "issue/count" => Ok(Self::IssueCount),
+            "issue/cycles" => Ok(Self::IssueCycles),
+            "issue/digest" => Ok(Self::IssueDigest),
+            "issue/export" => Ok(Self::IssueExport),
+            "issue/graph" => Ok(Self::IssueGraph),
+            "issue/roadmap" => Ok(Self::IssueRoadmap),
+            "issue/stale" => Ok(Self::IssueStale),
+            "issue/hygiene" => Ok(Self::IssueHygiene),
+            "issue/waiting_on" => Ok(Self::IssueWaitingOn),
+            "issue/mirror" => Ok(Self::IssueMirror),
+            "events/ping" => Ok(Self::EventsPing),
+            "events/wait" => Ok(Self::EventsWait),
             other => Err(method_not_found(other)),
         }
     }
 }
 
 /// Capability strings returned by `initialize` (v1). `initialize` itself is omitted.
+///
+/// This is the fourth place the method set is written down, after the dispatch table,
+/// the schema and the reference, and it is the one a client reads to decide what it
+/// may call. It fell nineteen methods behind while the other three agreed with each
+/// other, so a client inspecting capabilities would have concluded that append,
+/// vote, fold and every read added beside them did not exist.
+///
+/// `capabilities_match_the_schema` in vissue-serve holds this to the schema now.
 pub const V1_CAPABILITIES: &[&str] = &[
     "issue/list",
     "issue/get",
@@ -466,9 +550,28 @@ pub const V1_CAPABILITIES: &[&str] = &[
     "issue/claim",
     "issue/note",
     "issue/refile",
+    "issue/append",
+    "issue/reject",
+    "issue/resolve",
+    "issue/vote",
+    "issue/fold",
+    "issue/normalize",
+    "issue/check",
+    "issue/count",
+    "issue/cycles",
+    "issue/digest",
+    "issue/export",
+    "issue/graph",
+    "issue/roadmap",
+    "issue/stale",
+    "issue/hygiene",
+    "issue/waiting_on",
+    "issue/mirror",
     "project/list",
     "events/since",
     "events/gen",
+    "events/ping",
+    "events/wait",
     "identity/get",
 ];
 
@@ -1209,6 +1312,32 @@ impl Request {
             Method::ProjectList => Ok(Self::ProjectList),
             Method::EventsSince => Ok(Self::EventsSince(decode_params(params)?)),
             Method::EventsGen => Ok(Self::EventsGen),
+            // These reach the wire and have no typed request form. Listed rather
+            // than swept up by a wildcard, because a wildcard would take a new
+            // method silently and this match is one of the places that should
+            // refuse to compile until somebody decides.
+            Method::IssueAppend
+            | Method::IssueReject
+            | Method::IssueResolve
+            | Method::IssueVote
+            | Method::IssueFold
+            | Method::IssueNormalize
+            | Method::IssueCheck
+            | Method::IssueCount
+            | Method::IssueCycles
+            | Method::IssueDigest
+            | Method::IssueExport
+            | Method::IssueGraph
+            | Method::IssueRoadmap
+            | Method::IssueStale
+            | Method::IssueHygiene
+            | Method::IssueWaitingOn
+            | Method::IssueMirror
+            | Method::EventsPing
+            | Method::EventsWait => Err(invalid_params(&*format!(
+                "{} has no typed request form; send it untyped",
+                method.as_str()
+            ))),
         }
     }
 
@@ -1429,9 +1558,15 @@ mod tests {
 
     #[test]
     fn unknown_method_is_not_found() {
-        let err = Method::parse("issue/fold").unwrap_err();
+        // Deliberately a name no verb will ever take. This test used "issue/fold"
+        // until fold became a method, and the same trap caught the owner's copy of
+        // this test on the same day: an example chosen because it sounds plausible is
+        // an example that will one day be real, and then the test asserts that a
+        // working method is missing.
+        const NEVER: &str = "issue/no-such-method";
+        let err = Method::parse(NEVER).unwrap_err();
         assert_eq!(err.code, METHOD_NOT_FOUND);
-        assert_eq!(err.data, Some(json!({"method": "issue/fold"})));
+        assert_eq!(err.data, Some(json!({"method": NEVER})));
     }
 
     #[test]

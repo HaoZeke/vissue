@@ -78,7 +78,7 @@ are =snake_case=.
 #+begin_src json
 {"jsonrpc":"2.0","id":1,"result":{
   "protocolVersion":1,
-  "capabilities":["issue/list","issue/get","issue/ready"],
+  "capabilities":["issue/list","issue/get","issue/ready","..."],
   "root":"/path/to/tracker",
   "prefix":"Software",
   "generation":3167,
@@ -99,7 +99,7 @@ and never feeds a core generation into =issue/list.since_revision=.
 * Identity
 
 =initialize.params.agent= is required and non-empty. That value sticks
-on the connection. =issue/claim= and =issue/update= may send =agent=
+on the connection. =issue/claim=, =issue/update=, =issue/append= and =issue/vote= may send =agent=
 to override; omitting it means use the initialize agent.
 
 Serve never falls back to process =VISSUE_AGENT= for a control client,
@@ -134,14 +134,38 @@ Capabilities returned by =initialize= (v1):
 | =issue/claim=      | Take the issue; =force= default false                     |
 | =issue/note=       | Dated logbook entry                                       |
 | =issue/refile=     | Move to another project                                   |
+| =issue/append=     | Dated report under the heading                             |
+| =issue/reject=     | Cancel and point at a successor                            |
+| =issue/resolve=    | Settle on a sibling terminal state                         |
+| =issue/vote=       | One ballot per identity; no params reads the tally         |
+| =issue/fold=       | Inbox headings become issues                               |
+| =issue/normalize=  | Rewrite onto the property split; =dry_run=                 |
+| =issue/check=      | Validation; =report= plus =errors= and =warnings=          |
+| =issue/count=      | Counts by project, state, readiness                        |
+| =issue/cycles=     | Blocker cycles, if any                                     |
+| =issue/digest=     | Corpus hash; =combined= plus per project                   |
+| =issue/export=     | The corpus as text                                         |
+| =issue/graph=      | One dot document                                           |
+| =issue/roadmap=    | One roadmap document                                       |
+| =issue/stale=      | Issues untouched for =days=                                |
+| =issue/hygiene=    | Stalled claims plus validation                             |
+| =issue/waiting_on= | What blocks one issue                                      |
+| =issue/mirror=     | The mirror's stamp                                         |
 | =project/list=     | Project names plus =revision=                             |
 | =events/since=     | Pull of the JSONL event log                               |
 | =events/gen=       | ={generation, revision}=                                  |
+| =events/ping=      | Liveness and detail                                        |
+| =events/wait=      | Block until the generation moves, or an issue is terminal  |
 | =identity/get=     | ={identity, root, prefix, version}=                       |
 
-Not in v1: =issue/fold=, =issue/hygiene=, =issue/check=,
-=issue/export=, =issue/mirror=, =issue/graph=, =issue/roadmap=. Those
-stay CLI and MCP.
+Every verb that changes a file has a method, and so does every read. This page used
+to say that =issue/fold=, =issue/hygiene=, =issue/check=, =issue/export=,
+=issue/mirror=, =issue/graph= and =issue/roadmap= were not in v1 and stayed on the
+command line and MCP. All seven are here now.
+
+The set is stated once in =schema/vissue.capnp= and the surfaces are tested against
+it, this table included by way of the capability list: what =initialize= advertises
+has to match the schema, in both directions.
 
 ** Reads
 

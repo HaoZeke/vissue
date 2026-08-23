@@ -302,8 +302,12 @@ Three checks, one per surface: the subcommand's help offers its flags, the tool'
 argument struct carries its arguments, and the method's param struct carries its
 parameters.
 
-Two more run the other way, and that direction was missing everywhere at first: every
-tool the server exposes and every method it dispatches must appear in a schema row.
+Three more run the other way, and that direction was missing everywhere at first:
+every tool the server exposes, every method it dispatches, and every flag a verb takes
+must appear in a schema row. Flags clap puts on every subcommand are listed once as
+=globalFlags= and subtracted, so a per-verb row stays about what the verb takes, and a
+local-only verb is skipped because its flags are about the process rather than an
+operation.
 A check that only runs schema to surface catches a verb the schema names and the
 surface lacks, and is blind to one that exists and the schema omits, which is the
 same asymmetry that let verbs drift to begin with. Adding the reverse found three:

@@ -1830,3 +1830,57 @@ fn every_subcommand_appears_in_the_schema() {
         "these subcommands are in no schema row, so no surface check can see them: {unknown:?}"
     );
 }
+
+/// Every flag a verb takes is in the schema.
+///
+/// The flag checks ran schema to surface only: a flag the schema names has to exist,
+/// and a flag that exists and the schema omits went unseen. That is the same
+/// asymmetry as at the verb level, one level down, and it was open while the verb
+/// level was closed.
+///
+/// Global flags are subtracted from `globalFlags` in the schema rather than repeated
+/// on forty rows, so a per-verb row stays about what the verb actually takes. A verb
+/// with no schema row at all is caught by `every_subcommand_appears_in_the_schema`,
+/// so this only reports flags on verbs the schema knows.
+#[test]
+fn every_flag_a_verb_takes_is_in_the_schema() {
+    let globals = vissue_core::surface::global_flags();
+    let ops = vissue_core::surface::operations();
+
+    let mut unknown = Vec::new();
+    for op in &ops {
+        // A local verb's flags are about this process rather than about an
+        // operation: the HUD's nine are window management, `serve --detach` is a
+        // lifecycle choice. Enumerating them in a schema of operations buys nothing
+        // and would bury the flags that do describe a surface.
+        if op.cli.is_empty() || op.local {
+            continue;
+        }
+        let help = vissue(&[&op.cli, "--help"]);
+        let text = String::from_utf8_lossy(&help.stdout).to_string();
+        // Long flags only. Short forms are an alias for one of them and clap prints
+        // them on the same line.
+        let mut taken: Vec<String> = text
+            .lines()
+            .filter_map(|line| line.split("--").nth(1))
+            .filter_map(|rest| rest.split_whitespace().next())
+            .map(|f| f.trim_end_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-'))
+            .filter(|f| !f.is_empty() && f.chars().all(|c| c.is_ascii_lowercase() || c == '-'))
+            .map(str::to_string)
+            .collect();
+        taken.sort_unstable();
+        taken.dedup();
+
+        let named: Vec<&str> = op.fields.iter().map(|f| f.cli.as_str()).collect();
+        for flag in taken {
+            if globals.contains(&flag) || named.contains(&flag.as_str()) {
+                continue;
+            }
+            unknown.push(format!("{} --{flag}", op.cli));
+        }
+    }
+    assert!(
+        unknown.is_empty(),
+        "these flags exist and no schema field mentions them: {unknown:?}"
+    );
+}

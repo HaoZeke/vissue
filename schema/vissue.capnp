@@ -108,6 +108,13 @@ struct Field {
 }
 
 
+const globalFlags :List(Text) = [
+  # Flags clap puts on every subcommand. Named once here rather than repeated on
+  # forty rows, so the reverse check can subtract them and a per-verb row stays
+  # about what the verb actually takes.
+  "root", "prefix", "no-route", "help", "version"
+];
+
 const operations :List(Operation) = [
   ( cli = "create", socket = "issue/create", mcp = "vissue_create", mutates = true, local = false,
     aliases = ["q"],
@@ -122,7 +129,8 @@ const operations :List(Operation) = [
       ( cli = "deadline", tool = "deadline", socket = "deadline", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
       ( cli = "scheduled", tool = "scheduled", socket = "scheduled", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
       ( cli = "body-file", tool = "", socket = "", note = "no tool argument: a path resolves on the host running the server, not the caller's", toolType = "", socketType = "" ),
-      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment", toolType = "", socketType = "Option<String>" )
+      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment", toolType = "", socketType = "Option<String>" ),
+      ( cli = "quiet", tool = "", socket = "", note = "command line only: it trims the output to the id, and a caller reading a field does not need it", toolType = "", socketType = "" )
     ] ),
   ( cli = "update", socket = "issue/update", mcp = "vissue_update", mutates = true, local = false,
     note = "",
@@ -175,7 +183,8 @@ const operations :List(Operation) = [
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently", toolType = "String", socketType = "String" ),
-      ( cli = "", tool = "state", socket = "state", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently", toolType = "String", socketType = "String" )
+      ( cli = "", tool = "state", socket = "state", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently", toolType = "String", socketType = "String" ),
+      ( cli = "state", tool = "state", socket = "state", note = "", toolType = "String", socketType = "String" )
     ] ),
   ( cli = "vote", socket = "issue/vote", mcp = "vissue_vote", mutates = true, local = false,
     note = "",
@@ -199,12 +208,15 @@ const operations :List(Operation) = [
   ( cli = "agenda", socket = "issue/agenda", mcp = "vissue_agenda", mutates = false, local = false,
     note = "",
     fields = [
-      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "days", tool = "days", socket = "days", note = "", toolType = "Option<i64>", socketType = "Option<i64>" ),
+      ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" )
     ] ),
   ( cli = "ancestors", socket = "issue/ancestors", mcp = "vissue_ancestors", mutates = false, local = false,
     note = "",
     fields = [
-      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "depth", tool = "depth", socket = "depth", note = "", toolType = "Option<usize>", socketType = "Option<usize>" )
     ] ),
   ( cli = "backlinks", socket = "issue/backlinks", mcp = "vissue_backlinks", mutates = false, local = false,
     note = "",
@@ -223,13 +235,20 @@ const operations :List(Operation) = [
     ] ),
   ( cli = "claims", socket = "issue/claims", mcp = "vissue_claims", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "by", tool = "holder", socket = "holder", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
+      ( cli = "json", tool = "json", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "Option<bool>", socketType = "" ),
+      ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" )
+    ] ),
   ( cli = "gen", socket = "events/gen", mcp = "vissue_gen", mutates = false, local = false,
     note = "",
     fields = [] ),
   ( cli = "events", socket = "events/since", mcp = "vissue_events", mutates = false, local = false,
     note = "the method names the sequence it reads from",
-    fields = [] ),
+    fields = [
+      ( cli = "limit", tool = "limit", socket = "limit", note = "", toolType = "Option<usize>", socketType = "Option<usize>" ),
+      ( cli = "since", tool = "since", socket = "since", note = "", toolType = "Option<u64>", socketType = "u64" )
+    ] ),
   ( cli = "identity", socket = "identity/get", mcp = "vissue_identity", mutates = false, local = false,
     note = "one method answers both identity and whoami",
     fields = [] ),
@@ -239,11 +258,16 @@ const operations :List(Operation) = [
   ( cli = "impact", socket = "issue/impact", mcp = "vissue_impact", mutates = false, local = false,
     note = "",
     fields = [
-      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "depth", tool = "depth", socket = "depth", note = "", toolType = "Option<usize>", socketType = "Option<usize>" )
     ] ),
   ( cli = "list", socket = "issue/list", mcp = "vissue_list", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
+      ( cli = "state", tool = "state", socket = "state", note = "", toolType = "Option<String>", socketType = "Option<String>" )
+    ] ),
   ( cli = "projects", socket = "project/list", mcp = "vissue_projects", mutates = false, local = false,
     note = "",
     fields = [
@@ -251,66 +275,107 @@ const operations :List(Operation) = [
     ] ),
   ( cli = "ready", socket = "issue/ready", mcp = "vissue_ready", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" )
+    ] ),
   ( cli = "related", socket = "issue/related", mcp = "vissue_related", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "depth", tool = "depth", socket = "depth", note = "", toolType = "Option<usize>", socketType = "Option<usize>" ),
+      ( cli = "format", tool = "format", socket = "", note = "command line only: it chooses a text rendering, and the remote surfaces answer in structure", toolType = "Option<String>", socketType = "" ),
+      ( cli = "limit", tool = "limit", socket = "limit", note = "", toolType = "Option<usize>", socketType = "Option<usize>" )
+    ] ),
   ( cli = "search", socket = "issue/search", mcp = "vissue_search", mutates = false, local = false,
     note = "",
     fields = [
-      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "limit", tool = "limit", socket = "limit", note = "", toolType = "Option<usize>", socketType = "Option<usize>" )
     ] ),
   ( cli = "show", socket = "issue/show", mcp = "vissue_show", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "org", tool = "", socket = "", note = "the tool list spells this vissue_org, which is its own row", toolType = "", socketType = "" )
+    ] ),
   ( cli = "tree", socket = "issue/tree", mcp = "vissue_tree", mutates = false, local = false,
     note = "",
     fields = [
-      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" )
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "format", tool = "format", socket = "format", note = "", toolType = "Option<String>", socketType = "Option<String>" )
     ] ),
   ( cli = "check", socket = "issue/check", mcp = "vissue_check", mutates = false, local = false,
     note = "",
     fields = [] ),
   ( cli = "count", socket = "issue/count", mcp = "vissue_count", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
+      ( cli = "ready", tool = "ready", socket = "", note = "", toolType = "Option<bool>", socketType = "" ),
+      ( cli = "state", tool = "state", socket = "state", note = "", toolType = "Option<String>", socketType = "Option<String>" )
+    ] ),
   ( cli = "cycles", socket = "issue/cycles", mcp = "vissue_cycles", mutates = false, local = false,
     note = "",
     fields = [] ),
   ( cli = "digest", socket = "issue/digest", mcp = "vissue_digest", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "project", tool = "", socket = "", note = "command line only", toolType = "", socketType = "" ),
+      ( cli = "quiet", tool = "", socket = "", note = "command line only: it trims the output to the id, and a caller reading a field does not need it", toolType = "", socketType = "" )
+    ] ),
   ( cli = "export", socket = "issue/export", mcp = "vissue_export", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" )
+    ] ),
   ( cli = "graph", socket = "issue/graph", mcp = "vissue_graph", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" )
+    ] ),
   ( cli = "hygiene", socket = "issue/hygiene", mcp = "vissue_hygiene", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "stale-days", tool = "stale_days", socket = "stale_days", note = "", toolType = "Option<i64>", socketType = "Option<i64>" )
+    ] ),
   ( cli = "mirror", socket = "", mcp = "vissue_mirror", mutates = false, local = false,
     note = "no socket method: rendering writes a file, and a file the server writes lands on the server's disk rather than the caller's",
     fields = [
       ( cli = "project", tool = "projects", socket = "", note = "repeated on the command line, a list as a tool argument", toolType = "Option<Vec<String>>", socketType = "" ),
       ( cli = "format", tool = "format", socket = "", note = "", toolType = "Option<String>", socketType = "" ),
-      ( cli = "state", tool = "state", socket = "", note = "", toolType = "Option<String>", socketType = "" )
+      ( cli = "state", tool = "state", socket = "", note = "", toolType = "Option<String>", socketType = "" ),
+      ( cli = "check", tool = "", socket = "", note = "selects the freshness check, which is a separate operation with its own method", toolType = "", socketType = "" ),
+      ( cli = "out", tool = "", socket = "", note = "command line only: it names a file to write, and a file the server writes lands on the wrong disk", toolType = "", socketType = "" )
     ] ),
   ( cli = "ping", socket = "events/ping", mcp = "vissue_ping", mutates = false, local = false,
     note = "appends to the event log, so two calls answer differently; it changes no issue, which is why it is not a mutating verb",
-    fields = [] ),
+    fields = [
+      ( cli = "detail", tool = "detail", socket = "detail", note = "", toolType = "Option<String>", socketType = "Option<String>" )
+    ] ),
   ( cli = "roadmap", socket = "issue/roadmap", mcp = "vissue_roadmap", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" )
+    ] ),
   ( cli = "wait", socket = "events/wait", mcp = "vissue_wait", mutates = false, local = false,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "id", tool = "id", socket = "id", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
+      ( cli = "last", tool = "last", socket = "last", note = "", toolType = "Option<u64>", socketType = "u64" ),
+      ( cli = "poll-ms", tool = "poll_ms", socket = "poll_ms", note = "", toolType = "Option<u64>", socketType = "Option<u64>" ),
+      ( cli = "timeout-ms", tool = "timeout_ms", socket = "timeout_ms", note = "", toolType = "Option<u64>", socketType = "Option<u64>" ),
+      ( cli = "until-terminal", tool = "until_terminal", socket = "", note = "the method infers it from `id` being present", toolType = "Option<bool>", socketType = "" )
+    ] ),
   ( cli = "waiting-on", socket = "issue/waiting_on", mcp = "vissue_waiting_on", mutates = false, local = false,
     note = "",
     fields = [] ),
   ( cli = "stale", socket = "issue/stale", mcp = "", mutates = false, local = false,
     note = "no tool: a stale sweep is a maintenance report rather than an agent action",
-    fields = [] ),
+    fields = [
+      ( cli = "days", tool = "", socket = "days", note = "no tool: the verb has none", toolType = "", socketType = "i64" ),
+      ( cli = "project", tool = "", socket = "project", note = "no tool: the verb has none", toolType = "", socketType = "Option<String>" )
+    ] ),
   ( cli = "completions", socket = "", mcp = "", mutates = false, local = true,
     note = "local only: it acts on this process rather than on the corpus",
     fields = [] ),

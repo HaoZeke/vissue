@@ -697,6 +697,9 @@ fn each_method_takes_the_parameters_the_schema_names() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../vissue-control/src/rpc.rs"),
     )
     .expect("rpc.rs");
+    let dispatch_src =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/unix/dispatch.rs"))
+            .expect("dispatch.rs");
 
     let mut wrong = Vec::new();
     for op in vissue_core::surface::operations() {
@@ -705,14 +708,16 @@ fn each_method_takes_the_parameters_the_schema_names() {
         if op.socket.is_empty() || !op.fields.iter().any(|f| !f.socket.is_empty()) {
             continue;
         }
-        // A row with no subcommand names its struct from the method instead:
-        // `issue/mirror_check` is `MirrorCheckParams`.
-        let stem = if op.cli.is_empty() {
-            op.socket.rsplit('/').next().unwrap_or_default().to_string()
-        } else {
-            op.cli.clone()
+        // The params type comes from the handler that decodes it, not from the
+        // method's name. Several methods share one: list and ready both take
+        // IssueListParams, export, graph and roadmap take ProjectFilterParams,
+        // ancestors and impact take WalkParams. Deriving `<Verb>Params` reported
+        // working methods as unimplemented, which is the guess being wrong rather
+        // than the method.
+        let Some(struct_name) = method_params_type(&dispatch_src, &op.socket) else {
+            wrong.push(format!("{}: no handler decoding a params type", op.socket));
+            continue;
         };
-        let struct_name = vissue_core::surface::struct_name(&stem, "Params");
         let Some(body) = vissue_core::surface::struct_body(&rpc, &struct_name) else {
             wrong.push(format!("{}: no {struct_name} to check", op.socket));
             continue;
@@ -782,6 +787,31 @@ fn every_method_the_server_dispatches_is_in_the_schema() {
         unknown.is_empty(),
         "these methods are dispatched and no schema row mentions them: {unknown:?}"
     );
+}
+
+/// The params type a method decodes, found through the handler its match arm names.
+///
+/// Written carefully because the first attempt was not: it searched for the first
+/// `": "` in the rest of the file and then looked backwards, which found something
+/// for every method and the right thing for none.
+fn method_params_type(dispatch: &str, method: &str) -> Option<String> {
+    // The match arm names the handler.
+    let arm = dispatch.find(&format!("\"{method}\" => "))?;
+    let arm_line = dispatch[arm..].lines().next()?;
+    let handler = arm_line.split("=> ").nth(1)?.split('(').next()?.trim();
+
+    // The handler's own body, and no further.
+    let at = dispatch.find(&format!("fn {handler}("))?;
+    let body = &dispatch[at..];
+    let stop = body[1..].find("\nfn ").map_or(body.len(), |e| e + 1);
+    let body = &body[..stop];
+
+    // `let params: XParams = decode(params)?;`
+    let line = body.lines().find(|l| {
+        l.trim_start().starts_with("let params:") || l.trim_start().starts_with("let _params:")
+    })?;
+    let ty = line.split(':').nth(1)?.split('=').next()?.trim();
+    Some(ty.to_string())
 }
 
 /// Every mutating reply has the same shape.

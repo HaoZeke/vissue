@@ -131,6 +131,22 @@ pub fn cli_verbs() -> Vec<String> {
         .collect()
 }
 
+/// Flags clap puts on every subcommand, which a per-verb row does not repeat.
+///
+/// # Panics
+///
+/// Panics if the encoded constant cannot be read, which would mean the committed
+/// generated file is corrupt.
+#[must_use]
+pub fn global_flags() -> Vec<String> {
+    crate::vissue_capnp::GLOBAL_FLAGS
+        .get()
+        .expect("the encoded global flag list is unreadable")
+        .iter()
+        .filter_map(|f| f.ok().and_then(|t| t.to_str().ok().map(str::to_string)))
+        .collect()
+}
+
 /// Every mutating verb's socket method, skipping any the schema leaves empty.
 #[must_use]
 pub fn mutating_socket_methods() -> Vec<String> {

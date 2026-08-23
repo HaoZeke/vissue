@@ -22,6 +22,17 @@ fn version_flag_prints_the_binary_version() {
 /// A tool nobody wrote down is one an agent will not find, and the reference
 /// is where the surface is published. Reading the source rather than a second
 /// list keeps the two from drifting the way a hand-maintained copy does.
+/// The args type a tool takes, read from `Parameters<..>` in its signature.
+fn tool_args_type(server: &str, tool: &str) -> Option<String> {
+    let at = server.find(&format!("async fn {tool}("))?;
+    let rest = &server[at..];
+    let end = rest.find(") -> ")?;
+    let sig = &rest[..end];
+    let open = sig.find("Parameters<")? + "Parameters<".len();
+    let close = sig[open..].find('>')?;
+    Some(sig[open..open + close].trim().to_string())
+}
+
 /// Tool names the server declares, read off the `#[tool]` functions.
 fn tool_names(server: &str) -> Vec<String> {
     let mut tools: Vec<String> = server
@@ -94,6 +105,7 @@ fn the_tool_list_offers_every_tool_the_schema_names() {
 fn each_tool_takes_the_arguments_the_schema_names() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let tools_src = std::fs::read_to_string(root.join("src/tools.rs")).expect("tools.rs");
+    let server_src = std::fs::read_to_string(root.join("src/server.rs")).expect("server.rs");
 
     let mut wrong = Vec::new();
     for op in vissue_core::surface::operations() {
@@ -103,8 +115,15 @@ fn each_tool_takes_the_arguments_the_schema_names() {
         if op.mcp.is_empty() || !op.fields.iter().any(|f| !f.tool.is_empty()) {
             continue;
         }
-        let stem = op.mcp.trim_start_matches("vissue_");
-        let struct_name = vissue_core::surface::struct_name(stem, "Args");
+        // The args type comes from the tool's own signature rather than from its
+        // name. Several tools share one struct: ancestors and impact both take
+        // DepthArgs, ready takes ListArgs, and export, graph and roadmap all take
+        // ProjectArgs. Deriving `<Verb>Args` reported six tools as unimplemented
+        // when what was wrong was the guess.
+        let Some(struct_name) = tool_args_type(&server_src, &op.mcp) else {
+            wrong.push(format!("{}: no Parameters<..> in its signature", op.mcp));
+            continue;
+        };
         let Some(body) = vissue_core::surface::struct_body(&tools_src, &struct_name) else {
             wrong.push(format!("{}: no {struct_name} to check", op.mcp));
             continue;

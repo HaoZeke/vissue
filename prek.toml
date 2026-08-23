@@ -27,9 +27,9 @@ hooks = [
     id = "codespell",
     # Brin and Hendler are author surnames in the bibliography.
     args = [
-      "--skip=*.lock,Cargo.lock",
+      "--skip=*.lock,Cargo.lock,**/vissue_capnp.rs",
       "-L",
-      "unparseable,unparsable,brin,hendler,ratatui",
+      "unparseable,unparsable,brin,hendler,ratatui,captable",
     ],
   },
 ]

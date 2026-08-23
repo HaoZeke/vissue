@@ -854,7 +854,7 @@ pub const ID_SEED_ENV: &str = "VISSUE_ID_SEED";
 /// A free `project-suffix` id, or an error when the space is full.
 ///
 /// Minting is deterministic in its inputs: the starting suffix is xxh3 over the
-/// project and `subject` keyed by [`id_seed`], and each further probe steps one
+/// project and `subject` keyed by the id seed ([`ID_SEED_ENV`]), and each further probe steps one
 /// along the base-36 space from there. The same project, subject and seed
 /// therefore ask for the same id every time, which makes a mint reproducible and
 /// replayable instead of a function of what nanosecond it ran in.

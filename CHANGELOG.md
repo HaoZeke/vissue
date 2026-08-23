@@ -6,6 +6,527 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.8.0](https://github.com/HaoZeke/vissue/releases/tag/v0.8.0) - 2026-08-23
+
+### Added
+
+- Eighteen tests for findings `check` could emit and nothing exercised: every preamble
+  keyword Org needs, the noexport warning that is about disclosure rather than
+  convenience, each way a blocker is spelled wrong, a type that is not on its heading,
+  two tags from one exclusive group, a priority outside the declared range, work started
+  out of order under an ORDERED parent, a DONE parent with an open child, a missing
+  creation date, a DONE body that reads as a reject, a sibling that already settled, a
+  discovery claim with no edge behind it, and a blocker ring every edge check passes.
+- Every flag a verb takes has to appear in the schema, which closes the last
+  one-directional check.
+
+  The flag checks ran schema to surface only: a flag the schema names must exist, and a
+  flag that exists and the schema omits went unseen. That is the same asymmetry as at the
+  verb level, one level down, and it stayed open after the verb level was closed.
+
+  Global flags are declared once as `globalFlags` and subtracted, so a per-verb row stays
+  about what the verb actually takes rather than repeating `--root` forty times. A
+  local-only verb is skipped: the HUD's nine flags are window management, and enumerating
+  them in a schema of operations would bury the flags that describe a surface.
+
+  Forty-one flags had to be recorded, generated from the argument structs rather than
+  written out, and two checks had to stop guessing type names while that happened. The
+  tool check derived `<Verb>Args` and the socket check `<Verb>Params`, which is wrong
+  wherever a struct is shared: ancestors and impact both take `DepthArgs`, list and ready
+  both take `IssueListParams`. Both now read the type from the code that declares it, the
+  tool's signature and the handler's own body.
+- Every method has a typed request and response form. Nineteen did not.
+
+  `Request::parse` and `decode_response` answered "no typed form; send it untyped" for
+  `append`, `vote`, `fold`, `check` and the rest, so a client wanting typed access to
+  them could not have it. The two enums had also drifted from the method list by exactly
+  the amount nobody was checking.
+
+  Four result types carry the replies: `ReportResult` for the reads that produce prose,
+  `CheckResult` where the error and warning counts travel beside the text, `DigestResult`
+  and `WaitResult` where there is structure worth having. Reports share one type on
+  purpose — a type per report would be a contract per report to keep in step with the
+  text, and the text is the part anyone reads.
+
+  A test drives the round-trip from the capability list, so a method reaching the wire
+  without a typed form fails there rather than being discovered by whoever wanted it.
+- Every mutating socket reply is asserted to have the same shape: a boolean `ok`, a
+  `report` string, and the affected issue where one is named.
+
+  `mut_result` produced that shape by convention rather than contract, so a method
+  returning a bare field, or omitting `ok`, would have passed every other check. A
+  client switching on `ok` and printing `report` is the normal way to use this socket,
+  which makes the shape worth asserting once across all of them instead of trusting
+  eleven call sites to agree.
+- Nine reads gained a `--json` mode: `search`, `children`, `ancestors`, `impact`,
+  `backlinks`, `agenda`, `tree`, `body-excerpt` and `projects`.
+
+  They answered in prose on the command line and in structure over the socket, so there
+  was nothing to compare between the two surfaces and they went unaudited while every
+  other read was checked.
+
+  The modes go through the same `CatalogService` the socket answers from, so the two
+  surfaces are one computation rather than two that have to be kept in agreement. A test
+  compares all nine, and they matched on the first run, which is what routing them this
+  way round was for.
+- Seven relatedness evidence labels had no test: `blocked_by`, `parent`, `source_of`,
+  `pivoted_to`, `successor_of`, `shared_tags` and `same_project`. Nor did the limit or the
+  tie-break that makes the ranking total. Two of the new tests assert a weight rather than
+  a label, because a scorer that records the reason and scores it zero passes any test that
+  only looks for the reason.
+- The control socket now has a method for every verb that changes a file:
+  `issue/append`, `issue/reject`, `issue/resolve`, `issue/fold` and
+  `issue/normalize` join the six that were already there.
+
+  It stays optional. The advisory lock serialises a direct write just as well, so
+  this is not a correctness fix and a client mixing the two paths corrupts nothing.
+  What it buys is a complete surface: `append` used to exist only on the command
+  line, so a socket client had to shell out for it, those writes went behind the
+  server's back, and its change stream had a hole exactly where they were.
+- The operation schema names each verb's command-line flags, and every subcommand's
+  help has to offer them.
+
+  Naming a verb on each surface stops the verb going missing. It does nothing about
+  the surfaces disagreeing on what to call a field, which is the next way this drifts:
+  a socket method taking `body` where the subcommand takes `--text` is two spellings of
+  one idea and no verb-level check sees it.
+
+  Read out of each subcommand's own help, so the parser answers rather than a scan of
+  the source that declares it. Positional arguments are excluded, and the reason is on
+  the field: the first version of the list claimed `create` and `reject` took `--title`
+  when both take it positionally, and the check caught that plus a `--blocked-by` that
+  is really `--block` on its first run.
+- The reference states what the change stream promises: unique sequences, and no
+  ordering.
+
+  An event is emitted after the file lock is released, so two changes to different
+  project files can reach the log in the opposite order to the one they reached disk in.
+  A consumer treating a notification as "something moved, go and look" is correct; one
+  reconstructing history from the log's order is not, and nothing promised it could.
+
+  Emitting inside the lock would order the log at the cost of holding a file lock across
+  another write for every state change. Declined, and the reasoning is written down: the
+  log exists to wake a poller, and a poller re-reads state.
+
+  The cross-file cycle window is recorded the same way. Locking every file an acyclicity
+  check reads would prevent it and serialise every blocker edit in the corpus against
+  every other, because the check reads all of it. For blockers added by hand a few at a
+  time, the after-the-fact report is the better side of that trade.
+- The schema covers every subcommand, not only the mutating ones, and a test refuses a
+  subcommand it does not mention.
+
+  Until now the schema constrained the verbs it already listed. A brand-new subcommand
+  failed nothing, because nothing asked whether the schema knew about it, which is
+  exactly how the earlier gaps arrived: `vote` was added to the command line and no test
+  anywhere had an opinion.
+
+  Read verbs are held to the surfaces they claim rather than to all of them, because
+  fourteen of them are genuinely absent from the socket today and the schema says so
+  instead of pretending otherwise.
+
+  Three things had to be modelled that the mutating-only version never met. Aliases,
+  because `create` answers to `q` and the new check found it and could not tell it from
+  a verb. Local-only verbs, because the terminal UI and shell completions have no
+  remote surface and are not gaps. And a socket method answering for two subcommands,
+  which `identity/get` does for `identity` and `whoami`, allowed when the rows say so
+  and refused in silence.
+
+  The committed generated file is now checked against the schema text as well. Editing
+  `vissue.capnp` and forgetting to regenerate left every check validating the previous
+  schema and passing, so the schema was authoritative in the documentation only.
+- The schema names each method's socket parameters, and the param structs are checked
+  against it.
+
+  The verb check says `issue/append` answers. It does not say the method takes `text`
+  rather than `body`, and the third spelling of a field is where this drifts next. Read
+  off the param structs in `rpc.rs`, where serde decides the wire names, so what is
+  checked is what a client has to send.
+
+  Two facts that had never been written down anywhere are now on the fields. The issue
+  being acted on is positional on the command line, `id` on the socket and `issue_id` as
+  a tool argument. And `agent` exists only on the socket, because only there is there a
+  connection whose identity can be overridden; the other surfaces take it from the
+  environment.
+- The schema records each field's Rust type per surface, and both checks verify it.
+
+  A name check cannot see a type change: a field going from a number to a string keeps
+  its name. `update --if-gen` is a `u64` on both remote surfaces and nothing said the
+  two agreed.
+
+  Recorded per surface rather than once, because two of them genuinely differ and
+  forcing one type over both would be a lie. `priority` is `Option<String>` as a tool
+  argument and `Option<char>` on the socket, `force` is `Option<bool>` and `bool`. What
+  this catches is either side changing.
+
+  Generated from the structs rather than written out, after two earlier rounds of
+  schema data written from memory turned out wrong.
+- Thirteen read verbs gained control-socket methods: `issue/check`, `issue/count`,
+  `issue/cycles`, `issue/digest`, `issue/export`, `issue/graph`, `issue/roadmap`,
+  `issue/stale`, `issue/hygiene`, `issue/waiting_on`, `issue/mirror`, `events/ping`
+  and `events/wait`.
+
+  A socket client used to shell out for all of them. That cost a subprocess rather
+  than correctness, which is why it outlived the write gap, but `events/wait` is the
+  case that made it worth closing: a verb whose whole job is to block until something
+  changes is exactly what a connection is good at and a subprocess is bad at.
+
+  Reads that produce a report answer with `report`, the same text the subcommand
+  prints, because inventing a structure per report would be a second contract to keep
+  in step with the first. `issue/check` carries `errors` and `warnings` beside it,
+  since the subcommand exits non-zero on an error count and a client needs that signal
+  without parsing prose. `issue/digest` and `events/wait` answer with fields.
+- Two checks now run surface to schema, not only schema to surface: every tool the
+  server exposes and every method it dispatches must appear in a schema row.
+
+  Every existing check ran one way, catching a verb the schema names and the surface
+  lacks. Nothing caught the reverse, so a tool that existed and the schema omitted was
+  invisible to all of them — the same asymmetry that let verbs drift in the first place.
+
+  It had already bitten three times. The schema claimed `normalize` had no tool while
+  `vissue_normalize` sat in the server, and `vissue_org` and `vissue_mirror_check` were
+  in no row at all. Every check passed throughout.
+
+  The last two needed a shape the schema could not express: a tool whose command-line
+  form is a flag on another verb rather than a verb of its own, `show --org` and
+  `mirror --check`. Such a row carries no subcommand and says so, and the uniqueness
+  checks were treating two absent names as a collision.
+- `clippy::cognitive_complexity` is enabled with the threshold held at today's ceiling in
+  `clippy.toml`. A ratchet rather than a target: it blocks a function growing past the
+  worst one already here, and lowering it is the work of splitting those.
+
+  The comment there records what the measure does not see. The control socket dispatches
+  thirty-seven methods from one match and scores under clippy's default, because the
+  metric counts nesting and a wide flat match has none. Drift between the surfaces lives
+  in exactly that breadth, which is why the schema checks catch it and this never would.
+- `schema/regen.sh` refuses to run when the `capnpc-rust` plugin's version does not
+  match the `capnp` runtime crate the generated file has to compile against, and will
+  run the plugin over ssh when `VISSUE_CAPNPC_SSH` names a host. The compiler is a
+  distro package and the plugin is a cargo install, so they land on different machines
+  often enough that the round trip is the common case.
+- `schema/regen.sh` regenerates the schema's Rust in one command.
+
+  The step needs the Cap'n Proto compiler and the `capnpc-rust` plugin, and neither is
+  needed to build or test. Where both are present the script is one command; where only
+  the compiler is, it writes the request file and prints what to run on a machine with
+  the plugin, because the two halves can live on different machines and the request
+  moves between them.
+
+  It finds the generated file rather than assuming its name, since the plugin lays its
+  output out by the source path recorded in the request and can put it in a `schema/`
+  subdirectory rather than flat.
+- `schema/vissue.capnp` states the verb set once, and the command line, the control
+  socket and the MCP tool list are each tested against it.
+
+  Every surface used to declare its own verbs in its own idiom, so a verb could exist
+  on one and not the others. That kept happening and nothing caught it: `vote` shipped
+  on the command line alone, `append` had no socket method for as long as the socket
+  existed, and a test asserting `issue/fold` was an unknown method became wrong the day
+  fold got one. The reference-completeness tests stayed green through all of it, because
+  they checked that the docs listed what existed rather than whether what should exist
+  did.
+
+  Three tests now read the schema and fail by name until their surface satisfies it.
+  Adding a verb to the schema that nothing implements fails all three at once, each
+  naming the gap on its own surface.
+
+  A verb that should not reach a surface leaves that field empty and says why in `note`,
+  so a deliberate omission reads differently from a forgotten one.
+
+  The schema's constant is compiled into a committed Rust file, so the checks read the
+  schema's own bytes rather than a list maintained beside it. `capnp` is not needed to
+  build or test; regenerating after a schema edit is a maintainer step, written down in
+  `schema/README.md`.
+- `vissue surface` is documented: a row in the reference's command table, its JSON shape
+  field by field, why it is hidden and why hidden is not secret, and a how-to for reading
+  it from a wrapper instead of parsing help text.
+
+  The check that holds the reference to the command list now reads the parser's own list
+  rather than help output, so it covers hidden subcommands too. `--help` omitting a verb
+  is a choice about what a person reading help wants, and says nothing about whether the
+  verb needs writing down.
+- `vissue vote ID --for CHOICE` records one ballot per agent identity, and
+  `vissue vote ID` prints the tally.
+
+  Several agents working one tracker had no way to disagree on the record. Each
+  could append prose saying what it concluded, and a reader had to read every
+  append and count by hand. Ballots live in a `:VOTES:` drawer on the heading, one
+  line per identity, so the file shows who thinks what.
+
+  One ballot per identity, and casting again replaces it rather than adding a
+  second, so an agent that reconsiders does not appear twice. The tally separates
+  consensus from a plurality and from a tie, because a count that calls all three
+  agreement is worth nothing.
+- `vote` is reachable from all three surfaces: `vissue vote` on the command line,
+  `vissue_vote` over MCP, and `issue/vote` on the control socket.
+
+  The feature exists for agents rather than for a person at a prompt, and agents
+  reach the tracker through MCP and the socket. A vote only on the command line
+  would have been a tally with nothing able to cast into it.
+
+  Socket and MCP ballots name the calling agent rather than the server process, so
+  one server serving several agents records which of them voted.
+
+### Changed
+
+- An id's starting suffix is now derived from the project *and the issue's title*,
+  so minting is a function of its inputs rather than of the clock.
+
+  The same project, title and seed ask for the same id every time, which makes a
+  mint replayable. It also keeps two agents apart without coordination in the
+  ordinary case: two creates with different titles start from different points in the
+  space, so neither has to see the other's write to avoid it. Two agents asking for
+  the same title at the same moment do want one suffix, and the reservation settles
+  that, the first taking it and the second walking one along.
+- Id suffixes come from xxh3 over the project name, keyed by a seed, then a
+  one-at-a-time walk through the base-36 space. `VISSUE_ID_SEED` pins the seed and
+  makes a minting sequence reproducible.
+
+  The previous derivation was a single multiply by Knuth's constant over a
+  nanosecond clock, taking base-36 digits off the low bits and placing the next
+  probe 17 away from the last. Successive probes correlated, and two processes
+  reading the same coarse clock walked the same short arithmetic sequence. This
+  crate already depended on xxh3 for the export digest, so the better start cost no
+  new dependency.
+
+  The walk matters as much as the hash. A first version hashed each probe
+  independently, which draws with replacement and can miss a free suffix that
+  exists: with 1295 of 1296 taken, 2592 draws find the survivor about six times in
+  seven, and a test that had to find it failed one run in seven. Stepping visits
+  each suffix once.
+
+  Pinning the seed is what gives a racing-creates test power. With a clock seed two
+  racers draw from 36^4 and never collide by luck, so such a test passes whether or
+  not the id reservation is read under the lock; pinned, it fails on every id when
+  the reservation is stale.
+- The HUD task board only mounts the rows on screen. j/k keeps the selected card in view.
+- The checks that hold the MCP tools to `schema/vissue.capnp` ask the server over
+  stdio instead of reading `server.rs` as text. One `tools/list` handshake returns the
+  same answer an agent gets, so an argument is checked by the name and JSON type it is
+  advertised under, along with whether a caller may omit it.
+
+  This catches a class the source scan could not. A `#[serde(rename)]` on an argument
+  leaves the Rust field name in place, so scanning the struct for it passed while
+  agents saw a different name.
+- The checks that hold the command line to `schema/vissue.capnp` ask the parser what
+  it accepts instead of parsing what it prints. A hidden `vissue surface` walks the
+  built `clap::Command` and emits every subcommand with its aliases and long flags as
+  JSON, so a flag reaches a check because the parser takes it rather than because a
+  line of help spelled it in a recognisable way.
+- The checks that hold the control socket to `schema/vissue.capnp` ask a running owner
+  instead of reading `dispatch.rs` and `rpc.rs` as text. A parameter is present because
+  the method refuses a value of the wrong type for it, and required because the method
+  refuses the request without it. Every request is built to fail at decode, so a
+  mutating method can be asked this without writing anything.
+- The command line's dispatch is one call per verb. Eight reads that answer in two shapes
+  went through a single `emit_shape`, which is where the choice between the structured
+  value and the report is now made, and the eight arms carrying real nesting are functions
+  with names: the keymap, the two waits, the mirror, the HUD, the identity report, the
+  digest, one issue, and the project list.
+- The corpus validator is a sequence of named checks rather than one four-hundred-line
+  function: one project's preamble, one project's headings, one issue, one provenance
+  link, one parent walk. Findings accumulate through a small type carrying the text and
+  the two counts together, so a finding cannot be written without being counted, which
+  is how the exit code and the report could have disagreed.
+- The relatedness scorer is four named scorers over one candidate set: shared words by
+  inverse document frequency, distance along declared edges, the relations between the
+  target and one other issue, and what the pair have in common. The six copies of the
+  same `entry().or_insert_with()` incantation are one `bump` call each.
+- `clippy::cognitive_complexity` runs at clippy's own default of 25 rather than the
+  ratchet's 40. Nothing in the workspace sits above it.
+
+### Fixed
+
+- A read-modify-write cycle over several files now counts a file once however its
+  path was spelled, and four correctness fixes land in `vote`.
+
+  The lock helper deduplicated by the path as written while keying its mutex on the
+  resolved path. Two names for one file therefore took the same non-reentrant mutex
+  twice and hung, and took a second advisory lock on the same file besides. Latent
+  while callers passed one or two known-distinct files; reachable now that a mint
+  locks every twin file for a project, where two configured roots can be links to
+  one tree.
+
+  In `vote`:
+
+  - A single ballot is no longer called a consensus. One agent agreeing with itself
+    is not agreement, and reporting it as such is how one unreviewed opinion gets
+    acted on as though it had been checked.
+  - An identity containing a colon and a space is refused. A choice may contain one,
+    which is why the ballot line splits on the first, so such an identity would have
+    been read back as a shorter name with the rest of itself attached to the choice:
+    the ballot filed under an agent that never voted, silently.
+  - Lines the parser does not recognise are kept. The drawer is org a person can
+    edit, and a rewrite keeping only recognised lines ate a comment left there.
+  - Two hand-written lines for one agent collapse to the last, so a duplicate cannot
+    make one voter count twice.
+
+  The votes drawer is also rewritten in place rather than removed and appended, so a
+  vote no longer reorders the other drawers on the heading.
+- Concurrency is now covered by tests that were each checked against the lock they
+  guard, rather than by a paragraph in the reference.
+
+  Three cross-process tests: every mutating verb at once against one file, creates
+  racing across two roots for one project name, and separate processes emitting
+  change events. Each was run with its lock removed to confirm it fails. Without the
+  file lock, three of eleven headings vanish. Without the advisory half of the events
+  lock, event sequences duplicate heavily.
+
+  The events test needs one project per subject to have any power. With every subject
+  in one file the issues lock already serialises the pipeline and the events lock
+  never contends, so a first version using one project passed with the advisory lock
+  removed and proved nothing.
+
+  Two of these are labelled in the source as smoke tests rather than guards. The
+  two-root create test cannot detect a duplicate id at the default id length, because
+  the suffix space is 36^4 and two racing creates almost never collide by luck; the
+  guard with power for that is the deterministic reservation test in `vissue-core`.
+- Every read that answers with a report is compared against its subcommand: `export`,
+  `graph`, `roadmap`, `cycles`, `count`, `check`, `stale`, `hygiene` and `waiting-on`.
+
+  Reading the handlers was not a mechanism. `issue/mirror` answered with the corpus
+  digest while every name and type check agreed with it, and it was found by eye.
+
+  Nine agree byte for byte. `ping` cannot: it appends to the event log, so two calls
+  report two sequence numbers, and equality is the wrong instrument for a read with a
+  side effect. Its shape is asserted instead, and the schema row says why it changes
+  something while remaining a non-mutating verb: it changes no issue.
+
+  `stale` defaults to thirty days on the command line and has no default on the socket,
+  so the test passes the number to both. A default that differs between surfaces is
+  itself a divergence, and leaving it implicit would have hidden one.
+- The `vissue_create` tool takes `deadline` and `scheduled`, which the `create`
+  subcommand has always taken.
+
+  An agent could not set a date a person could. Nothing was wrong on either side in
+  isolation: the subcommand had the flags, the tool had a coherent argument list, and
+  both were documented. Only a check across the pair finds a field one surface takes
+  and the other does not, and that check now exists.
+- The closed-pipe test builds its corpus by byte count rather than issue count. It
+  needs more output than a pipe buffer holds, which twenty-four large bodies reach in
+  a fraction of the work four hundred short titles took, and it now asserts the
+  corpus really does exceed the buffer so the test cannot quietly stop testing
+  anything.
+- The schema records the parameter each of six methods is actually about. `issue/create`
+  took `title`, `issue/search` took `query`, and `issue/tree`, `issue/ancestors`,
+  `issue/impact` and `issue/related` took an id, none of which appeared in any row:
+  `Field` was written around flags, and these arrive as positional arguments on the
+  command line. The tool spells the id `issue_id` and the socket spells it `id`, which
+  is the kind of divergence the schema exists to record and did not.
+
+  Fields also carry `omittable`, for a parameter a caller may leave out whatever the
+  Rust type says. `force`, `dry_run`, `last` and `projects` are plain types behind
+  serde's `default`, so they read as required while every caller omits them.
+- Two concurrent `create`s for one project in two roots can no longer mint the same
+  id, and neither can two concurrent `reject`s minting a successor.
+
+  The reservation that stops a twin file sharing a suffix was read by the caller
+  and used by the mint. Locks are per file, so two creates in different roots took
+  different locks, each read the other before either had written, and both could
+  choose the same suffix. A duplicate across layouts is not cosmetic: `find_by_id`
+  reports `DuplicateId` for it and the issue stops being reachable by id.
+
+  The reservation is now a list of paths rather than a list of ids. Those files are
+  locked alongside the one being written and read after the locks are held, so a
+  peer's create lands wholly before or wholly after. The file being written
+  appearing in its own reservation list is ordinary, because the routed lookup
+  returns every layout for the project including this one, and the lock helper
+  sorts and dedups.
+- `check` reports a heading whose `:ID:` belongs to an org-gcal event. It counted those
+  among the parsed headings, and the loader skips them precisely because a calendar sync
+  owns them, so the count was always zero. Counting the file instead reports what is
+  actually there, which matters because such a heading sits in the tracker and vissue
+  will not touch it.
+- `claims` and `agenda` no longer print their empty-set line once per project.
+
+  "Nothing here" is an answer about the corpus, not about a project's share of it.
+  Over six projects, `claims` printed "no live claims" above a list of nine claims,
+  and `agenda` printed "nothing dated in range" five times above the dated rows.
+  Asked about one project the line is the whole answer and stays; asked about all
+  of them it appears once, and only when every project came back empty.
+- `initialize` advertises every method the server answers. It was nineteen behind.
+
+  The capability list is the fourth place the method set is written down, after the
+  dispatch table, the schema and the reference, and it is the one a client reads to
+  decide what it may call. While the other three agreed with each other this one fell
+  behind, so a client inspecting capabilities would have concluded that `append`,
+  `vote`, `fold` and every read added beside them did not exist.
+
+  A test now holds it to the schema in both directions, since either way round is a lie:
+  advertising a method that is not dispatched sends a client at a method-not-found, and
+  dispatching one that is not advertised hides it from anyone who asks first.
+
+  The `Method` enum grew the same nineteen. Two exhaustive matches then refused to
+  compile, which is the arrangement working: the typed request and response helpers have
+  no form for these, and they now say so per method rather than through a wildcard,
+  because a wildcard would swallow the next one silently.
+
+  `control.org` said `issue/check`, `issue/export`, `issue/graph`, `issue/mirror`,
+  `issue/roadmap`, `issue/hygiene` and `issue/fold` were "not in v1" and stayed on the
+  command line and MCP. All seven are methods now, and the page lists every one.
+- `issue/digest` reports the event-log generation, which `digest --json` has always
+  carried and the method omitted.
+
+  A client comparing digests across time needs to know which generation each was taken
+  at, and had no way to see the field was missing. Found by comparing the structured
+  reads against the command line's `--json` mode, the same way the report-producing reads
+  are compared.
+
+  One divergence is intended and is now pinned as such. `issue/list` sorts by priority,
+  then state, then id across every project in the layout, while the `list` subcommand
+  applies that order within each project and concatenates, because it can span several
+  layouts and a global sort across them would interleave two trackers. Same rows,
+  different sequence, and the terminal UI relies on the socket's. The test compares the
+  rows as sets and says why.
+- `issue/graph` and `issue/roadmap` group their output the way the subcommands do, and a
+  test now compares the socket's report against the subcommand's text.
+
+  This is the class of bug the name and type checks cannot see. `issue/mirror` answered
+  with the corpus digest while the schema, the types and the reference all agreed with
+  each other, because none of them compares content.
+
+  The graph divergence was the same shape and cosmetic: `report::graph` over a whole
+  layout emits every node and then every edge, while the command line emits each
+  project's nodes and edges together, because it builds one document out of per-project
+  bodies. Fourteen identical lines in a different order. Two surfaces answering one
+  question differently is the kind of thing nobody notices until they diff it.
+- `issue/mirror_check` reports whether a mirror file's stamp is still fresh. It briefly
+  answered with the corpus digest instead, under the name `issue/mirror`.
+
+  Two mistakes in one method. It answered a different question — a hash rather than a
+  verdict — so a caller asking whether its mirror was current had no way to tell it had
+  been told something else. And it conflated two operations that the tool list has always
+  kept apart: `vissue_mirror` renders a mirror, `vissue_mirror_check` judges one.
+
+  Rendering has no socket method, and the reason is on the schema row: it writes a file,
+  and a file the server writes lands on the server's disk rather than the caller's, so a
+  remote client would get a success and no file.
+
+  The reply carries `fresh` beside the report, because the subcommand exits non-zero on a
+  stale mirror and a client needs that signal without reading prose.
+- `q` has its own schema row instead of being recorded as an alias of `create`. It is
+  a subcommand of its own taking three of create's fields, so an alias row answered
+  for flags it rejects: `--body` and `--priority` among them. Rows now carry
+  `shorthandFor`, and a shorthand has to name a verb that exists, reaches the socket
+  if the shorthand mutates, and takes every field the shorthand takes.
+- `vissue check` no longer reads the word "rejected" anywhere in a body as an
+  issue that was rejected, and no longer asks for a `DISCOVERED_FROM` edge between
+  two issues a `:PARENT:` or blocker edge already connects.
+
+  Both were substring rules that do not match how issues get written. Every bug
+  about input validation says "rejected" — "silently corrupted rather than
+  rejected", "a hand-written parser is rejected as strictly dominated" — and three
+  worked-and-closed issues in one corpus were flagged for exactly those sentences.
+  A rejection is now recognised by the shapes one is written in: the tool's own
+  phrasing, "superseded by", "rejected in favour of", or a heading that names the
+  outcome. And a parent naming its child is a stated relation the tracker already
+  holds, so it is no longer a warning that can only be answered with a wrong edge.
+
+  The mention warning is narrower on both sides now: the edge may be `:PARENT:` or
+  `:BLOCKED_BY:` as well, and the prose near the link has to claim a discovery or a
+  pivot. A body links other issues for every reason there is, and in one corpus
+  twenty-two such warnings stood and not one of them was a discovery.
+
+
 ## [0.7.0](https://github.com/HaoZeke/vissue/releases/tag/v0.7.0) - 2026-08-18
 
 ### Changed

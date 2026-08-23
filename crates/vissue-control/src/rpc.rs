@@ -825,6 +825,68 @@ pub struct VoteParams {
     pub agent: Option<String>,
 }
 
+/// `issue/append` params.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppendParams {
+    /// Issue id.
+    pub id: String,
+    /// Report text, written under the heading with a dated stamp.
+    pub text: String,
+    /// Override the connection agent, which the stamp records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+}
+
+/// `issue/resolve` params.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolveParams {
+    /// Issue id whose sibling terminal is being picked.
+    pub id: String,
+    /// Terminal state to settle on.
+    pub state: String,
+}
+
+/// `issue/reject` params. Either `to` or `project` has to say where the
+/// successor goes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RejectParams {
+    /// Issue being cancelled.
+    pub id: String,
+    /// Existing issue to point at instead of creating a successor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// Project to create the successor in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Successor title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Why the original was rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// `issue/fold` params.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoldParams {
+    /// Inbox file whose unstamped `* TODO` headings become issues.
+    pub file: String,
+    /// Project the new issues land in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+}
+
+/// `issue/normalize` params.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NormalizeParams {
+    /// Only this project; every project when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Report what would change without writing it.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
 /// `issue/note` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoteParams {

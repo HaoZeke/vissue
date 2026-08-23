@@ -145,7 +145,7 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
                 taken.extend(doc.known_ids());
             }
         }
-        let id = generate_id(&project, &taken, cfg.issues.id_length)?;
+        let id = generate_id(&project, title, &taken, cfg.issues.id_length)?;
 
         let mut props = BTreeMap::new();
         props.insert("ID".into(), id.clone());
@@ -1371,7 +1371,7 @@ fn push_successor(
             taken.extend(other.known_ids());
         }
     }
-    let id = generate_id(project, &taken, cfg.issues.id_length)?;
+    let id = generate_id(project, title, &taken, cfg.issues.id_length)?;
     let mut props = BTreeMap::new();
     props.insert("ID".into(), id.clone());
     props.insert("CREATED".into(), today_inactive_bracket());

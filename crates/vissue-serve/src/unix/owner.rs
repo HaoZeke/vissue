@@ -610,14 +610,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state = state(dir.path());
         let mut session = Session { agent: None };
-        let req = JsonRpcRequest::call(JsonRpcId::Number(3), "issue/fold", json!({}));
+        // Deliberately not a verb that might grow a method later. This test used
+        // "issue/fold" until fold got one, and then it was asserting that a real
+        // method was missing.
+        let req = JsonRpcRequest::call(JsonRpcId::Number(3), "issue/no-such-method", json!({}));
         let err = dispatch_ex(&state, &mut session, &req)
             .response
             .unwrap()
             .error
             .unwrap();
         assert_eq!(err.code, -32601);
-        assert_eq!(err.data, Some(json!({"method": "issue/fold"})));
+        assert_eq!(err.data, Some(json!({"method": "issue/no-such-method"})));
     }
 
     #[test]

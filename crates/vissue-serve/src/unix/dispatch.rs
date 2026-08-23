@@ -5,12 +5,13 @@ use std::time::Instant;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use vissue_control::rpc::{
-    AgendaParams, ClaimParams, ClaimsParams, CreateParams, EventsGenResult, EventsSinceParams,
-    EventsSinceResult, IdParams, IdentityResult, InitializeResult, IssueGetResult, IssueListParams,
-    IssueListResult, IssueSelected, JsonRpcError, JsonRpcRequest, JsonRpcResponse, MutResult,
-    NoteParams, Notification, PROTOCOL_VERSION, ProjectListResult, RefileParams, RelatedParams,
-    SearchParams, TreeParams, TreeResult, UpdateParams, VoteParams, WalkParams, error_from_core,
-    internal_error, invalid_params, method_not_found, parse_initialize_params,
+    AgendaParams, AppendParams, ClaimParams, ClaimsParams, CreateParams, EventsGenResult,
+    EventsSinceParams, EventsSinceResult, FoldParams, IdParams, IdentityResult, InitializeResult,
+    IssueGetResult, IssueListParams, IssueListResult, IssueSelected, JsonRpcError, JsonRpcRequest,
+    JsonRpcResponse, MutResult, NormalizeParams, NoteParams, Notification, PROTOCOL_VERSION,
+    ProjectListResult, RefileParams, RejectParams, RelatedParams, ResolveParams, SearchParams,
+    TreeParams, TreeResult, UpdateParams, VoteParams, WalkParams, error_from_core, internal_error,
+    invalid_params, method_not_found, parse_initialize_params,
 };
 use vissue_core::catalog::{CatalogService, load_recs, tree_text_from};
 use vissue_core::config::Layout;
@@ -61,6 +62,11 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
         "issue/update" => dispatch_update(state, session, req.params.as_ref()),
         "issue/claim" => dispatch_claim(state, session, req.params.as_ref()),
         "issue/vote" => dispatch_vote(state, session, req.params.as_ref()),
+        "issue/append" => dispatch_append(state, session, req.params.as_ref()),
+        "issue/resolve" => dispatch_resolve(state, session, req.params.as_ref()),
+        "issue/reject" => dispatch_reject(state, session, req.params.as_ref()),
+        "issue/fold" => dispatch_fold(state, session, req.params.as_ref()),
+        "issue/normalize" => dispatch_normalize(state, session, req.params.as_ref()),
         "issue/note" => dispatch_note(state, session, req.params.as_ref()),
         "issue/refile" => dispatch_refile(state, session, req.params.as_ref()),
         "project/list" => dispatch_projects(state),
@@ -130,6 +136,11 @@ fn is_mutating(method: &str) -> bool {
             | "issue/note"
             | "issue/refile"
             | "issue/vote"
+            | "issue/append"
+            | "issue/resolve"
+            | "issue/reject"
+            | "issue/fold"
+            | "issue/normalize"
     )
 }
 
@@ -567,6 +578,91 @@ fn dispatch_vote(
         ops::vote(&state.layout, &params.id, params.choice.as_deref(), &agent).map_err(map_core)?;
     let issue = detail_one(&state.layout, &params.id);
     mut_result(state, report, issue)
+}
+
+/// The five verbs that used to exist only on the command line.
+///
+/// A client that had to reach for the command line for `append` was writing the
+/// same files behind the server's back. The locks make that safe, so this is not a
+/// correctness fix; it is what lets the socket be a complete surface rather than
+/// most of one, and a caller can now do everything over one connection and see the
+/// change stream for all of it.
+fn dispatch_append(
+    state: &OwnerState,
+    session: &Session,
+    params: Option<&Value>,
+) -> Result<Value, JsonRpcError> {
+    let params: AppendParams = decode(params)?;
+    let agent = resolve_agent(session, params.agent.as_deref())?;
+    let report =
+        ops::append_body_as(&state.layout, &params.id, &params.text, &agent).map_err(map_core)?;
+    let issue = detail_one(&state.layout, &params.id);
+    mut_result(state, report, issue)
+}
+
+fn dispatch_resolve(
+    state: &OwnerState,
+    session: &Session,
+    params: Option<&Value>,
+) -> Result<Value, JsonRpcError> {
+    let params: ResolveParams = decode(params)?;
+    let _ = resolve_agent(session, None)?;
+    let report =
+        ops::resolve_terminal(&state.layout, &params.id, &params.state).map_err(map_core)?;
+    let issue = detail_one(&state.layout, &params.id);
+    mut_result(state, report, issue)
+}
+
+fn dispatch_reject(
+    state: &OwnerState,
+    session: &Session,
+    params: Option<&Value>,
+) -> Result<Value, JsonRpcError> {
+    let params: RejectParams = decode(params)?;
+    let _ = resolve_agent(session, None)?;
+    // One layout per server, so the successor lands here and there is no twin file
+    // to reserve against.
+    let report = ops::reject(
+        &state.layout,
+        &params.id,
+        ops::RejectOpts {
+            to: params.to.as_deref(),
+            project: params.project.as_deref(),
+            title: params.title.as_deref(),
+            reason: params.reason.as_deref(),
+            dst_layout: None,
+            dst_extra_id_paths: &[],
+        },
+    )
+    .map_err(map_core)?;
+    let issue = detail_one(&state.layout, &params.id);
+    mut_result(state, report, issue)
+}
+
+fn dispatch_fold(
+    state: &OwnerState,
+    session: &Session,
+    params: Option<&Value>,
+) -> Result<Value, JsonRpcError> {
+    let params: FoldParams = decode(params)?;
+    let _ = resolve_agent(session, None)?;
+    let project =
+        ops::resolve_project(&state.layout, params.project.as_deref()).map_err(map_core)?;
+    let report =
+        ops::fold(&state.layout, std::path::Path::new(&params.file), &project).map_err(map_core)?;
+    mut_result(state, report, None)
+}
+
+fn dispatch_normalize(
+    state: &OwnerState,
+    session: &Session,
+    params: Option<&Value>,
+) -> Result<Value, JsonRpcError> {
+    let params: NormalizeParams = decode(params)?;
+    let _ = resolve_agent(session, None)?;
+    let report = ops::normalize(&state.layout, params.project.as_deref(), params.dry_run)
+        .map_err(map_core)?;
+    mut_result(state, report, None)
 }
 
 fn dispatch_note(

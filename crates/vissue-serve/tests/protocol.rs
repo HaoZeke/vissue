@@ -458,3 +458,88 @@ fn votes_over_the_socket_are_per_agent() {
     assert!(text.contains("agent-b"), "{text}");
     assert!(text.contains("no consensus"), "{text}");
 }
+
+/// Every verb that changes a file is reachable over the socket.
+///
+/// Not for correctness: the advisory lock makes a direct write safe, so a client
+/// mixing the two is not corrupting anything. It is so the socket is a complete
+/// surface rather than most of one. A client that had to shell out for `append`
+/// was writing behind the server's back and its change stream had a hole in it
+/// exactly where that write went.
+#[test]
+fn every_mutating_verb_is_reachable_over_the_socket() {
+    let h = Harness::new();
+    let mut client = h.connect();
+
+    let created = client
+        .request(
+            "issue/create",
+            json!({"project": "atlas", "title": "socket surface"}),
+        )
+        .unwrap();
+    assert_eq!(created["ok"], true);
+    let id = created["issue"]["id"].as_str().unwrap().to_string();
+
+    // append
+    let appended = client
+        .request(
+            "issue/append",
+            json!({"id": id, "text": "a report", "agent": "agent-a"}),
+        )
+        .unwrap();
+    assert_eq!(appended["ok"], true, "{appended}");
+    assert!(
+        appended["report"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("appended"),
+        "{appended}"
+    );
+
+    // normalize, over every project, as a dry run so it changes nothing
+    let normalized = client
+        .request("issue/normalize", json!({"dry_run": true}))
+        .unwrap();
+    assert_eq!(normalized["ok"], true, "{normalized}");
+
+    // reject, creating a successor in the same project
+    let rejected = client
+        .request(
+            "issue/reject",
+            json!({"id": id, "project": "atlas", "title": "the better idea",
+                   "reason": "superseded by the better idea"}),
+        )
+        .unwrap();
+    assert_eq!(rejected["ok"], true, "{rejected}");
+
+    // resolve, on a fresh issue with a terminal to settle
+    let other = client
+        .request(
+            "issue/create",
+            json!({"project": "atlas", "title": "to settle"}),
+        )
+        .unwrap();
+    let other_id = other["issue"]["id"].as_str().unwrap().to_string();
+    let resolved = client
+        .request("issue/resolve", json!({"id": other_id, "state": "DONE"}))
+        .unwrap();
+    assert_eq!(resolved["ok"], true, "{resolved}");
+
+    // fold, from an inbox file
+    let inbox = h.root.join("inbox.org");
+    std::fs::write(&inbox, "* TODO folded in from an inbox\n").unwrap();
+    let folded = client
+        .request(
+            "issue/fold",
+            json!({"file": inbox.to_str().unwrap(), "project": "atlas"}),
+        )
+        .unwrap();
+    assert_eq!(folded["ok"], true, "{folded}");
+
+    // Nothing above needed the command line, and the corpus still reads back.
+    let listed = client.request("issue/list", json!({})).unwrap();
+    assert!(
+        listed["issues"].as_array().map(Vec::len).unwrap_or(0) >= 3,
+        "{listed}"
+    );
+}

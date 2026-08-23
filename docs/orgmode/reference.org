@@ -255,6 +255,19 @@ Change one: =vissue_create=, =vissue_update=, =vissue_claim=, =vissue_note=,
 =vissue_append=, =vissue_refile=, =vissue_fold=, =vissue_reject=, =vissue_resolve=,
 =vissue_vote=.
 
+* Control socket coverage
+
+Every verb that changes a file has a method: =issue/create=, =issue/update=,
+=issue/claim=, =issue/note=, =issue/append=, =issue/refile=, =issue/reject=,
+=issue/resolve=, =issue/vote=, =issue/fold=, =issue/normalize=.
+
+The socket stays optional. Correctness does not need it, because the advisory lock
+serialises a direct write just as well, and a client mixing the two paths is not
+corrupting anything. What being complete buys is that a client no longer has to
+shell out for one verb: before this, =append= existed only on the command line, so
+a socket client's writes went behind the server's back and its change stream had a
+hole exactly where those writes were.
+
 Follow the graph: =vissue_tree=, =vissue_graph=, =vissue_children=,
 =vissue_ancestors=, =vissue_impact=, =vissue_backlinks=,
 =vissue_waiting_on=, =vissue_related=, =vissue_cycles=.
@@ -272,9 +285,19 @@ tracker root you are willing to let the caller edit, not at a home directory.
 
 * Ids
 
-A suffix is picked by hashing the project name with xxh3, keyed by a seed, and
-then stepping one at a time through the base-36 space from there until a free one
-is found. Hashed start, systematic walk.
+A suffix is picked by hashing the project name and the issue's title with xxh3,
+keyed by a seed, then stepping one at a time through the base-36 space from there
+until a free one is found. Hashed start, systematic walk.
+
+Minting is therefore a function of its inputs. The same project, title and seed
+ask for the same id every time, so a mint can be replayed and reasoned about
+rather than depending on what nanosecond it ran in.
+
+It also keeps two agents apart without coordination in the ordinary case: two
+creates with different titles start from different points, so neither has to see
+the other's write to avoid it. Two agents asking for the same title at the same
+moment do want one suffix, and the reservation settles that: the first takes it and
+the second walks one along.
 
 The walk is the half that matters for correctness. Hashing every probe
 independently draws with replacement and can miss a free suffix that exists: with

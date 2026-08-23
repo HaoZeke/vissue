@@ -853,9 +853,19 @@ pub const ID_SEED_ENV: &str = "VISSUE_ID_SEED";
 
 /// A free `project-suffix` id, or an error when the space is full.
 ///
-/// The starting suffix is xxh3 over the project keyed by [`id_seed`], and each
-/// further probe steps one along the base-36 space from there. Hashed start,
-/// systematic walk, and both halves are load-bearing.
+/// Minting is deterministic in its inputs: the starting suffix is xxh3 over the
+/// project and `subject` keyed by [`id_seed`], and each further probe steps one
+/// along the base-36 space from there. The same project, subject and seed
+/// therefore ask for the same id every time, which makes a mint reproducible and
+/// replayable instead of a function of what nanosecond it ran in.
+///
+/// It also stops two agents contending for one suffix in the ordinary case. Two
+/// creates with different subjects start from different points, so neither has to
+/// see the other's write to avoid it, and the reservation is what settles the case
+/// where two agents genuinely ask for the same subject at once: the first takes
+/// the shared start and the second walks one along.
+///
+/// Hashed start, systematic walk, and both halves are load-bearing.
 ///
 /// The hash replaces one multiply by Knuth's constant over a nanosecond clock,
 /// whose base-36 digits came off the low bits and whose next probe sat 17 away
@@ -874,14 +884,22 @@ pub const ID_SEED_ENV: &str = "VISSUE_ID_SEED";
 ///
 /// Returns an error when every suffix of that length is taken, naming the config
 /// key that widens it.
-pub fn generate_id(project: &str, existing: &[String], length: usize) -> Result<String> {
+pub fn generate_id(
+    project: &str,
+    subject: &str,
+    existing: &[String],
+    length: usize,
+) -> Result<String> {
     let len = length.max(2);
     let taken: std::collections::HashSet<&str> = existing.iter().map(String::as_str).collect();
-    // The project is in the material so one pinned seed does not hand every
-    // project the same starting suffix.
-    let mut material = Vec::with_capacity(project.len() + 1);
+    // Project and subject both, separated by a byte neither can contain, so the
+    // two fields cannot run together into the same material. The project is in
+    // there so one pinned seed does not hand every project the same start; the
+    // subject is what makes distinct issues start apart.
+    let mut material = Vec::with_capacity(project.len() + subject.len() + 1);
     material.extend_from_slice(project.as_bytes());
     material.push(0);
+    material.extend_from_slice(subject.as_bytes());
     let start = xxh3_64_with_seed(&material, id_seed());
     // Bounded by the size of the space, so a full space is reported instead
     // of spun on. 36^len saturates well before it could overflow.
@@ -1418,11 +1436,11 @@ mod tests {
     #[test]
     fn generated_ids_are_unique_and_sized() {
         let existing = vec!["p-aaaa".to_string()];
-        let id = generate_id("p", &existing, 4).unwrap();
+        let id = generate_id("p", "a subject", &existing, 4).unwrap();
         assert!(id.starts_with("p-"));
         assert!(!existing.contains(&id));
         assert_eq!(id.len(), 1 + 1 + 4);
-        assert_eq!(generate_id("q", &[], 6).unwrap().len(), 1 + 1 + 6);
+        assert_eq!(generate_id("q", "t", &[], 6).unwrap().len(), 1 + 1 + 6);
     }
 
     #[test]
@@ -1435,11 +1453,11 @@ mod tests {
                 existing.push(format!("p-{}{}", *a as char, *b as char));
             }
         }
-        let err = generate_id("p", &existing, 2).unwrap_err();
+        let err = generate_id("p", "t", &existing, 2).unwrap_err();
         assert!(err.to_string().contains("id_length"), "{err}");
         // One free suffix is still found.
         existing.pop();
-        assert!(generate_id("p", &existing, 2).is_ok());
+        assert!(generate_id("p", "t", &existing, 2).is_ok());
     }
 
     #[test]
@@ -1928,5 +1946,45 @@ mod tests {
         assert!(doc.headings[0].body.contains("#+CALL: plot"));
         assert!(doc.headings[0].body.contains("* TODO not an issue"));
         assert_eq!(ids(content), ["x-aaaa"]);
+    }
+    /// Minting is a function of its inputs, so it can be replayed.
+    #[test]
+    fn the_same_project_subject_and_seed_mint_the_same_id() {
+        crate::process_env::override_var(ID_SEED_ENV, Some("99"));
+        let a = generate_id("proj", "write the thing", &[], 4).unwrap();
+        let b = generate_id("proj", "write the thing", &[], 4).unwrap();
+        assert_eq!(a, b, "the same inputs minted two different ids");
+
+        // Different subjects start apart, which is what keeps two agents from
+        // contending for one suffix when they are creating different issues.
+        let c = generate_id("proj", "a different thing", &[], 4).unwrap();
+        assert_ne!(a, c);
+
+        // And a different project does not inherit the same start from one seed.
+        let d = generate_id("other", "write the thing", &[], 4).unwrap();
+        assert_ne!(a, d);
+        crate::process_env::clear_override(ID_SEED_ENV);
+    }
+
+    /// The subject deciding the start does not let a duplicate id out: two issues
+    /// with one subject want the same suffix and the second walks past it.
+    #[test]
+    fn two_issues_with_one_subject_do_not_share_an_id() {
+        crate::process_env::override_var(ID_SEED_ENV, Some("7"));
+        let first = generate_id("proj", "same title", &[], 4).unwrap();
+        let second = generate_id("proj", "same title", std::slice::from_ref(&first), 4).unwrap();
+        assert_ne!(first, second);
+        crate::process_env::clear_override(ID_SEED_ENV);
+    }
+
+    /// The seed moves the start, so a corpus is not stuck with one assignment.
+    #[test]
+    fn a_different_seed_mints_a_different_id() {
+        crate::process_env::override_var(ID_SEED_ENV, Some("1"));
+        let one = generate_id("proj", "subject", &[], 4).unwrap();
+        crate::process_env::override_var(ID_SEED_ENV, Some("2"));
+        let two = generate_id("proj", "subject", &[], 4).unwrap();
+        crate::process_env::clear_override(ID_SEED_ENV);
+        assert_ne!(one, two);
     }
 }

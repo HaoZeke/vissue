@@ -9,7 +9,7 @@ use vissue_control::rpc::{
     EventsSinceResult, IdParams, IdentityResult, InitializeResult, IssueGetResult, IssueListParams,
     IssueListResult, IssueSelected, JsonRpcError, JsonRpcRequest, JsonRpcResponse, MutResult,
     NoteParams, Notification, PROTOCOL_VERSION, ProjectListResult, RefileParams, RelatedParams,
-    SearchParams, TreeParams, TreeResult, UpdateParams, WalkParams, error_from_core,
+    SearchParams, TreeParams, TreeResult, UpdateParams, VoteParams, WalkParams, error_from_core,
     internal_error, invalid_params, method_not_found, parse_initialize_params,
 };
 use vissue_core::catalog::{CatalogService, load_recs, tree_text_from};
@@ -60,6 +60,7 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
         "issue/create" => dispatch_create(state, session, req.params.as_ref()),
         "issue/update" => dispatch_update(state, session, req.params.as_ref()),
         "issue/claim" => dispatch_claim(state, session, req.params.as_ref()),
+        "issue/vote" => dispatch_vote(state, session, req.params.as_ref()),
         "issue/note" => dispatch_note(state, session, req.params.as_ref()),
         "issue/refile" => dispatch_refile(state, session, req.params.as_ref()),
         "project/list" => dispatch_projects(state),
@@ -123,7 +124,12 @@ fn refresh_after_write(state: &OwnerState) -> u64 {
 fn is_mutating(method: &str) -> bool {
     matches!(
         method,
-        "issue/create" | "issue/update" | "issue/claim" | "issue/note" | "issue/refile"
+        "issue/create"
+            | "issue/update"
+            | "issue/claim"
+            | "issue/note"
+            | "issue/refile"
+            | "issue/vote"
     )
 }
 
@@ -544,6 +550,21 @@ fn dispatch_claim(
     let agent = resolve_agent(session, params.agent.as_deref())?;
     let report =
         ops::claim_as(&state.layout, &params.id, params.force, &agent).map_err(map_core)?;
+    let issue = detail_one(&state.layout, &params.id);
+    mut_result(state, report, issue)
+}
+
+/// A ballot is cast as the session's agent, not as the process identity, because
+/// one server serves several agents and the ballot has to name the one that voted.
+fn dispatch_vote(
+    state: &OwnerState,
+    session: &Session,
+    params: Option<&Value>,
+) -> Result<Value, JsonRpcError> {
+    let params: VoteParams = decode(params)?;
+    let agent = resolve_agent(session, params.agent.as_deref())?;
+    let report =
+        ops::vote(&state.layout, &params.id, params.choice.as_deref(), &agent).map_err(map_core)?;
     let issue = detail_one(&state.layout, &params.id);
     mut_result(state, report, issue)
 }

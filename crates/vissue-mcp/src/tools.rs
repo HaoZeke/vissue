@@ -154,6 +154,14 @@ pub struct NoteArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct VoteArgs {
+    /// Issue id.
+    pub issue_id: String,
+    /// What to vote for, one line. Omit to read the tally without casting.
+    pub choice: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct ClaimsArgs {
     /// Only claims held by this identity.
     pub holder: Option<String>,

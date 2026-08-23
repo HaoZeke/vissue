@@ -812,6 +812,19 @@ pub struct ClaimParams {
     pub agent: Option<String>,
 }
 
+/// `issue/vote` params. `choice` absent reads the tally without casting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoteParams {
+    /// Issue id.
+    pub id: String,
+    /// What to vote for, one line. Absent reads the tally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice: Option<String>,
+    /// Override the connection agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+}
+
 /// `issue/note` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NoteParams {

@@ -410,3 +410,51 @@ fn read_only_protocol_leaves_committed_fixture_clean() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// Ballots over the socket name the session's agent, not the server process, so
+/// two agents on one server disagree rather than overwrite. This is the surface
+/// the feature exists for: agents reach the tracker here and through MCP, so a
+/// vote only on the CLI would be a tally nothing can cast.
+#[test]
+fn votes_over_the_socket_are_per_agent() {
+    let h = Harness::new();
+    let mut client = h.connect();
+    let created = client
+        .request(
+            "issue/create",
+            json!({"project": "atlas", "title": "what to do"}),
+        )
+        .unwrap();
+    let id = created["issue"]["id"].as_str().unwrap().to_string();
+
+    let first = client
+        .request(
+            "issue/vote",
+            json!({"id": id, "choice": "ship", "agent": "agent-a"}),
+        )
+        .unwrap();
+    assert_eq!(first["ok"], true);
+
+    client
+        .request(
+            "issue/vote",
+            json!({"id": id, "choice": "hold", "agent": "agent-b"}),
+        )
+        .unwrap();
+
+    // A recast replaces only the caster's own ballot.
+    let recast = client
+        .request(
+            "issue/vote",
+            json!({"id": id, "choice": "rework", "agent": "agent-a"}),
+        )
+        .unwrap();
+    let report = recast["report"].as_str().unwrap_or_default();
+    assert!(report.contains("changed ship to rework"), "{report}");
+
+    let tally = client.request("issue/vote", json!({"id": id})).unwrap();
+    let text = tally["report"].as_str().unwrap_or_default();
+    assert!(text.contains("2 votes from 2 options"), "{text}");
+    assert!(text.contains("agent-b"), "{text}");
+    assert!(text.contains("no consensus"), "{text}");
+}

@@ -251,7 +251,8 @@ Read one issue or many: =vissue_list=, =vissue_ready=, =vissue_show=,
 =vissue_body_excerpt=, =vissue_org=, =vissue_export=.
 
 Change one: =vissue_create=, =vissue_update=, =vissue_claim=, =vissue_note=,
-=vissue_append=, =vissue_refile=, =vissue_fold=, =vissue_reject=, =vissue_resolve=.
+=vissue_append=, =vissue_refile=, =vissue_fold=, =vissue_reject=, =vissue_resolve=,
+=vissue_vote=.
 
 Follow the graph: =vissue_tree=, =vissue_graph=, =vissue_children=,
 =vissue_ancestors=, =vissue_impact=, =vissue_backlinks=,
@@ -296,6 +297,12 @@ once cannot overwrite each other while one agent changing its mind does not leav
 two ballots.
 
 * Votes
+
+Reachable from all three surfaces, because the point is agents rather than a
+person at a prompt: =vote= on the command line, =vissue_vote= over MCP, and
+=issue/vote= on the control socket. The socket and MCP ballots name the calling
+agent rather than the server process, so one server serving several agents records
+which of them voted.
 
 =vote ID --for CHOICE= records one ballot for the identity =whoami= reports, and
 =vote ID= prints the tally without casting. Ballots live in a =:VOTES:= drawer on

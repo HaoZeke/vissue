@@ -712,3 +712,44 @@ fn each_method_takes_the_parameters_the_schema_names() {
         "the schema names parameters these methods do not take: {wrong:?}"
     );
 }
+
+/// And every method the server dispatches is in the schema.
+///
+/// The mirror of the check above, and the direction that was missing everywhere: a
+/// method the schema omits was invisible to every test, exactly as a verb the schema
+/// omitted used to be.
+#[test]
+fn every_method_the_server_dispatches_is_in_the_schema() {
+    let dispatch =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/unix/dispatch.rs"))
+            .expect("dispatch.rs");
+
+    // The match arms name every method the owner answers.
+    let mut dispatched: Vec<String> = dispatch
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix('"'))
+        .filter_map(|rest| rest.split('"').next())
+        .filter(|m| m.contains('/'))
+        .map(str::to_string)
+        .collect();
+    dispatched.sort_unstable();
+    dispatched.dedup();
+    assert!(
+        dispatched.len() > 25,
+        "no methods parsed out of dispatch.rs: {dispatched:?}"
+    );
+
+    let known = vissue_core::surface::socket_methods();
+    // `initialize` and the lifecycle calls are protocol rather than operations, and
+    // the schema is about operations.
+    const PROTOCOL: &[&str] = &["issue/open", "issue/get"];
+    let unknown: Vec<&String> = dispatched
+        .iter()
+        .filter(|m| !known.iter().any(|k| k == *m))
+        .filter(|m| !PROTOCOL.contains(&m.as_str()))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "these methods are dispatched and no schema row mentions them: {unknown:?}"
+    );
+}

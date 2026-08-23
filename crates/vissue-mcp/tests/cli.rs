@@ -136,3 +136,32 @@ fn each_tool_takes_the_arguments_the_schema_names() {
         "the schema names arguments these tools do not take: {wrong:?}"
     );
 }
+
+/// And every tool the server exposes is in the schema.
+///
+/// Every other check here runs schema to surface: it catches a verb the schema names
+/// and the surface lacks. Nothing ran the other way, so a tool that exists and the
+/// schema omits was invisible, which is the same asymmetry that let verbs drift in
+/// the first place. It had already bitten: the schema claimed `normalize` had no tool
+/// while `vissue_normalize` was sitting in the server, and every check passed.
+#[test]
+fn every_tool_the_server_exposes_is_in_the_schema() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let server = std::fs::read_to_string(root.join("src/server.rs")).expect("server.rs");
+    let exposed = tool_names(&server);
+
+    let known: Vec<String> = vissue_core::surface::operations()
+        .into_iter()
+        .filter(|o| !o.mcp.is_empty())
+        .map(|o| o.mcp)
+        .collect();
+
+    let unknown: Vec<&String> = exposed
+        .iter()
+        .filter(|t| !known.iter().any(|k| k == *t))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "these tools exist and no schema row mentions them: {unknown:?}"
+    );
+}

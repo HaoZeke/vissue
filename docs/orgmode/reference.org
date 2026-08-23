@@ -293,7 +293,19 @@ written from memory instead of from the parser.
 
 Three checks, one per surface: the subcommand's help offers its flags, the tool's
 argument struct carries its arguments, and the method's param struct carries its
-parameters. The last reads =rpc.rs=, where serde decides the wire names, so what is
+parameters.
+
+Two more run the other way, and that direction was missing everywhere at first: every
+tool the server exposes and every method it dispatches must appear in a schema row.
+A check that only runs schema to surface catches a verb the schema names and the
+surface lacks, and is blind to one that exists and the schema omits, which is the
+same asymmetry that let verbs drift to begin with. Adding the reverse found three:
+=normalize= had a tool the schema denied, and =vissue_org= and =vissue_mirror_check=
+were in no row.
+
+Those last two are operations the command line reaches through a flag rather than a
+verb: =show --org= and =mirror --check=. Such a row carries no subcommand, says so in
+=note=, and has to reach some surface even so. The last reads =rpc.rs=, where serde decides the wire names, so what is
 checked is what a client has to send.
 
 They found real gaps on their first runs. The flag check caught that pair of

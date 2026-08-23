@@ -286,10 +286,24 @@ mod tests {
     #[test]
     fn the_names_are_distinct_and_present() {
         let ops = operations();
+        // A row may have no subcommand, when the command line reaches the operation
+        // through a flag on another verb: `vissue_org` is `show --org`. It has to
+        // reach *some* surface and say why the others are empty, which the note
+        // check enforces, so the requirement here is a surface rather than a
+        // subcommand.
         for o in &ops {
-            assert!(!o.cli.is_empty(), "an operation has no subcommand: {o:?}");
+            assert!(
+                !(o.cli.is_empty() && o.socket.is_empty() && o.mcp.is_empty()),
+                "an operation reaches no surface at all: {o:?}"
+            );
         }
-        let mut clis: Vec<&str> = ops.iter().map(|o| o.cli.as_str()).collect();
+        // Empty is not a name. Two rows without a subcommand are two operations the
+        // command line reaches through a flag, not a collision.
+        let mut clis: Vec<&str> = ops
+            .iter()
+            .map(|o| o.cli.as_str())
+            .filter(|c| !c.is_empty())
+            .collect();
         clis.sort_unstable();
         let before = clis.len();
         clis.dedup();

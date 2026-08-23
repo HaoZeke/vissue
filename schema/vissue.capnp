@@ -26,7 +26,10 @@ struct Operation {
   # One verb, named on each surface that carries it.
 
   cli @0 :Text;
-  # Subcommand name, as clap spells it.
+  # Subcommand name, as clap spells it. Empty for an operation the command line
+  # reaches through a flag on another verb rather than a verb of its own: the tool
+  # `vissue_org` is `show --org`, and a tool cannot take a flag. The reason goes in
+  # `note`, as with any empty surface.
 
   socket @1 :Text;
   # Control-socket method, or empty when the verb has none.
@@ -175,11 +178,11 @@ const operations :List(Operation) = [
       ( cli = "", tool = "file", socket = "file", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
       ( cli = "project", tool = "project", socket = "project", note = "" )
     ] ),
-  ( cli = "normalize", socket = "issue/normalize", mcp = "", mutates = true, local = false,
-    note = "no tool: rewriting every heading in a corpus is not a thing to hand an agent",
+  ( cli = "normalize", socket = "issue/normalize", mcp = "vissue_normalize", mutates = true, local = false,
+    note = "",
     fields = [
-      ( cli = "project", tool = "", socket = "project", note = "the verb has no tool" ),
-      ( cli = "dry-run", tool = "", socket = "dry_run", note = "the verb has no tool" )
+      ( cli = "project", tool = "project", socket = "project", note = "" ),
+      ( cli = "dry-run", tool = "dry_run", socket = "dry_run", note = "" )
     ] ),
   ( cli = "agenda", socket = "issue/agenda", mcp = "vissue_agenda", mutates = false, local = false,
     note = "",
@@ -315,5 +318,11 @@ const operations :List(Operation) = [
     fields = [] ),
   ( cli = "serve", socket = "", mcp = "", mutates = false, local = true,
     note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "", socket = "", mcp = "vissue_org", mutates = false, local = false,
+    note = "no subcommand of its own: the command line spells it `show --org`, and a tool cannot take a flag",
+    fields = [] ),
+  ( cli = "", socket = "", mcp = "vissue_mirror_check", mutates = false, local = false,
+    note = "no subcommand of its own: the command line spells it `mirror --check PATH`",
     fields = [] ),
 ];

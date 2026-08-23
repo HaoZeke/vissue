@@ -271,9 +271,13 @@ const operations :List(Operation) = [
   ( cli = "hygiene", socket = "issue/hygiene", mcp = "vissue_hygiene", mutates = false, local = false,
     note = "",
     fields = [] ),
-  ( cli = "mirror", socket = "issue/mirror", mcp = "vissue_mirror", mutates = false, local = false,
-    note = "",
-    fields = [] ),
+  ( cli = "mirror", socket = "", mcp = "vissue_mirror", mutates = false, local = false,
+    note = "no socket method: rendering writes a file, and a file the server writes lands on the server's disk rather than the caller's",
+    fields = [
+      ( cli = "project", tool = "projects", socket = "", note = "repeated on the command line, a list as a tool argument", toolType = "Option<Vec<String>>", socketType = "" ),
+      ( cli = "format", tool = "format", socket = "", note = "", toolType = "Option<String>", socketType = "" ),
+      ( cli = "state", tool = "state", socket = "", note = "", toolType = "Option<String>", socketType = "" )
+    ] ),
   ( cli = "ping", socket = "events/ping", mcp = "vissue_ping", mutates = false, local = false,
     note = "",
     fields = [] ),
@@ -334,7 +338,10 @@ const operations :List(Operation) = [
   ( cli = "", socket = "", mcp = "vissue_org", mutates = false, local = false,
     note = "no subcommand of its own: the command line spells it `show --org`, and a tool cannot take a flag",
     fields = [] ),
-  ( cli = "", socket = "", mcp = "vissue_mirror_check", mutates = false, local = false,
-    note = "no subcommand of its own: the command line spells it `mirror --check PATH`",
-    fields = [] ),
+  ( cli = "", socket = "issue/mirror_check", mcp = "vissue_mirror_check", mutates = false, local = false,
+    note = "no subcommand of its own: the command line spells it `mirror --check PATH`, and a tool cannot take a flag",
+    fields = [
+      ( cli = "", tool = "path", socket = "path", note = "the file being judged; the command line passes it to --check", toolType = "String", socketType = "String" ),
+      ( cli = "", tool = "projects", socket = "projects", note = "empty means the stamp's own list, since the file records what it covered", toolType = "Option<Vec<String>>", socketType = "Vec<String>" )
+    ] ),
 ];

@@ -8,11 +8,11 @@ use vissue_control::rpc::{
     AgendaParams, AppendParams, ClaimParams, ClaimsParams, CountParams, CreateParams, DigestParams,
     EventsGenResult, EventsSinceParams, EventsSinceResult, FoldParams, HygieneParams, IdParams,
     IdentityResult, InitializeResult, IssueGetResult, IssueListParams, IssueListResult,
-    IssueSelected, JsonRpcError, JsonRpcRequest, JsonRpcResponse, MutResult, NormalizeParams,
-    NoteParams, Notification, PROTOCOL_VERSION, PingParams, ProjectFilterParams, ProjectListResult,
-    RefileParams, RejectParams, RelatedParams, ResolveParams, SearchParams, StaleParams,
-    TreeParams, TreeResult, UpdateParams, VoteParams, WaitParams, WalkParams, error_from_core,
-    internal_error, invalid_params, method_not_found, parse_initialize_params,
+    IssueSelected, JsonRpcError, JsonRpcRequest, JsonRpcResponse, MirrorCheckParams, MutResult,
+    NormalizeParams, NoteParams, Notification, PROTOCOL_VERSION, PingParams, ProjectFilterParams,
+    ProjectListResult, RefileParams, RejectParams, RelatedParams, ResolveParams, SearchParams,
+    StaleParams, TreeParams, TreeResult, UpdateParams, VoteParams, WaitParams, WalkParams,
+    error_from_core, internal_error, invalid_params, method_not_found, parse_initialize_params,
 };
 use vissue_core::catalog::{CatalogService, load_recs, tree_text_from};
 use vissue_core::config::Layout;
@@ -79,7 +79,7 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
         "issue/stale" => dispatch_stale(state, req.params.as_ref()),
         "issue/hygiene" => dispatch_hygiene(state, req.params.as_ref()),
         "issue/waiting_on" => dispatch_waiting_on(state, req.params.as_ref()),
-        "issue/mirror" => dispatch_mirror(state, req.params.as_ref()),
+        "issue/mirror_check" => dispatch_mirror_check(state, req.params.as_ref()),
         "events/ping" => dispatch_ping(state, req.params.as_ref()),
         "events/wait" => dispatch_wait(state, req.params.as_ref()),
         "issue/note" => dispatch_note(state, session, req.params.as_ref()),
@@ -768,11 +768,28 @@ fn dispatch_waiting_on(state: &OwnerState, params: Option<&Value>) -> Result<Val
     text_result(vissue_core::agent::waiting_on(&state.layout, &params.id))
 }
 
-fn dispatch_mirror(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
-    let _params: ProjectFilterParams = decode(params)?;
-    let projects = vissue_core::store::list_projects(&state.layout).map_err(map_core)?;
-    let digest = vissue_core::digest::corpus_digest(&state.layout, &projects).map_err(map_core)?;
-    Ok(json!({"report": digest.combined}))
+/// Freshness of a mirror file, which is what `mirror --check` answers.
+///
+/// The first version of this returned the corpus digest, because a digest was to
+/// hand and needed no path. That answered a question nobody asked under a name that
+/// promises another: a caller asking whether its mirror is current would have been
+/// told a hash and had no way to tell the difference.
+///
+/// Rendering a mirror is deliberately not here. It writes a file, and a file written
+/// by the server lands on the server's disk rather than the caller's, so a remote
+/// client would get a success and no file.
+fn dispatch_mirror_check(
+    state: &OwnerState,
+    params: Option<&Value>,
+) -> Result<Value, JsonRpcError> {
+    let params: MirrorCheckParams = decode(params)?;
+    let verdict = vissue_core::mirror::check(
+        &state.layout,
+        std::path::Path::new(&params.path),
+        &params.projects,
+    )
+    .map_err(map_core)?;
+    Ok(json!({"fresh": verdict.fresh, "report": verdict.report}))
 }
 
 fn dispatch_ping(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {

@@ -150,7 +150,7 @@ Capabilities returned by =initialize= (v1):
 | =issue/stale=      | Issues untouched for =days=                                |
 | =issue/hygiene=    | Stalled claims plus validation                             |
 | =issue/waiting_on= | What blocks one issue                                      |
-| =issue/mirror=     | The mirror's stamp                                         |
+| =issue/mirror_check= | Whether a mirror file's stamp is still fresh              |
 | =project/list=     | Project names plus =revision=                             |
 | =events/since=     | Pull of the JSONL event log                               |
 | =events/gen=       | ={generation, revision}=                                  |

@@ -615,6 +615,29 @@ fn the_new_reads_return_something() {
     let stale = client.request("issue/stale", json!({"days": 7})).unwrap();
     assert!(stale["report"].as_str().is_some(), "{stale}");
 
+    // mirror needs a file to judge, and answers about that file rather than the
+    // corpus: freshness, not a digest.
+    let mirror_path = h.root.join("mirror.md");
+    std::fs::write(&mirror_path, "no sync stamp here\n").unwrap();
+    let mirrored = client
+        .request(
+            "issue/mirror_check",
+            json!({"path": mirror_path.to_str().unwrap()}),
+        )
+        .unwrap();
+    assert_eq!(
+        mirrored["fresh"].as_bool(),
+        Some(false),
+        "a file with no stamp is not fresh: {mirrored}"
+    );
+    assert!(
+        mirrored["report"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("stale"),
+        "{mirrored}"
+    );
+
     let pinged = client.request("events/ping", json!({})).unwrap();
     assert!(pinged["report"].as_str().is_some(), "{pinged}");
 
@@ -682,7 +705,14 @@ fn each_method_takes_the_parameters_the_schema_names() {
         if op.socket.is_empty() || !op.fields.iter().any(|f| !f.socket.is_empty()) {
             continue;
         }
-        let struct_name = vissue_core::surface::struct_name(&op.cli, "Params");
+        // A row with no subcommand names its struct from the method instead:
+        // `issue/mirror_check` is `MirrorCheckParams`.
+        let stem = if op.cli.is_empty() {
+            op.socket.rsplit('/').next().unwrap_or_default().to_string()
+        } else {
+            op.cli.clone()
+        };
+        let struct_name = vissue_core::surface::struct_name(&stem, "Params");
         let Some(body) = vissue_core::surface::struct_body(&rpc, &struct_name) else {
             wrong.push(format!("{}: no {struct_name} to check", op.socket));
             continue;

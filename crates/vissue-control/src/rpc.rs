@@ -458,7 +458,7 @@ impl Method {
             Self::IssueStale => "issue/stale",
             Self::IssueHygiene => "issue/hygiene",
             Self::IssueWaitingOn => "issue/waiting_on",
-            Self::IssueMirror => "issue/mirror",
+            Self::IssueMirror => "issue/mirror_check",
             Self::EventsPing => "events/ping",
             Self::EventsWait => "events/wait",
         }
@@ -512,7 +512,7 @@ impl Method {
             "issue/stale" => Ok(Self::IssueStale),
             "issue/hygiene" => Ok(Self::IssueHygiene),
             "issue/waiting_on" => Ok(Self::IssueWaitingOn),
-            "issue/mirror" => Ok(Self::IssueMirror),
+            "issue/mirror_check" => Ok(Self::IssueMirror),
             "events/ping" => Ok(Self::EventsPing),
             "events/wait" => Ok(Self::EventsWait),
             other => Err(method_not_found(other)),
@@ -566,7 +566,7 @@ pub const V1_CAPABILITIES: &[&str] = &[
     "issue/stale",
     "issue/hygiene",
     "issue/waiting_on",
-    "issue/mirror",
+    "issue/mirror_check",
     "project/list",
     "events/since",
     "events/gen",
@@ -995,6 +995,26 @@ pub struct WaitParams {
     pub timeout_ms: Option<u64>,
 }
 
+/// `issue/mirror` params. Checks a mirror file's stamp against the tracker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MirrorCheckParams {
+    /// Mirror file whose SYNC stamp is compared against the corpus.
+    pub path: String,
+    /// Only these projects; the stamp's own list when empty, since the file records
+    /// what it covered.
+    #[serde(default)]
+    pub projects: Vec<String>,
+}
+
+/// `issue/mirror` reply.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MirrorCheckResult {
+    /// Whether the stamp still matches the tracker.
+    pub fresh: bool,
+    /// The verdict, naming which projects moved when stale.
+    pub report: String,
+}
+
 /// `issue/digest` params.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DigestParams {
@@ -1327,7 +1347,7 @@ pub enum Request {
     /// What blocks one issue.
     IssueWaitingOn(IdParams),
     /// The mirror's stamp.
-    IssueMirror(ProjectFilterParams),
+    IssueMirror(MirrorCheckParams),
     /// Liveness and detail.
     EventsPing(PingParams),
     /// Block until the generation moves, or an issue is terminal.
@@ -1579,7 +1599,7 @@ pub enum Response {
     /// What blocks one issue.
     IssueWaitingOn(ReportResult),
     /// The mirror's stamp.
-    IssueMirror(ReportResult),
+    IssueMirror(MirrorCheckResult),
     /// Liveness and detail.
     EventsPing(ReportResult),
     /// Generation reached, or the state waited for.

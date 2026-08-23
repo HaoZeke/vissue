@@ -260,29 +260,47 @@ pub fn decode_response(method: &str, value: Value) -> Result<Response, Error> {
             Ok(Response::EventsSince(serde_json::from_value(value)?))
         }
         crate::rpc::Method::EventsGen => Ok(Response::EventsGen(serde_json::from_value(value)?)),
-        // No typed response form. Listed rather than wildcarded, so a new method
-        // has to be decided about here instead of silently landing in a default.
-        crate::rpc::Method::IssueAppend
-        | crate::rpc::Method::IssueReject
-        | crate::rpc::Method::IssueResolve
-        | crate::rpc::Method::IssueVote
-        | crate::rpc::Method::IssueFold
-        | crate::rpc::Method::IssueNormalize
-        | crate::rpc::Method::IssueCheck
-        | crate::rpc::Method::IssueCount
-        | crate::rpc::Method::IssueCycles
-        | crate::rpc::Method::IssueDigest
-        | crate::rpc::Method::IssueExport
-        | crate::rpc::Method::IssueGraph
-        | crate::rpc::Method::IssueRoadmap
-        | crate::rpc::Method::IssueStale
-        | crate::rpc::Method::IssueHygiene
-        | crate::rpc::Method::IssueWaitingOn
-        | crate::rpc::Method::IssueMirror
-        | crate::rpc::Method::EventsPing
-        | crate::rpc::Method::EventsWait => Err(Error::Rpc(crate::rpc::invalid_params(&*format!(
-            "{method} has no typed response form; read the raw value"
-        )))),
+        crate::rpc::Method::IssueAppend => {
+            Ok(Response::IssueAppend(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueReject => {
+            Ok(Response::IssueReject(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueResolve => {
+            Ok(Response::IssueResolve(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueVote => Ok(Response::IssueVote(serde_json::from_value(value)?)),
+        crate::rpc::Method::IssueFold => Ok(Response::IssueFold(serde_json::from_value(value)?)),
+        crate::rpc::Method::IssueNormalize => {
+            Ok(Response::IssueNormalize(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueCheck => Ok(Response::IssueCheck(serde_json::from_value(value)?)),
+        crate::rpc::Method::IssueCount => Ok(Response::IssueCount(serde_json::from_value(value)?)),
+        crate::rpc::Method::IssueCycles => {
+            Ok(Response::IssueCycles(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueDigest => {
+            Ok(Response::IssueDigest(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueExport => {
+            Ok(Response::IssueExport(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueGraph => Ok(Response::IssueGraph(serde_json::from_value(value)?)),
+        crate::rpc::Method::IssueRoadmap => {
+            Ok(Response::IssueRoadmap(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueStale => Ok(Response::IssueStale(serde_json::from_value(value)?)),
+        crate::rpc::Method::IssueHygiene => {
+            Ok(Response::IssueHygiene(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueWaitingOn => {
+            Ok(Response::IssueWaitingOn(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueMirror => {
+            Ok(Response::IssueMirror(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::EventsPing => Ok(Response::EventsPing(serde_json::from_value(value)?)),
+        crate::rpc::Method::EventsWait => Ok(Response::EventsWait(serde_json::from_value(value)?)),
     }
 }
 

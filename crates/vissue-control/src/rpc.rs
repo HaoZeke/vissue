@@ -1003,6 +1003,65 @@ pub struct DigestParams {
     pub projects: Vec<String>,
 }
 
+/// A report-shaped reply: the same text the subcommand prints.
+///
+/// Shared by the reads that produce prose rather than structure. Giving each its own
+/// type would be a contract per report to keep in step with the text, and the text is
+/// the part anyone reads.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReportResult {
+    /// The report, as the subcommand would print it.
+    pub report: String,
+}
+
+/// `issue/check` reply. The counts travel beside the text because the subcommand
+/// exits non-zero on an error count and a client needs the same signal.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckResult {
+    /// Findings, ending in a summary line.
+    pub report: String,
+    /// Count of `[err]` findings.
+    pub errors: usize,
+    /// Count of `[warn]` findings.
+    pub warnings: usize,
+}
+
+/// One project's digest inside [`DigestResult`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectDigestResult {
+    /// Project directory name.
+    pub project: String,
+    /// Hash over that project's export.
+    pub digest: String,
+    /// Issue count in that project.
+    pub issues: usize,
+}
+
+/// `issue/digest` reply.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DigestResult {
+    /// Hash over the per-project digests.
+    pub combined: String,
+    /// Sum of the per-project issue counts.
+    pub issues: usize,
+    /// Per project, sorted by name.
+    pub projects: Vec<ProjectDigestResult>,
+}
+
+/// `events/wait` reply. Waiting on a generation fills `generation` only; waiting on
+/// an issue fills `state` and says whether it gave up.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaitResult {
+    /// Generation at the moment the wait returned.
+    pub generation: u64,
+    /// Heading state, when the wait was for an issue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    /// True when the timeout expired before a terminal state.
+    #[serde(default)]
+    pub timed_out: bool,
+}
+
 /// `issue/append` params.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppendParams {
@@ -1235,6 +1294,44 @@ pub enum Request {
     IssueNote(NoteParams),
     /// Move to another project.
     IssueRefile(RefileParams),
+    /// Dated report under the heading.
+    IssueAppend(AppendParams),
+    /// Cancel and point at a successor.
+    IssueReject(RejectParams),
+    /// Settle on a sibling terminal state.
+    IssueResolve(ResolveParams),
+    /// Cast a ballot, or read the tally.
+    IssueVote(VoteParams),
+    /// Inbox headings become issues.
+    IssueFold(FoldParams),
+    /// Rewrite onto the property split.
+    IssueNormalize(NormalizeParams),
+    /// Validate the corpus.
+    IssueCheck(ProjectFilterParams),
+    /// Counts by project, state, readiness.
+    IssueCount(CountParams),
+    /// Blocker cycles, if any.
+    IssueCycles(ProjectFilterParams),
+    /// Corpus hash, combined and per project.
+    IssueDigest(DigestParams),
+    /// The corpus as text.
+    IssueExport(ProjectFilterParams),
+    /// One dot document.
+    IssueGraph(ProjectFilterParams),
+    /// One roadmap document.
+    IssueRoadmap(ProjectFilterParams),
+    /// Issues untouched for a number of days.
+    IssueStale(StaleParams),
+    /// Stalled claims plus validation.
+    IssueHygiene(HygieneParams),
+    /// What blocks one issue.
+    IssueWaitingOn(IdParams),
+    /// The mirror's stamp.
+    IssueMirror(ProjectFilterParams),
+    /// Liveness and detail.
+    EventsPing(PingParams),
+    /// Block until the generation moves, or an issue is terminal.
+    EventsWait(WaitParams),
     /// Project names plus revision.
     ProjectList,
     /// Pull of the on-disk event log.
@@ -1269,6 +1366,25 @@ impl Request {
             Self::IssueClaim(_) => Method::IssueClaim,
             Self::IssueNote(_) => Method::IssueNote,
             Self::IssueRefile(_) => Method::IssueRefile,
+            Self::IssueAppend(_) => Method::IssueAppend,
+            Self::IssueReject(_) => Method::IssueReject,
+            Self::IssueResolve(_) => Method::IssueResolve,
+            Self::IssueVote(_) => Method::IssueVote,
+            Self::IssueFold(_) => Method::IssueFold,
+            Self::IssueNormalize(_) => Method::IssueNormalize,
+            Self::IssueCheck(_) => Method::IssueCheck,
+            Self::IssueCount(_) => Method::IssueCount,
+            Self::IssueCycles(_) => Method::IssueCycles,
+            Self::IssueDigest(_) => Method::IssueDigest,
+            Self::IssueExport(_) => Method::IssueExport,
+            Self::IssueGraph(_) => Method::IssueGraph,
+            Self::IssueRoadmap(_) => Method::IssueRoadmap,
+            Self::IssueStale(_) => Method::IssueStale,
+            Self::IssueHygiene(_) => Method::IssueHygiene,
+            Self::IssueWaitingOn(_) => Method::IssueWaitingOn,
+            Self::IssueMirror(_) => Method::IssueMirror,
+            Self::EventsPing(_) => Method::EventsPing,
+            Self::EventsWait(_) => Method::EventsWait,
             Self::ProjectList => Method::ProjectList,
             Self::EventsSince(_) => Method::EventsSince,
             Self::EventsGen => Method::EventsGen,
@@ -1312,32 +1428,25 @@ impl Request {
             Method::ProjectList => Ok(Self::ProjectList),
             Method::EventsSince => Ok(Self::EventsSince(decode_params(params)?)),
             Method::EventsGen => Ok(Self::EventsGen),
-            // These reach the wire and have no typed request form. Listed rather
-            // than swept up by a wildcard, because a wildcard would take a new
-            // method silently and this match is one of the places that should
-            // refuse to compile until somebody decides.
-            Method::IssueAppend
-            | Method::IssueReject
-            | Method::IssueResolve
-            | Method::IssueVote
-            | Method::IssueFold
-            | Method::IssueNormalize
-            | Method::IssueCheck
-            | Method::IssueCount
-            | Method::IssueCycles
-            | Method::IssueDigest
-            | Method::IssueExport
-            | Method::IssueGraph
-            | Method::IssueRoadmap
-            | Method::IssueStale
-            | Method::IssueHygiene
-            | Method::IssueWaitingOn
-            | Method::IssueMirror
-            | Method::EventsPing
-            | Method::EventsWait => Err(invalid_params(&*format!(
-                "{} has no typed request form; send it untyped",
-                method.as_str()
-            ))),
+            Method::IssueAppend => Ok(Self::IssueAppend(decode_params(params)?)),
+            Method::IssueReject => Ok(Self::IssueReject(decode_params(params)?)),
+            Method::IssueResolve => Ok(Self::IssueResolve(decode_params(params)?)),
+            Method::IssueVote => Ok(Self::IssueVote(decode_params(params)?)),
+            Method::IssueFold => Ok(Self::IssueFold(decode_params(params)?)),
+            Method::IssueNormalize => Ok(Self::IssueNormalize(decode_params(params)?)),
+            Method::IssueCheck => Ok(Self::IssueCheck(decode_params(params)?)),
+            Method::IssueCount => Ok(Self::IssueCount(decode_params(params)?)),
+            Method::IssueCycles => Ok(Self::IssueCycles(decode_params(params)?)),
+            Method::IssueDigest => Ok(Self::IssueDigest(decode_params(params)?)),
+            Method::IssueExport => Ok(Self::IssueExport(decode_params(params)?)),
+            Method::IssueGraph => Ok(Self::IssueGraph(decode_params(params)?)),
+            Method::IssueRoadmap => Ok(Self::IssueRoadmap(decode_params(params)?)),
+            Method::IssueStale => Ok(Self::IssueStale(decode_params(params)?)),
+            Method::IssueHygiene => Ok(Self::IssueHygiene(decode_params(params)?)),
+            Method::IssueWaitingOn => Ok(Self::IssueWaitingOn(decode_params(params)?)),
+            Method::IssueMirror => Ok(Self::IssueMirror(decode_params(params)?)),
+            Method::EventsPing => Ok(Self::EventsPing(decode_params(params)?)),
+            Method::EventsWait => Ok(Self::EventsWait(decode_params(params)?)),
         }
     }
 
@@ -1345,6 +1454,25 @@ impl Request {
     pub fn to_params(&self) -> Value {
         match self {
             Self::Initialize(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueAppend(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueReject(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueResolve(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueVote(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueFold(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueNormalize(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueCheck(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueCount(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueCycles(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueDigest(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueExport(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueGraph(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueRoadmap(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueStale(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueHygiene(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueWaitingOn(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueMirror(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::EventsPing(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::EventsWait(p) => serde_json::to_value(p).unwrap_or(Value::Null),
             Self::IdentityGet | Self::ProjectList | Self::EventsGen => json!({}),
             Self::IssueList(p) | Self::IssueReady(p) => {
                 serde_json::to_value(p).unwrap_or(Value::Null)
@@ -1418,6 +1546,44 @@ pub enum Response {
     IssueNote(MutResult),
     /// Refile result.
     IssueRefile(MutResult),
+    /// Dated report under the heading.
+    IssueAppend(MutResult),
+    /// Cancel and point at a successor.
+    IssueReject(MutResult),
+    /// Settle on a sibling terminal state.
+    IssueResolve(MutResult),
+    /// Cast a ballot, or read the tally.
+    IssueVote(MutResult),
+    /// Inbox headings become issues.
+    IssueFold(MutResult),
+    /// Rewrite onto the property split.
+    IssueNormalize(MutResult),
+    /// Validation findings plus counts.
+    IssueCheck(CheckResult),
+    /// Counts by project, state, readiness.
+    IssueCount(ReportResult),
+    /// Blocker cycles, if any.
+    IssueCycles(ReportResult),
+    /// Corpus hash, combined and per project.
+    IssueDigest(DigestResult),
+    /// The corpus as text.
+    IssueExport(ReportResult),
+    /// One dot document.
+    IssueGraph(ReportResult),
+    /// One roadmap document.
+    IssueRoadmap(ReportResult),
+    /// Issues untouched for a number of days.
+    IssueStale(ReportResult),
+    /// Stalled claims plus validation.
+    IssueHygiene(ReportResult),
+    /// What blocks one issue.
+    IssueWaitingOn(ReportResult),
+    /// The mirror's stamp.
+    IssueMirror(ReportResult),
+    /// Liveness and detail.
+    EventsPing(ReportResult),
+    /// Generation reached, or the state waited for.
+    EventsWait(WaitResult),
     /// Project names plus revision.
     ProjectList(ProjectListResult),
     /// Pull of the on-disk event log.
@@ -1436,6 +1602,25 @@ impl Response {
         match self {
             Self::Initialize(v) => serde_json::to_value(v),
             Self::IdentityGet(v) => serde_json::to_value(v),
+            Self::IssueAppend(v) => serde_json::to_value(v),
+            Self::IssueReject(v) => serde_json::to_value(v),
+            Self::IssueResolve(v) => serde_json::to_value(v),
+            Self::IssueVote(v) => serde_json::to_value(v),
+            Self::IssueFold(v) => serde_json::to_value(v),
+            Self::IssueNormalize(v) => serde_json::to_value(v),
+            Self::IssueCheck(v) => serde_json::to_value(v),
+            Self::IssueCount(v) => serde_json::to_value(v),
+            Self::IssueCycles(v) => serde_json::to_value(v),
+            Self::IssueDigest(v) => serde_json::to_value(v),
+            Self::IssueExport(v) => serde_json::to_value(v),
+            Self::IssueGraph(v) => serde_json::to_value(v),
+            Self::IssueRoadmap(v) => serde_json::to_value(v),
+            Self::IssueStale(v) => serde_json::to_value(v),
+            Self::IssueHygiene(v) => serde_json::to_value(v),
+            Self::IssueWaitingOn(v) => serde_json::to_value(v),
+            Self::IssueMirror(v) => serde_json::to_value(v),
+            Self::EventsPing(v) => serde_json::to_value(v),
+            Self::EventsWait(v) => serde_json::to_value(v),
             Self::IssueList(v) | Self::IssueReady(v) => serde_json::to_value(v),
             Self::IssueGet(v) | Self::IssueShow(v) | Self::IssueOpen(v) => serde_json::to_value(v),
             Self::IssueSearch(v) => serde_json::to_value(v),
@@ -1969,5 +2154,87 @@ mod tests {
         };
         assert_eq!(n.to_params()["a"], 1);
         assert_eq!(n.method(), "x");
+    }
+    /// Every method has a typed request form, and it round-trips.
+    ///
+    /// Nineteen methods reached the wire with no typed form for a while, and the
+    /// typed helpers answered "send it untyped" per method. That was honest and it
+    /// was a hole: a client wanting typed access to `issue/check` could not have it,
+    /// and the two enums drifted from the method list by exactly the amount nobody
+    /// was checking.
+    ///
+    /// Driven from `V1_CAPABILITIES`, so a method added to the wire without a typed
+    /// form fails here rather than being discovered by whoever wanted it.
+    #[test]
+    fn every_advertised_method_has_a_typed_request() {
+        for name in V1_CAPABILITIES {
+            let method = Method::parse(name).unwrap_or_else(|_| panic!("{name} does not parse"));
+            assert_eq!(
+                method.as_str(),
+                *name,
+                "{name} does not round-trip as a method"
+            );
+
+            // Empty params: what matters here is that a typed form exists and that
+            // its required fields are the reason a decode fails, not the absence of
+            // any form at all.
+            let parsed = Request::parse(name, Some(json!({})));
+            if let Ok(req) = parsed {
+                assert_eq!(
+                    req.method().as_str(),
+                    *name,
+                    "{name} parsed into a request that reports a different method"
+                );
+                // And the params it holds serialize back to an object.
+                assert!(
+                    req.to_params().is_object(),
+                    "{name} does not serialize its params to an object"
+                );
+            }
+        }
+    }
+
+    /// And every typed response encodes.
+    #[test]
+    fn the_new_typed_responses_encode() {
+        let cases = vec![
+            Response::IssueCheck(CheckResult {
+                report: "ok".into(),
+                errors: 0,
+                warnings: 2,
+            }),
+            Response::IssueCount(ReportResult {
+                report: "3 issues".into(),
+            }),
+            Response::IssueDigest(DigestResult {
+                combined: "abcd".into(),
+                issues: 3,
+                projects: vec![ProjectDigestResult {
+                    project: "atlas".into(),
+                    digest: "beef".into(),
+                    issues: 3,
+                }],
+            }),
+            Response::EventsWait(WaitResult {
+                generation: 7,
+                state: Some("DONE".into()),
+                timed_out: false,
+            }),
+        ];
+        for case in cases {
+            let value = case.to_value().expect("encode");
+            assert!(value.is_object(), "{value} is not an object");
+        }
+
+        // The check counts survive the trip, since a client acts on them.
+        let encoded = Response::IssueCheck(CheckResult {
+            report: "two warnings".into(),
+            errors: 0,
+            warnings: 2,
+        })
+        .to_value()
+        .unwrap();
+        assert_eq!(encoded["warnings"], 2);
+        assert_eq!(encoded["errors"], 0);
     }
 }

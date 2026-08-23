@@ -158,6 +158,10 @@ Capabilities returned by =initialize= (v1):
 | =events/wait=      | Block until the generation moves, or an issue is terminal  |
 | =identity/get=     | ={identity, root, prefix, version}=                       |
 
+Every method has a typed request and response form in =vissue-control=. Reads that
+produce prose share =ReportResult=; =issue/check= adds its error and warning counts,
+=issue/digest= and =events/wait= carry structure.
+
 Every verb that changes a file has a method, and so does every read. This page used
 to say that =issue/fold=, =issue/hygiene=, =issue/check=, =issue/export=,
 =issue/mirror=, =issue/graph= and =issue/roadmap= were not in v1 and stayed on the

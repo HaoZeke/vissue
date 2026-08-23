@@ -444,6 +444,59 @@ fn restart_brings_a_stopped_owner_back() {
     assert_ne!(Some(after), first, "restart kept the same process");
 }
 
+/// `ping` cannot be compared by equality, and the reason is worth its own test.
+///
+/// It appends to the event log, so calling it twice gives two sequence numbers: the
+/// command line saw `seq=1` and the socket `seq=2`, which is the verb working rather
+/// than the surfaces disagreeing. Equality is the wrong instrument for a read with a
+/// side effect, so the shape is what is asserted.
+#[test]
+fn ping_agrees_in_shape_because_it_cannot_agree_in_bytes() {
+    let h = Harness::new();
+    assert!(h.start_d().status.success(), "server did not start");
+    assert!(
+        wait_accepts(&h.socket, Duration::from_secs(30)),
+        "server never accepted"
+    );
+
+    let mut client = vissue_control::client::Client::connect(&h.socket).expect("connect");
+    client
+        .request(
+            "initialize",
+            serde_json::json!({"protocolVersion": vissue_control::rpc::PROTOCOL_VERSION,
+                              "client": "ping-shape", "agent": "ping-shape"}),
+        )
+        .expect("initialize");
+
+    let from_cli = Command::new(bin())
+        .arg("--root")
+        .arg(&h.root)
+        .arg("--prefix")
+        .arg("Software")
+        .arg("ping")
+        .output()
+        .expect("run vissue");
+    let cli_text = String::from_utf8_lossy(&from_cli.stdout).into_owned();
+
+    let reply = client
+        .request("events/ping", serde_json::json!({}))
+        .unwrap();
+    let socket_text = reply["report"].as_str().unwrap_or_default();
+
+    for (label, text) in [("cli", cli_text.as_str()), ("socket", socket_text)] {
+        let first = text.lines().next().unwrap_or_default();
+        assert!(
+            first.starts_with("ping seq=") && first.contains("generation="),
+            "{label} ping does not report a sequence and a generation: {first:?}"
+        );
+    }
+    assert_eq!(
+        cli_text.lines().count(),
+        socket_text.lines().count(),
+        "the two pings report a different number of lines\n  cli: {cli_text}\n  socket: {socket_text}"
+    );
+}
+
 /// The socket answers the same thing the subcommand prints.
 ///
 /// This is the class of bug the name and type checks cannot see. `issue/mirror`
@@ -473,37 +526,58 @@ fn the_socket_reports_match_the_subcommand() {
         )
         .expect("initialize");
 
-    // Verb, method, and the params that mean the same thing on both sides.
-    let cases: Vec<(&str, &str, serde_json::Value)> = vec![
-        ("export", "issue/export", serde_json::json!({})),
-        ("graph", "issue/graph", serde_json::json!({})),
-        ("roadmap", "issue/roadmap", serde_json::json!({})),
-        ("cycles", "issue/cycles", serde_json::json!({})),
-        ("count", "issue/count", serde_json::json!({})),
+    // Every read that answers with a report, and the arguments that mean the same
+    // thing on both sides. A default that differs between the surfaces is itself a
+    // divergence, so where one exists it is passed explicitly rather than left to
+    // whichever side happens to be asked.
+    let cases: Vec<(Vec<&str>, &str, serde_json::Value)> = vec![
+        (vec!["export"], "issue/export", serde_json::json!({})),
+        (vec!["graph"], "issue/graph", serde_json::json!({})),
+        (vec!["roadmap"], "issue/roadmap", serde_json::json!({})),
+        (vec!["cycles"], "issue/cycles", serde_json::json!({})),
+        (vec!["count"], "issue/count", serde_json::json!({})),
+        (vec!["check"], "issue/check", serde_json::json!({})),
+        // stale defaults to 30 days on the command line and has no default on the
+        // socket, so the number is given to both.
+        (
+            vec!["stale", "--days", "30"],
+            "issue/stale",
+            serde_json::json!({"days": 30}),
+        ),
+        (vec!["hygiene"], "issue/hygiene", serde_json::json!({})),
+        (
+            vec!["waiting-on", "atlas-3e4f"],
+            "issue/waiting_on",
+            serde_json::json!({"id": "atlas-3e4f"}),
+        ),
     ];
 
     // The CLI side runs without `-s`, which the harness appends for the serve verbs
     // and which the read verbs do not accept: with it they exit non-zero and print
     // nothing, and comparing against nothing passes for agreement.
-    let cli = |verb: &str| -> String {
+    let cli = |args: &[&str]| -> String {
         let out = Command::new(bin())
             .arg("--root")
             .arg(&h.root)
             .arg("--prefix")
             .arg("Software")
-            .arg(verb)
+            .args(args)
             .output()
             .expect("run vissue");
+        // `check` exits non-zero when the corpus has validation errors, and the
+        // fixture is allowed to. What matters is the text, so the status is only
+        // required to be one of the two the verb documents.
         assert!(
-            out.status.success(),
-            "{verb} failed: {}",
+            out.status.code().is_some_and(|c| c == 0 || c == 1),
+            "{args:?} died: {}",
             String::from_utf8_lossy(&out.stderr)
         );
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
 
-    for (verb, method, params) in cases {
-        let from_cli = cli(verb);
+    for (args, method, params) in cases {
+        let verb = args[0];
+        let from_cli = cli(&args);
         let reply = client
             .request(method, params)
             .unwrap_or_else(|e| panic!("{method} failed: {e}"));

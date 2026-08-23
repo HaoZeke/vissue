@@ -279,7 +279,7 @@ const operations :List(Operation) = [
       ( cli = "state", tool = "state", socket = "", note = "", toolType = "Option<String>", socketType = "" )
     ] ),
   ( cli = "ping", socket = "events/ping", mcp = "vissue_ping", mutates = false, local = false,
-    note = "",
+    note = "appends to the event log, so two calls answer differently; it changes no issue, which is why it is not a mutating verb",
     fields = [] ),
   ( cli = "roadmap", socket = "issue/roadmap", mcp = "vissue_roadmap", mutates = false, local = false,
     note = "",

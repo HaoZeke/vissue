@@ -23,6 +23,7 @@ missing_crate_level_docs = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+cognitive_complexity = "warn"
 pedantic = { level = "allow", priority = -1 }
 undocumented_unsafe_blocks = "warn"
 dbg_macro = "warn"

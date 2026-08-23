@@ -736,14 +736,44 @@ fn dispatch_export(state: &OwnerState, params: Option<&Value>) -> Result<Value, 
     text_result(report::export(&state.layout, params.project.as_deref()))
 }
 
+/// Grouped per project, the way the command line groups it.
+///
+/// `report::graph` over a whole layout emits every node and then every edge, while
+/// the command line emits a project's nodes and edges together, because it builds one
+/// document out of per-project bodies. Both are valid dot and they are not the same
+/// bytes, and two surfaces answering one question differently is the kind of
+/// divergence nobody notices until they diff it.
 fn dispatch_graph(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
     let params: ProjectFilterParams = decode(params)?;
-    text_result(report::graph(&state.layout, params.project.as_deref()))
+    if params.project.is_some() {
+        return text_result(report::graph(&state.layout, params.project.as_deref()));
+    }
+    let body = per_project(state, report::graph_body)?;
+    Ok(json!({"report": format!("{}{body}{}", report::GRAPH_HEADER, report::GRAPH_FOOTER)}))
 }
 
+/// Concatenate a per-project body over every project in this layout.
+fn per_project(
+    state: &OwnerState,
+    mut f: impl FnMut(&Layout, Option<&str>) -> vissue_core::Result<String>,
+) -> Result<String, JsonRpcError> {
+    let projects = vissue_core::store::list_projects(&state.layout).map_err(map_core)?;
+    let mut out = String::new();
+    for project in projects {
+        out.push_str(&f(&state.layout, Some(&project)).map_err(map_core)?);
+    }
+    Ok(out)
+}
+
+/// The title belongs to the document, so it goes above the projects rather than above
+/// each one, which is also how the command line builds it.
 fn dispatch_roadmap(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
     let params: ProjectFilterParams = decode(params)?;
-    text_result(report::roadmap(&state.layout, params.project.as_deref()))
+    if params.project.is_some() {
+        return text_result(report::roadmap(&state.layout, params.project.as_deref()));
+    }
+    let body = per_project(state, report::roadmap_body)?;
+    Ok(json!({"report": format!("{}{body}", report::ROADMAP_HEADER)}))
 }
 
 fn dispatch_stale(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {

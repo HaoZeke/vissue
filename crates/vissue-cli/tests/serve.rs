@@ -443,3 +443,89 @@ fn restart_brings_a_stopped_owner_back() {
     assert!(!after.is_empty(), "{}", stdout(&back));
     assert_ne!(Some(after), first, "restart kept the same process");
 }
+
+/// The socket answers the same thing the subcommand prints.
+///
+/// This is the class of bug the name and type checks cannot see. `issue/mirror`
+/// answered with the corpus digest for a while: the schema agreed with it, the types
+/// agreed, the reference agreed, and the method still gave a caller a hash where it
+/// had asked whether its mirror was current. Nothing compares content.
+///
+/// So for the reads that produce a report, the socket's text has to equal the
+/// subcommand's. Where a read is inherently different between the two, that
+/// difference belongs in the schema's note and not in a silent divergence here.
+#[test]
+fn the_socket_reports_match_the_subcommand() {
+    let h = Harness::new();
+    assert!(h.start_d().status.success(), "server did not start");
+    assert!(
+        wait_accepts(&h.socket, Duration::from_secs(30)),
+        "server never accepted"
+    );
+
+    let mut client = vissue_control::client::Client::connect(&h.socket).expect("connect");
+    client
+        .request(
+            "initialize",
+            serde_json::json!({"protocolVersion": vissue_control::rpc::PROTOCOL_VERSION,
+                              "client": "equivalence-test",
+                              "agent": "equivalence-test"}),
+        )
+        .expect("initialize");
+
+    // Verb, method, and the params that mean the same thing on both sides.
+    let cases: Vec<(&str, &str, serde_json::Value)> = vec![
+        ("export", "issue/export", serde_json::json!({})),
+        ("graph", "issue/graph", serde_json::json!({})),
+        ("roadmap", "issue/roadmap", serde_json::json!({})),
+        ("cycles", "issue/cycles", serde_json::json!({})),
+        ("count", "issue/count", serde_json::json!({})),
+    ];
+
+    // The CLI side runs without `-s`, which the harness appends for the serve verbs
+    // and which the read verbs do not accept: with it they exit non-zero and print
+    // nothing, and comparing against nothing passes for agreement.
+    let cli = |verb: &str| -> String {
+        let out = Command::new(bin())
+            .arg("--root")
+            .arg(&h.root)
+            .arg("--prefix")
+            .arg("Software")
+            .arg(verb)
+            .output()
+            .expect("run vissue");
+        assert!(
+            out.status.success(),
+            "{verb} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    for (verb, method, params) in cases {
+        let from_cli = cli(verb);
+        let reply = client
+            .request(method, params)
+            .unwrap_or_else(|e| panic!("{method} failed: {e}"));
+        let from_socket = reply["report"].as_str().unwrap_or_default();
+        if from_socket.trim() != from_cli.trim() {
+            // The first differing line, rather than two walls of text: these
+            // reports are long and the eye cannot find the divergence in a dump.
+            let a: Vec<&str> = from_cli.trim().lines().collect();
+            let b: Vec<&str> = from_socket.trim().lines().collect();
+            let at = a
+                .iter()
+                .zip(b.iter())
+                .position(|(x, y)| x != y)
+                .unwrap_or(a.len().min(b.len()));
+            panic!(
+                "{verb} and {method} disagree at line {at}\n  cli:    {:?}\n  socket: {:?}\n  \
+                 lines: cli {} socket {}",
+                a.get(at),
+                b.get(at),
+                a.len(),
+                b.len()
+            );
+        }
+    }
+}

@@ -43,7 +43,9 @@ pub struct Field {
     pub cli: String,
     /// MCP argument name, empty when the tool does not take it.
     pub tool: String,
-    /// Why a surface is empty, or why the two names differ.
+    /// Control-socket parameter name, empty when the method does not take it.
+    pub socket: String,
+    /// Why a surface is empty, or why the names differ.
     pub note: String,
 }
 
@@ -74,6 +76,7 @@ fn read_one(row: operation::Reader<'_>) -> Operation {
                 .map(|f| Field {
                     cli: text(f.get_cli()),
                     tool: text(f.get_tool()),
+                    socket: text(f.get_socket()),
                     note: text(f.get_note()),
                 })
                 .collect()

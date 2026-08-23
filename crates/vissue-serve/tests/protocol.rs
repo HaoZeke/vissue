@@ -574,3 +574,55 @@ fn the_socket_answers_every_method_the_schema_names() {
         "the schema names these methods and the socket does not answer them: {missing:?}"
     );
 }
+
+/// Each method takes the parameters the schema names for it.
+///
+/// The verb check says `issue/append` answers. It does not say the method takes
+/// `text` rather than `body`, and the third spelling of a field is where this drifts
+/// next: the issue being acted on is `id` here and `issue_id` as a tool argument,
+/// which is a real difference a caller has to know and which nothing recorded.
+///
+/// Read off the param structs in `rpc.rs`, which is where serde decides the wire
+/// names, so what is checked is what a client has to send.
+#[test]
+fn each_method_takes_the_parameters_the_schema_names() {
+    let rpc = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../vissue-control/src/rpc.rs"),
+    )
+    .expect("rpc.rs");
+
+    let mut wrong = Vec::new();
+    for op in vissue_core::surface::operations() {
+        if op.socket.is_empty() {
+            continue;
+        }
+        let stem = op.cli.replace('-', "_");
+        let mut camel = String::new();
+        for part in stem.split('_') {
+            let mut c = part.chars();
+            if let Some(f) = c.next() {
+                camel.push(f.to_ascii_uppercase());
+                camel.push_str(c.as_str());
+            }
+        }
+        let struct_name = format!("{camel}Params");
+        let Some(at) = rpc.find(&format!("pub struct {struct_name} {{")) else {
+            wrong.push(format!("{}: no {struct_name} to check", op.socket));
+            continue;
+        };
+        let end = rpc[at..].find("\n}").map_or(rpc.len(), |e| at + e);
+        let body = &rpc[at..end];
+        for field in &op.fields {
+            if field.socket.is_empty() {
+                continue;
+            }
+            if !body.contains(&format!("pub {}:", field.socket)) {
+                wrong.push(format!("{struct_name} has no {}", field.socket));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the schema names parameters these methods do not take: {wrong:?}"
+    );
+}

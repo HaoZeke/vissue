@@ -71,8 +71,11 @@ struct Field {
   tool @1 :Text;
   # MCP argument name, empty when the tool deliberately does not take it.
 
-  note @2 :Text;
-  # Why a surface is empty, or why the two names differ. Empty when they agree.
+  socket @2 :Text;
+  # Control-socket parameter name, empty when the method does not take it.
+
+  note @3 :Text;
+  # Why a surface is empty, or why the names differ. Empty when they agree.
 }
 
 
@@ -80,69 +83,87 @@ const operations :List(Operation) = [
   ( cli = "create", socket = "issue/create", mcp = "vissue_create", mutates = true,
     note = "",
     fields = [
-      ( cli = "project", tool = "project", note = "" ),
-      ( cli = "priority", tool = "priority", note = "" ),
-      ( cli = "type", tool = "issue_type", note = "the flag cannot be a Rust field of that name, which is a keyword" ),
-      ( cli = "tags", tool = "tags", note = "" ),
-      ( cli = "parent", tool = "parent", note = "" ),
-      ( cli = "body", tool = "body", note = "" ),
-      ( cli = "deadline", tool = "deadline", note = "" ),
-      ( cli = "scheduled", tool = "scheduled", note = "" ),
-      ( cli = "body-file", tool = "", note = "no tool argument: it reads a path on the host running the server, not the caller's" )
+      ( cli = "project", tool = "project", socket = "project", note = "" ),
+      ( cli = "priority", tool = "priority", socket = "priority", note = "" ),
+      ( cli = "type", tool = "issue_type", socket = "issue_type", note = "the flag cannot be a Rust field of that name, which is a keyword" ),
+      ( cli = "tags", tool = "tags", socket = "tags", note = "" ),
+      ( cli = "parent", tool = "parent", socket = "parent", note = "" ),
+      ( cli = "body", tool = "body", socket = "body", note = "" ),
+      ( cli = "deadline", tool = "deadline", socket = "deadline", note = "" ),
+      ( cli = "scheduled", tool = "scheduled", socket = "scheduled", note = "" ),
+      ( cli = "body-file", tool = "", socket = "", note = "no tool argument: a path resolves on the host running the server, not the caller's" ),
+      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
   ( cli = "update", socket = "issue/update", mcp = "vissue_update", mutates = true,
     note = "",
     fields = [
-      ( cli = "state", tool = "state", note = "" ),
-      ( cli = "priority", tool = "priority", note = "" ),
-      ( cli = "block", tool = "block", note = "" ),
-      ( cli = "unblock", tool = "unblock", note = "" ),
-      ( cli = "if-state", tool = "if_state", note = "" ),
-      ( cli = "if-gen", tool = "if_gen", note = "" )
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "state", tool = "state", socket = "state", note = "" ),
+      ( cli = "priority", tool = "priority", socket = "priority", note = "" ),
+      ( cli = "block", tool = "block", socket = "block", note = "" ),
+      ( cli = "unblock", tool = "unblock", socket = "unblock", note = "" ),
+      ( cli = "if-state", tool = "if_state", socket = "if_state", note = "" ),
+      ( cli = "if-gen", tool = "if_gen", socket = "if_gen", note = "" ),
+      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
   ( cli = "claim", socket = "issue/claim", mcp = "vissue_claim", mutates = true,
     note = "",
     fields = [
-      ( cli = "force", tool = "force", note = "" )
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "force", tool = "force", socket = "force", note = "" ),
+      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
   ( cli = "note", socket = "issue/note", mcp = "vissue_note", mutates = true,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "", tool = "text", socket = "text", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" )
+    ] ),
   ( cli = "append", socket = "issue/append", mcp = "vissue_append", mutates = true,
     note = "",
     fields = [
-      ( cli = "text", tool = "text", note = "" ),
-      ( cli = "file", tool = "", note = "no tool argument: it reads a path on the host running the server, not the caller's" )
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "text", tool = "text", socket = "text", note = "" ),
+      ( cli = "file", tool = "", socket = "", note = "no tool argument: a path resolves on the host running the server, not the caller's" ),
+      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
   ( cli = "refile", socket = "issue/refile", mcp = "vissue_refile", mutates = true,
     note = "",
     fields = [
-      ( cli = "to", tool = "to", note = "" )
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "to", tool = "to", socket = "to", note = "" )
     ] ),
   ( cli = "reject", socket = "issue/reject", mcp = "vissue_reject", mutates = true,
     note = "",
     fields = [
-      ( cli = "to", tool = "to", note = "" ),
-      ( cli = "project", tool = "project", note = "" ),
-      ( cli = "reason", tool = "reason", note = "" )
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "to", tool = "to", socket = "to", note = "" ),
+      ( cli = "project", tool = "project", socket = "project", note = "" ),
+      ( cli = "reason", tool = "reason", socket = "reason", note = "" )
     ] ),
   ( cli = "resolve", socket = "issue/resolve", mcp = "vissue_resolve", mutates = true,
     note = "",
-    fields = [] ),
+    fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "", tool = "state", socket = "state", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" )
+    ] ),
   ( cli = "vote", socket = "issue/vote", mcp = "vissue_vote", mutates = true,
     note = "",
     fields = [
-      ( cli = "for", tool = "choice", note = "the flag cannot be a Rust field of that name, which is a keyword" )
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "for", tool = "choice", socket = "choice", note = "the flag cannot be a Rust field of that name, which is a keyword" ),
+      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
   ( cli = "fold", socket = "issue/fold", mcp = "vissue_fold", mutates = true,
     note = "",
     fields = [
-      ( cli = "project", tool = "project", note = "" )
+      ( cli = "", tool = "file", socket = "file", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
+      ( cli = "project", tool = "project", socket = "project", note = "" )
     ] ),
   ( cli = "normalize", socket = "issue/normalize", mcp = "", mutates = true,
     note = "no tool: rewriting every heading in a corpus is not a thing to hand an agent",
     fields = [
-      ( cli = "project", tool = "", note = "the verb has no tool" ),
-      ( cli = "dry-run", tool = "", note = "the verb has no tool" )
+      ( cli = "project", tool = "", socket = "project", note = "the verb has no tool" ),
+      ( cli = "dry-run", tool = "", socket = "dry_run", note = "the verb has no tool" )
     ] ),
 ];

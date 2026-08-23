@@ -593,7 +593,9 @@ fn each_method_takes_the_parameters_the_schema_names() {
 
     let mut wrong = Vec::new();
     for op in vissue_core::surface::operations() {
-        if op.socket.is_empty() {
+        // Same rule as the tool check: only verbs whose parameters the schema
+        // names. A read method takes a shared param type or none.
+        if op.socket.is_empty() || !op.fields.iter().any(|f| !f.socket.is_empty()) {
             continue;
         }
         let stem = op.cli.replace('-', "_");

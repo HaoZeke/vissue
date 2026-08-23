@@ -97,7 +97,10 @@ fn each_tool_takes_the_arguments_the_schema_names() {
 
     let mut wrong = Vec::new();
     for op in vissue_core::surface::operations() {
-        if op.mcp.is_empty() {
+        // Only verbs whose fields the schema names. A read verb takes shared or no
+        // arguments and declares none, so there is nothing here to satisfy and no
+        // `<Verb>Args` struct to look for.
+        if op.mcp.is_empty() || !op.fields.iter().any(|f| !f.tool.is_empty()) {
             continue;
         }
         // vissue_create -> CreateArgs

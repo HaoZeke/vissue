@@ -37,7 +37,21 @@ struct Operation {
   mutates @3 :Bool;
   # Whether the verb changes a file. A mutating verb must reach every surface,
   # because a caller that has to leave the socket for one write puts a hole in the
-  # change stream exactly where that write was.
+  # change stream exactly where that write was. A reading verb is held to the
+  # surfaces it claims and not to all of them: several are absent from the socket
+  # today, and the schema records that rather than pretending otherwise.
+
+  aliases @7 :List(Text);
+  # Other names the command line answers to for this verb. `create` answers to `q`,
+  # which prints only the new id. Recorded because the check that every subcommand
+  # appears here found `q` and had no way to know it was not a verb of its own.
+
+  local @6 :Bool;
+  # True for a verb that only makes sense in the process it is typed into: the
+  # terminal UI, the HUD, shell completions, the man page, the server's own
+  # lifecycle. These have no remote surface and are not gaps. Recorded so that
+  # every subcommand appears here, because a verb the schema does not mention is a
+  # verb no check can see, which is how a new one would arrive unnoticed.
 
   note @4 :Text;
   # Why a surface is empty, when one is. Empty otherwise.
@@ -80,7 +94,8 @@ struct Field {
 
 
 const operations :List(Operation) = [
-  ( cli = "create", socket = "issue/create", mcp = "vissue_create", mutates = true,
+  ( cli = "create", socket = "issue/create", mcp = "vissue_create", mutates = true, local = false,
+    aliases = ["q"],
     note = "",
     fields = [
       ( cli = "project", tool = "project", socket = "project", note = "" ),
@@ -94,7 +109,7 @@ const operations :List(Operation) = [
       ( cli = "body-file", tool = "", socket = "", note = "no tool argument: a path resolves on the host running the server, not the caller's" ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
-  ( cli = "update", socket = "issue/update", mcp = "vissue_update", mutates = true,
+  ( cli = "update", socket = "issue/update", mcp = "vissue_update", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
@@ -106,20 +121,20 @@ const operations :List(Operation) = [
       ( cli = "if-gen", tool = "if_gen", socket = "if_gen", note = "" ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
-  ( cli = "claim", socket = "issue/claim", mcp = "vissue_claim", mutates = true,
+  ( cli = "claim", socket = "issue/claim", mcp = "vissue_claim", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
       ( cli = "force", tool = "force", socket = "force", note = "" ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
-  ( cli = "note", socket = "issue/note", mcp = "vissue_note", mutates = true,
+  ( cli = "note", socket = "issue/note", mcp = "vissue_note", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
       ( cli = "", tool = "text", socket = "text", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" )
     ] ),
-  ( cli = "append", socket = "issue/append", mcp = "vissue_append", mutates = true,
+  ( cli = "append", socket = "issue/append", mcp = "vissue_append", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
@@ -127,13 +142,13 @@ const operations :List(Operation) = [
       ( cli = "file", tool = "", socket = "", note = "no tool argument: a path resolves on the host running the server, not the caller's" ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
-  ( cli = "refile", socket = "issue/refile", mcp = "vissue_refile", mutates = true,
+  ( cli = "refile", socket = "issue/refile", mcp = "vissue_refile", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
       ( cli = "to", tool = "to", socket = "to", note = "" )
     ] ),
-  ( cli = "reject", socket = "issue/reject", mcp = "vissue_reject", mutates = true,
+  ( cli = "reject", socket = "issue/reject", mcp = "vissue_reject", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
@@ -141,29 +156,164 @@ const operations :List(Operation) = [
       ( cli = "project", tool = "project", socket = "project", note = "" ),
       ( cli = "reason", tool = "reason", socket = "reason", note = "" )
     ] ),
-  ( cli = "resolve", socket = "issue/resolve", mcp = "vissue_resolve", mutates = true,
+  ( cli = "resolve", socket = "issue/resolve", mcp = "vissue_resolve", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
       ( cli = "", tool = "state", socket = "state", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" )
     ] ),
-  ( cli = "vote", socket = "issue/vote", mcp = "vissue_vote", mutates = true,
+  ( cli = "vote", socket = "issue/vote", mcp = "vissue_vote", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
       ( cli = "for", tool = "choice", socket = "choice", note = "the flag cannot be a Rust field of that name, which is a keyword" ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment" )
     ] ),
-  ( cli = "fold", socket = "issue/fold", mcp = "vissue_fold", mutates = true,
+  ( cli = "fold", socket = "issue/fold", mcp = "vissue_fold", mutates = true, local = false,
     note = "",
     fields = [
       ( cli = "", tool = "file", socket = "file", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently" ),
       ( cli = "project", tool = "project", socket = "project", note = "" )
     ] ),
-  ( cli = "normalize", socket = "issue/normalize", mcp = "", mutates = true,
+  ( cli = "normalize", socket = "issue/normalize", mcp = "", mutates = true, local = false,
     note = "no tool: rewriting every heading in a corpus is not a thing to hand an agent",
     fields = [
       ( cli = "project", tool = "", socket = "project", note = "the verb has no tool" ),
       ( cli = "dry-run", tool = "", socket = "dry_run", note = "the verb has no tool" )
     ] ),
+  ( cli = "agenda", socket = "issue/agenda", mcp = "vissue_agenda", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "ancestors", socket = "issue/ancestors", mcp = "vissue_ancestors", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "backlinks", socket = "issue/backlinks", mcp = "vissue_backlinks", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "body-excerpt", socket = "issue/excerpt", mcp = "vissue_body_excerpt", mutates = false, local = false,
+    note = "the method is named for the excerpt and the tool for the body it comes from",
+    fields = [] ),
+  ( cli = "children", socket = "issue/children", mcp = "vissue_children", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "claims", socket = "issue/claims", mcp = "vissue_claims", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "gen", socket = "events/gen", mcp = "vissue_gen", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "events", socket = "events/since", mcp = "vissue_events", mutates = false, local = false,
+    note = "the method names the sequence it reads from",
+    fields = [] ),
+  ( cli = "identity", socket = "identity/get", mcp = "vissue_identity", mutates = false, local = false,
+    note = "one method answers both identity and whoami",
+    fields = [] ),
+  ( cli = "whoami", socket = "identity/get", mcp = "vissue_whoami", mutates = false, local = false,
+    note = "one method answers both identity and whoami; whoami is the older spelling",
+    fields = [] ),
+  ( cli = "impact", socket = "issue/impact", mcp = "vissue_impact", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "list", socket = "issue/list", mcp = "vissue_list", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "projects", socket = "project/list", mcp = "vissue_projects", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "ready", socket = "issue/ready", mcp = "vissue_ready", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "related", socket = "issue/related", mcp = "vissue_related", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "search", socket = "issue/search", mcp = "vissue_search", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "show", socket = "issue/show", mcp = "vissue_show", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "tree", socket = "issue/tree", mcp = "vissue_tree", mutates = false, local = false,
+    note = "",
+    fields = [] ),
+  ( cli = "check", socket = "", mcp = "vissue_check", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "count", socket = "", mcp = "vissue_count", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "cycles", socket = "", mcp = "vissue_cycles", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "digest", socket = "", mcp = "vissue_digest", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "export", socket = "", mcp = "vissue_export", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "graph", socket = "", mcp = "vissue_graph", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "hygiene", socket = "", mcp = "vissue_hygiene", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "mirror", socket = "", mcp = "vissue_mirror", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "ping", socket = "", mcp = "vissue_ping", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "roadmap", socket = "", mcp = "vissue_roadmap", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "wait", socket = "", mcp = "vissue_wait", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "waiting-on", socket = "", mcp = "vissue_waiting_on", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it",
+    fields = [] ),
+  ( cli = "stale", socket = "", mcp = "", mutates = false, local = false,
+    note = "not on the socket yet; a client has to shell out for it, and no tool either",
+    fields = [] ),
+  ( cli = "completions", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "bash", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "zsh", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "fish", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "elvish", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "powershell", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "man", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "keys", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "hud", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "tui", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "restart", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "status", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "stop", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
+  ( cli = "serve", socket = "", mcp = "", mutates = false, local = true,
+    note = "local only: it acts on this process rather than on the corpus",
+    fields = [] ),
 ];

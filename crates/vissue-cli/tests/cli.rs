@@ -1788,3 +1788,45 @@ fn each_verb_offers_the_flags_the_schema_names() {
         "the schema names flags these verbs do not take: {wrong:?}"
     );
 }
+
+/// Every subcommand appears in the schema.
+///
+/// This is the check that makes a *new* verb impossible to add unnoticed. Until it
+/// existed, the schema constrained only the verbs it already mentioned: a brand-new
+/// subcommand failed nothing, because nothing asked whether the schema knew about
+/// it, which is precisely how the earlier gaps arrived. `vote` was added to the
+/// command line and no test anywhere had an opinion.
+///
+/// Shell-completion variants are excluded because clap generates one subcommand per
+/// shell from a single `completions` verb, and they are not separate operations.
+#[test]
+fn every_subcommand_appears_in_the_schema() {
+    const SHELLS: &[&str] = &["bash", "zsh", "fish", "elvish", "powershell"];
+
+    let help = vissue(&["--help"]);
+    let text = String::from_utf8_lossy(&help.stdout).to_string();
+    // clap lists subcommands one per line, indented, before the options block.
+    let listed: Vec<String> = text
+        .lines()
+        .take_while(|l| !l.starts_with("Options:"))
+        .filter(|l| l.starts_with("  ") && !l.trim().starts_with('-'))
+        .filter_map(|l| l.split_whitespace().next())
+        .filter(|w| w.chars().all(|c| c.is_ascii_lowercase() || c == '-'))
+        .filter(|w| !w.is_empty() && !SHELLS.contains(w) && *w != "help")
+        .map(str::to_string)
+        .collect();
+    assert!(
+        listed.len() > 20,
+        "no subcommands parsed out of help: {listed:?}"
+    );
+
+    let known = vissue_core::surface::cli_verbs();
+    let unknown: Vec<&String> = listed
+        .iter()
+        .filter(|v| !known.iter().any(|k| k == *v))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "these subcommands are in no schema row, so no surface check can see them: {unknown:?}"
+    );
+}

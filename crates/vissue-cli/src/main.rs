@@ -653,6 +653,40 @@ fn create_routed(
 /// surfaces are the same computation and not two that have to be kept in agreement.
 /// The text reports stay as they are: they are what a person reads, and they group by
 /// project because the command line can span layouts.
+/// Emit a read's answer in whichever of its two shapes the caller asked for.
+///
+/// A read that takes `--json` answers the same question twice: the structured value a
+/// caller parses, and the report a person prints. Ten subcommands spelled that choice
+/// out as an `if json` around two emit calls, which is ten places for the two to come
+/// apart. Both go through the same layout and the same service, so the pair is one
+/// computation and this is where the shape is chosen.
+///
+/// # Errors
+///
+/// Returns whatever producing the chosen shape returns, or a write error.
+fn emit_shape<T, S, E, F>(
+    json: bool,
+    structured: impl FnOnce() -> std::result::Result<T, E>,
+    text: impl FnOnce() -> std::result::Result<S, F>,
+) -> Result<()>
+where
+    T: serde::Serialize,
+    S: std::fmt::Display,
+    E: Into<anyhow::Error>,
+    F: Into<anyhow::Error>,
+{
+    // Generic over both error types because the two halves come from different layers:
+    // the structured answer through this binary's own helpers, the report straight out
+    // of the core, which has its own error type.
+    if json {
+        let value = structured().map_err(Into::into)?;
+        emitln!("{}", serde_json::to_string_pretty(&value)?);
+    } else {
+        emit!("{}", text().map_err(Into::into)?);
+    }
+    Ok(())
+}
+
 fn with_catalog<T>(
     layout: &Layout,
     f: impl FnOnce(&vissue_core::catalog::CatalogService<'_>) -> vissue_core::Result<T>,
@@ -703,6 +737,250 @@ fn reject_destination(
         project: Some(pref.dir),
         extra_id_paths,
     })
+}
+
+/// Block until something changes, or until one issue settles.
+///
+/// Two waits behind one verb. `--until-terminal` watches one issue for a state nothing
+/// follows, and the plain form watches the corpus generation. Both report through the
+/// exit status as well as stdout, because a poller reads the status.
+fn run_wait(
+    router: &Router,
+    layout: &Layout,
+    last: u64,
+    id: Option<String>,
+    until_terminal: bool,
+    poll_ms: u64,
+    timeout_ms: u64,
+) -> Result<()> {
+    if until_terminal {
+        let Some(id) = id else {
+            bail!("--until-terminal requires --id");
+        };
+        let found = layout_for_id(router, &id)?;
+        match events::wait_until_terminal(&found, &id, poll_ms, timeout_ms)? {
+            events::TerminalWait::Done { generation } => {
+                emitln!("DONE {generation}");
+            }
+            events::TerminalWait::Cancelled { generation } => {
+                emitln!("CANCELLED {generation}");
+            }
+            events::TerminalWait::Timeout { generation, state } => {
+                emitln!("TIMEOUT {state} {generation}");
+                std::process::exit(2);
+            }
+        }
+    } else {
+        let generation = events::wait_generation(layout, last, poll_ms, timeout_ms)?;
+        emitln!("{generation}");
+        if generation <= last {
+            // Unchanged: a polling script tells timeout from progress by
+            // the exit status rather than by parsing the number.
+            std::process::exit(2);
+        }
+    }
+    Ok(())
+}
+
+/// Render a mirror of the corpus, or judge whether one on disk is still current.
+///
+/// `--check` answers a different question from the rest of the verb and answers it
+/// through the exit status, since a stale mirror is a normal finding rather than a
+/// failure to run.
+fn run_mirror(
+    layout: &Layout,
+    projects: &[String],
+    out: Option<String>,
+    check: Option<PathBuf>,
+    format: &str,
+    state: Option<String>,
+) -> Result<()> {
+    if let Some(path) = check {
+        let verdict = mirror::check(layout, &path, projects)?;
+        emit!("{}", verdict.report);
+        if !verdict.fresh {
+            // A stale mirror is a normal answer, not a failure to run,
+            // so it reports on stdout and signals through the status.
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+    let out = out.expect("clap requires --out unless --check is given");
+    let text = mirror::render(layout, projects, Format::parse(format)?, state.as_deref())?;
+    if out == "-" {
+        emit!("{text}");
+    } else {
+        let path = PathBuf::from(&out);
+        store::replace_file_atomically(&path, &text)?;
+        emitln!("wrote {}", path.display());
+    }
+    Ok(())
+}
+
+/// The heads-up display, through rofi or through the iced window.
+///
+/// Two front ends with different capabilities: rofi has no window to toggle, so the
+/// window flags are meaningless there and are consumed rather than silently ignored.
+/// What the HUD subcommand was asked for.
+///
+/// Grouped rather than passed one flag at a time: seven of these are booleans, and a
+/// call site spelling seven booleans in a row is one transposition away from asking
+/// for something else entirely.
+struct HudRequest {
+    mode: String,
+    offline: bool,
+    foreground: bool,
+    toggle: bool,
+    show: bool,
+    hide: bool,
+    iced: bool,
+    rofi: bool,
+    socket: Option<PathBuf>,
+}
+
+fn run_hud(layout: Layout, request: HudRequest) -> Result<()> {
+    let HudRequest {
+        mode,
+        offline,
+        foreground,
+        toggle,
+        show,
+        hide,
+        iced,
+        rofi,
+        socket,
+    } = request;
+    let use_rofi = rofi && !iced;
+    if use_rofi {
+        let _ = (toggle, show, hide, offline, foreground, socket);
+        let mode = rofi::Mode::parse(&mode)?;
+        rofi::run(rofi::RofiOpts::from_env(layout, mode)?)?;
+    } else {
+        if !offline && cfg!(not(unix)) {
+            bail!("vissue hud is Unix-only");
+        }
+        exec_hud(ExecHud {
+            layout,
+            socket,
+            offline,
+            foreground,
+            toggle,
+            show,
+            hide,
+        })?;
+    }
+    Ok(())
+}
+
+/// What this binary is, where it reads, and every project it can route to.
+///
+/// Printed in both a labelled and a `key=value` form because a person and a script read
+/// the same output.
+fn run_identity(router: &Router, layout: &Layout) -> Result<()> {
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "vissue".into());
+    emitln!("vissue {}", env!("CARGO_PKG_VERSION"));
+    emitln!("protocol: {}", vissue_core::org::PROTOCOL_VERSION);
+    emitln!("binary: {exe}");
+    emitln!("root:   {}", layout.root().display());
+    emitln!("prefix: {}", layout.prefix());
+    emitln!("root={}", layout.root().display());
+    emitln!("prefix={}", layout.prefix());
+    if router.is_routed() {
+        for pref in router.visible_projects()? {
+            if pref.key == pref.dir
+                && pref.layout.root() == layout.root()
+                && pref.layout.prefix() == layout.prefix()
+            {
+                continue;
+            }
+            emitln!(
+                "route: {} -> {} {} {}",
+                pref.key,
+                pref.layout.root().display(),
+                pref.layout.prefix(),
+                pref.dir
+            );
+        }
+    }
+    Ok(())
+}
+
+/// A digest of the corpus: the whole report, one combined hash, or JSON.
+fn run_digest(layout: &Layout, projects: &[String], json: bool, quiet: bool) -> Result<()> {
+    let digest = vissue_core::digest::corpus_digest(layout, projects)?;
+    if json {
+        emitln!("{}", serde_json::to_string_pretty(&digest.to_json())?);
+    } else if quiet {
+        emitln!("{}", digest.combined);
+    } else {
+        emit!("{}", digest.render());
+    }
+    Ok(())
+}
+
+/// One issue, as a report, as its own org text, or as JSON.
+///
+/// Three shapes rather than the usual two, because the org form is the file's own text
+/// and is what a person pastes back into a vault.
+fn run_show(router: &Router, id: &str, json: bool, org: bool) -> Result<()> {
+    let found = layout_for_id(router, id)?;
+    if json {
+        emitln!(
+            "{}",
+            serde_json::to_string_pretty(&agent::show_json(&found, id)?)?
+        );
+    } else if org {
+        emit!("{}", agent::org_text(&found, id)?);
+    } else {
+        emit!("{}", report::show(&found, id)?);
+    }
+    Ok(())
+}
+
+/// Every project this process can see, one per line or as a JSON array.
+fn run_projects(router: &Router, json: bool) -> Result<()> {
+    let visible = router.visible_projects()?;
+    if json {
+        let names: Vec<&str> = visible.iter().map(|p| p.key.as_str()).collect();
+        emitln!("{}", serde_json::to_string_pretty(&names)?);
+    } else {
+        for project in visible {
+            emitln!("{}", project.key);
+        }
+    }
+    Ok(())
+}
+
+/// The keymap: check an overlay, list what each chord is taken by, or print the table.
+///
+/// Three answers from one subcommand, and `--check` exits non-zero on a bad overlay
+/// rather than printing one, which is what a shell hook wants.
+fn run_keys(check: bool, occupancy: bool) -> Result<()> {
+    let map = vissue_core::keys::KeyMap::load();
+    if check {
+        if let Some(err) = map.overlay_error {
+            eprintln!("error: {err}");
+            std::process::exit(1);
+        }
+        emitln!("ok");
+    } else if occupancy {
+        for (chord, id) in map.occupancy() {
+            emitln!("{chord}\t{id}");
+        }
+    } else {
+        if let Some(err) = &map.overlay_error {
+            eprintln!("error: {err}");
+        }
+        if let Some(leader) = map.leader {
+            emitln!("leader {leader}");
+        }
+        for line in map.table_lines() {
+            emitln!("{line}");
+        }
+    }
+    Ok(())
 }
 
 fn run() -> Result<()> {
@@ -791,17 +1069,7 @@ fn run() -> Result<()> {
             }
         }
         Command::Show { id, json, org } => {
-            let found = layout_for_id(&router, &id)?;
-            if json {
-                emitln!(
-                    "{}",
-                    serde_json::to_string_pretty(&agent::show_json(&found, &id)?)?
-                );
-            } else if org {
-                emit!("{}", agent::org_text(&found, &id)?);
-            } else {
-                emit!("{}", report::show(&found, &id)?);
-            }
+            run_show(&router, &id, json, org)?;
         }
         Command::Update {
             id,
@@ -913,12 +1181,11 @@ fn run() -> Result<()> {
             project,
             json,
         } => {
-            if json {
-                let rows = with_catalog(&layout, |svc| svc.agenda(days, project.as_deref()))?;
-                emitln!("{}", serde_json::to_string_pretty(&rows)?);
-            } else {
-                emit!("{}", agenda_routed(&router, days, project.as_deref())?);
-            }
+            emit_shape(
+                json,
+                || with_catalog(&layout, |svc| svc.agenda(days, project.as_deref())),
+                || agenda_routed(&router, days, project.as_deref()),
+            )?;
         }
         Command::Hygiene { stale_days } => emit!("{}", hygiene_routed(&router, stale_days)?),
         Command::Whoami => emitln!("{}", vissue_core::config::identity(&layout)),
@@ -928,47 +1195,42 @@ fn run() -> Result<()> {
         }
         Command::BodyExcerpt { id, json } => {
             let found = layout_for_id(&router, &id)?;
-            if json {
-                let excerpt = with_catalog(&found, |svc| svc.excerpt(&id))?;
-                emitln!("{}", serde_json::to_string_pretty(&excerpt)?);
-            } else {
-                emit!("{}", agent::body_excerpt(&found, &id)?);
-            }
+            emit_shape(
+                json,
+                || with_catalog(&found, |svc| svc.excerpt(&id)),
+                || agent::body_excerpt(&found, &id),
+            )?;
         }
         Command::Search { query, limit, json } => {
-            if json {
-                let hits = with_catalog(&layout, |svc| svc.search(&query, limit))?;
-                emitln!("{}", serde_json::to_string_pretty(&hits)?);
-            } else {
-                emit!("{}", search_routed(&router, &query, limit)?);
-            }
+            emit_shape(
+                json,
+                || with_catalog(&layout, |svc| svc.search(&query, limit)),
+                || search_routed(&router, &query, limit),
+            )?;
         }
         Command::Children { id, json } => {
             let found = layout_for_id(&router, &id)?;
-            if json {
-                let hits = with_catalog(&found, |svc| svc.children(&id))?;
-                emitln!("{}", serde_json::to_string_pretty(&hits)?);
-            } else {
-                emit!("{}", report::children(&found, &id)?);
-            }
+            emit_shape(
+                json,
+                || with_catalog(&found, |svc| svc.children(&id)),
+                || report::children(&found, &id),
+            )?;
         }
         Command::Ancestors { id, depth, json } => {
             let found = layout_for_id(&router, &id)?;
-            if json {
-                let hits = with_catalog(&found, |svc| svc.ancestors(&id, depth))?;
-                emitln!("{}", serde_json::to_string_pretty(&hits)?);
-            } else {
-                emit!("{}", report::ancestors(&found, &id, depth)?);
-            }
+            emit_shape(
+                json,
+                || with_catalog(&found, |svc| svc.ancestors(&id, depth)),
+                || report::ancestors(&found, &id, depth),
+            )?;
         }
         Command::Impact { id, depth, json } => {
             let found = layout_for_id(&router, &id)?;
-            if json {
-                let hits = with_catalog(&found, |svc| svc.impact(&id, depth))?;
-                emitln!("{}", serde_json::to_string_pretty(&hits)?);
-            } else {
-                emit!("{}", report::impact(&found, &id, depth)?);
-            }
+            emit_shape(
+                json,
+                || with_catalog(&found, |svc| svc.impact(&id, depth)),
+                || report::impact(&found, &id, depth),
+            )?;
         }
         Command::Related {
             id,
@@ -993,12 +1255,11 @@ fn run() -> Result<()> {
         Command::Export { project } => emit!("{}", export_routed(&router, project.as_deref())?),
         Command::Tree { id, format, json } => {
             let found = layout_for_id(&router, &id)?;
-            if json {
-                let node = with_catalog(&found, |svc| svc.tree(&id))?;
-                emitln!("{}", serde_json::to_string_pretty(&node)?);
-            } else {
-                emit!("{}", report::tree(&found, &id, &format)?);
-            }
+            emit_shape(
+                json,
+                || with_catalog(&found, |svc| svc.tree(&id)),
+                || report::tree(&found, &id, &format),
+            )?;
         }
         Command::Cycles => emit!("{}", cycles_routed(&router)?),
         Command::Graph { project } => emit!("{}", graph_routed(&router, project.as_deref())?),
@@ -1009,12 +1270,11 @@ fn run() -> Result<()> {
         }
         Command::Backlinks { id, json } => {
             let found = layout_for_id(&router, &id)?;
-            if json {
-                let hits = with_catalog(&found, |svc| svc.backlinks(&id))?;
-                emitln!("{}", serde_json::to_string_pretty(&hits)?);
-            } else {
-                emit!("{}", report::backlinks(&found, &id)?);
-            }
+            emit_shape(
+                json,
+                || with_catalog(&found, |svc| svc.backlinks(&id)),
+                || report::backlinks(&found, &id),
+            )?;
         }
         Command::Roadmap { project } => {
             emit!("{}", roadmap_routed(&router, project.as_deref())?)
@@ -1037,14 +1297,7 @@ fn run() -> Result<()> {
             json,
             quiet,
         } => {
-            let digest = vissue_core::digest::corpus_digest(&layout, &projects)?;
-            if json {
-                emitln!("{}", serde_json::to_string_pretty(&digest.to_json())?);
-            } else if quiet {
-                emitln!("{}", digest.combined);
-            } else {
-                emit!("{}", digest.render());
-            }
+            run_digest(&layout, &projects, json, quiet)?;
         }
         Command::Mirror {
             projects,
@@ -1053,30 +1306,7 @@ fn run() -> Result<()> {
             format,
             state,
         } => {
-            if let Some(path) = check {
-                let verdict = mirror::check(&layout, &path, &projects)?;
-                emit!("{}", verdict.report);
-                if !verdict.fresh {
-                    // A stale mirror is a normal answer, not a failure to run,
-                    // so it reports on stdout and signals through the status.
-                    std::process::exit(1);
-                }
-                return Ok(());
-            }
-            let out = out.expect("clap requires --out unless --check is given");
-            let text = mirror::render(
-                &layout,
-                &projects,
-                Format::parse(&format)?,
-                state.as_deref(),
-            )?;
-            if out == "-" {
-                emit!("{text}");
-            } else {
-                let path = PathBuf::from(&out);
-                store::replace_file_atomically(&path, &text)?;
-                emitln!("wrote {}", path.display());
-            }
+            run_mirror(&layout, &projects, out, check, &format, state)?;
         }
         Command::Events { since, limit } => {
             emit!("{}", events::since_report(&layout, since, limit)?)
@@ -1091,44 +1321,19 @@ fn run() -> Result<()> {
             poll_ms,
             timeout_ms,
         } => {
-            if until_terminal {
-                let Some(id) = id else {
-                    bail!("--until-terminal requires --id");
-                };
-                let found = layout_for_id(&router, &id)?;
-                match events::wait_until_terminal(&found, &id, poll_ms, timeout_ms)? {
-                    events::TerminalWait::Done { generation } => {
-                        emitln!("DONE {generation}");
-                    }
-                    events::TerminalWait::Cancelled { generation } => {
-                        emitln!("CANCELLED {generation}");
-                    }
-                    events::TerminalWait::Timeout { generation, state } => {
-                        emitln!("TIMEOUT {state} {generation}");
-                        std::process::exit(2);
-                    }
-                }
-            } else {
-                let generation = events::wait_generation(&layout, last, poll_ms, timeout_ms)?;
-                emitln!("{generation}");
-                if generation <= last {
-                    // Unchanged: a polling script tells timeout from progress by
-                    // the exit status rather than by parsing the number.
-                    std::process::exit(2);
-                }
-            }
+            run_wait(
+                &router,
+                &layout,
+                last,
+                id,
+                until_terminal,
+                poll_ms,
+                timeout_ms,
+            )?;
         }
         Command::Gen => emitln!("{}", events::generation(&layout)),
         Command::Projects { json } => {
-            let visible = router.visible_projects()?;
-            if json {
-                let names: Vec<&str> = visible.iter().map(|p| p.key.as_str()).collect();
-                emitln!("{}", serde_json::to_string_pretty(&names)?);
-            } else {
-                for project in visible {
-                    emitln!("{}", project.key);
-                }
-            }
+            run_projects(&router, json)?;
         }
         Command::Surface => {
             let mut cmd = Cli::command();
@@ -1183,28 +1388,7 @@ fn run() -> Result<()> {
             );
         }
         Command::Keys { check, occupancy } => {
-            let map = vissue_core::keys::KeyMap::load();
-            if check {
-                if let Some(err) = map.overlay_error {
-                    eprintln!("error: {err}");
-                    std::process::exit(1);
-                }
-                emitln!("ok");
-            } else if occupancy {
-                for (chord, id) in map.occupancy() {
-                    emitln!("{chord}\t{id}");
-                }
-            } else {
-                if let Some(err) = &map.overlay_error {
-                    eprintln!("error: {err}");
-                }
-                if let Some(leader) = map.leader {
-                    emitln!("leader {leader}");
-                }
-                for line in map.table_lines() {
-                    emitln!("{line}");
-                }
-            }
+            run_keys(check, occupancy)?;
         }
         Command::Man => {
             let mut buffer: Vec<u8> = Vec::new();
@@ -1217,33 +1401,7 @@ fn run() -> Result<()> {
             );
         }
         Command::Identity => {
-            let exe = std::env::current_exe()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| "vissue".into());
-            emitln!("vissue {}", env!("CARGO_PKG_VERSION"));
-            emitln!("protocol: {}", vissue_core::org::PROTOCOL_VERSION);
-            emitln!("binary: {exe}");
-            emitln!("root:   {}", layout.root().display());
-            emitln!("prefix: {}", layout.prefix());
-            emitln!("root={}", layout.root().display());
-            emitln!("prefix={}", layout.prefix());
-            if router.is_routed() {
-                for pref in router.visible_projects()? {
-                    if pref.key == pref.dir
-                        && pref.layout.root() == layout.root()
-                        && pref.layout.prefix() == layout.prefix()
-                    {
-                        continue;
-                    }
-                    emitln!(
-                        "route: {} -> {} {} {}",
-                        pref.key,
-                        pref.layout.root().display(),
-                        pref.layout.prefix(),
-                        pref.dir
-                    );
-                }
-            }
+            run_identity(&router, &layout)?;
         }
         Command::Serve(args) => {
             let socket = args
@@ -1291,25 +1449,20 @@ fn run() -> Result<()> {
             rofi,
             socket,
         } => {
-            let use_rofi = rofi && !iced;
-            if use_rofi {
-                let _ = (toggle, show, hide, offline, foreground, socket);
-                let mode = rofi::Mode::parse(&mode)?;
-                rofi::run(rofi::RofiOpts::from_env(layout, mode)?)?;
-            } else {
-                if !offline && cfg!(not(unix)) {
-                    bail!("vissue hud is Unix-only");
-                }
-                exec_hud(ExecHud {
-                    layout,
-                    socket,
+            run_hud(
+                layout,
+                HudRequest {
+                    mode,
                     offline,
                     foreground,
                     toggle,
                     show,
                     hide,
-                })?;
-            }
+                    iced,
+                    rofi,
+                    socket,
+                },
+            )?;
         }
     }
     // Flush here rather than at exit, so a full disk or a closed pipe reaches

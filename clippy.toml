@@ -8,4 +8,4 @@
 # thirty-seven methods from one match and scores under the default, because the metric
 # counts nesting and a wide flat match has none. Drift between the surfaces lives in
 # that breadth, so it is the schema checks that catch it and never this.
-cognitive-complexity-threshold = 40
+cognitive-complexity-threshold = 25

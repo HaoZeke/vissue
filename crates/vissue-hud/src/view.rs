@@ -1007,45 +1007,113 @@ fn empty_copy(palette: &Palette) -> &'static str {
 mod tests {
     use crate::palette::DetailTab;
 
+    /// The body of one function in this file, between its name and the next.
+    ///
+    /// A scan of this file's own source, which is not how anything else here is
+    /// checked. There is no widget tree to walk in a headless test: icedtea builds one
+    /// against a running renderer, so what the view is made of can only be read where
+    /// it is written.
+    fn between<'a>(src: &'a str, from: &str, to: &str) -> &'a str {
+        let after = src
+            .split(from)
+            .nth(1)
+            .unwrap_or_else(|| panic!("no {from} in view.rs"));
+        after
+            .split(to)
+            .next()
+            .unwrap_or_else(|| panic!("no {to} after {from}"))
+    }
+
+    /// The board is painted out of icedtea's widgets rather than iced's directly.
+    ///
+    /// Reported together rather than one assertion at a time, because the first widget
+    /// to go missing would otherwise hide the rest, and a port that replaces several at
+    /// once is exactly when the whole list is worth reading.
     #[test]
-    fn board_paints_through_icedtea() {
+    fn the_board_paints_through_icedtea_widgets() {
         let src = include_str!("view.rs");
+        const WIDGETS: &[&str] = &[
+            "widget::chip",
+            "widget::themed_text_input",
+            "widget::search_input_clear",
+            "widget::list_view",
+            "widget::virtual_column",
+            "widget::themed_checkbox",
+            "split_view",
+            "widget::themed_scroll",
+            "icedtea::style::list_row",
+            "widget::tab_bar",
+            "widget::selectable",
+            "widget::value_field",
+        ];
+        let missing: Vec<&str> = WIDGETS
+            .iter()
+            .copied()
+            .filter(|widget| !src.contains(widget))
+            .collect();
         assert!(
-            src.contains("icedtea::widget::markdown_view") || src.contains("widget::markdown_view")
+            missing.is_empty(),
+            "the view no longer paints with: {missing:?}"
         );
-        assert!(src.contains("widget::chip"));
-        assert!(src.contains("widget::themed_text_input"));
-        assert!(src.contains("widget::search_input_clear"));
-        assert!(src.contains("widget::list_view"));
-        assert!(src.contains("widget::virtual_column"));
-        assert!(src.contains("widget::themed_checkbox"));
-        assert!(src.contains("split_view"));
-        assert!(src.contains("widget::themed_scroll"));
-        assert!(src.contains("icedtea::style::list_row"));
-        assert!(src.contains("fn tree_row"));
-        assert!(src.contains("fn tree_fold_all"));
-        assert!(src.contains("fn extra_blocked_mark"));
-        let task = src.split("fn task_row").nth(1).unwrap();
-        let task = task.split("fn extra_blocked_mark").next().unwrap();
         assert!(
-            task.contains("Wrapping::Word"),
-            "list titles wrap inside the pane"
+            src.contains("icedtea::widget::markdown_view") || src.contains("widget::markdown_view"),
+            "notes are not painted through the markdown view"
         );
-        let tree_fn = src.split("fn tree_row").nth(1).unwrap();
-        let tree_fn = tree_fn.split("fn task_row").next().unwrap();
-        assert!(tree_fn.contains("Message::TreePick"));
-        assert!(tree_fn.contains("on_double_click"));
-        assert!(tree_fn.contains("Message::OpenIssue"));
-        assert!(tree_fn.contains("badge_state"));
-        assert!(src.contains("widget::tab_bar"));
-        assert!(src.contains("widget::selectable"));
-        assert!(src.contains("widget::value_field"));
-        assert!(src.contains("fn notes_body"));
-        assert!(src.contains("fn state_arrow"));
-        let prod = src.split("fn project_mark").nth(1).unwrap();
-        let prod = prod.split("fn badge_priority").next().unwrap();
-        assert!(prod.contains("Variant::Chip"));
-        assert!(!prod.contains("Variant::Danger"));
+
+        const FUNCTIONS: &[&str] = &[
+            "fn tree_row",
+            "fn tree_fold_all",
+            "fn extra_blocked_mark",
+            "fn notes_body",
+            "fn state_arrow",
+        ];
+        let gone: Vec<&str> = FUNCTIONS
+            .iter()
+            .copied()
+            .filter(|name| !src.contains(name))
+            .collect();
+        assert!(gone.is_empty(), "the view no longer defines: {gone:?}");
+    }
+
+    /// Every text in a list row wraps inside its pane rather than running off the edge.
+    ///
+    /// Asserted as the absence of the opposite, because a row holds several texts and
+    /// finding one that wraps says nothing about the others: setting a title to clip
+    /// while a badge beside it still wraps would pass a check for the wrapping call.
+    #[test]
+    fn a_list_row_wraps_its_text_rather_than_clipping_it() {
+        let src = include_str!("view.rs");
+        let task = between(src, "fn task_row", "fn extra_blocked_mark");
+        assert!(task.contains("Wrapping::Word"), "list titles must wrap");
+        assert!(
+            !task.contains("Wrapping::None"),
+            "a text in a list row is set not to wrap, so it will clip"
+        );
+    }
+
+    /// A tree row answers three gestures: pick it, open it, and read its state.
+    #[test]
+    fn a_tree_row_picks_opens_and_shows_its_state() {
+        let src = include_str!("view.rs");
+        let tree = between(src, "fn tree_row", "fn task_row");
+        for expected in [
+            "Message::TreePick",
+            "on_double_click",
+            "Message::OpenIssue",
+            "badge_state",
+        ] {
+            assert!(tree.contains(expected), "a tree row has no {expected}");
+        }
+    }
+
+    /// A project is marked with a chip, which is a label, and never with the danger
+    /// variant, which is a warning about the project rather than a name for it.
+    #[test]
+    fn a_project_mark_is_a_label_and_not_a_warning() {
+        let src = include_str!("view.rs");
+        let mark = between(src, "fn project_mark", "fn badge_priority");
+        assert!(mark.contains("Variant::Chip"));
+        assert!(!mark.contains("Variant::Danger"));
     }
 
     #[test]

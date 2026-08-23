@@ -212,7 +212,7 @@ fn each_tool_takes_the_arguments_the_schema_names() {
             };
             // The type too, not only the name. A field going from a number to a
             // string keeps its name, so a name check cannot see it.
-            let Some((json, optional)) = advertised_as(&field.tool_type) else {
+            let Some((json, optional_by_type)) = advertised_as(&field.tool_type) else {
                 continue; // a type the schema leaves empty, or one with no JSON shape
             };
             let advertised = property.types();
@@ -225,6 +225,7 @@ fn each_tool_takes_the_arguments_the_schema_names() {
             // Optionality is part of the contract a caller relies on: a field that
             // becomes required breaks every caller that omitted it, and one that
             // stops being required is a validation the tool no longer does.
+            let optional = optional_by_type || field.omittable;
             let required = tool.input_schema.required.contains(&field.tool);
             if optional && required {
                 wrong.push(format!(

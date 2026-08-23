@@ -117,6 +117,13 @@ struct Field {
   # tool argument and `Option<char>` on the socket; `force` is `Option<bool>` and
   # `bool`. What this catches is a type changing on one side, which is the failure a
   # name check cannot see: a field going from a number to a string keeps its name.
+
+  omittable @6 :Bool;
+  # Whether a caller may leave this out on the wire, whatever the Rust type says.
+  # `Option<T>` says it already. A plain `bool` behind serde's `default` says the
+  # same thing and the type does not show it, so `force` and `dry_run` read as
+  # required while every caller omits them. Recorded because what a caller must send
+  # is the contract, and the Rust spelling is only evidence about it.
 }
 
 
@@ -132,6 +139,7 @@ const operations :List(Operation) = [
     aliases = [],
     note = "",
     fields = [
+      ( cli = "", tool = "title", socket = "title", note = "no flag: the command line takes it as a positional argument, which is why the schema recorded every flag of this verb and not the parameter it is about", toolType = "String", socketType = "String" ),
       ( cli = "project", tool = "project", socket = "project", note = "", toolType = "String", socketType = "String" ),
       ( cli = "priority", tool = "priority", socket = "priority", note = "", toolType = "Option<String>", socketType = "Option<char>" ),
       ( cli = "type", tool = "issue_type", socket = "issue_type", note = "the flag cannot be a Rust field of that name, which is a keyword", toolType = "Option<String>", socketType = "Option<String>" ),
@@ -168,7 +176,7 @@ const operations :List(Operation) = [
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently", toolType = "String", socketType = "String" ),
-      ( cli = "force", tool = "force", socket = "force", note = "", toolType = "Option<bool>", socketType = "bool" ),
+      ( cli = "force", tool = "force", socket = "force", note = "", toolType = "Option<bool>", socketType = "bool" , omittable = true ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment", toolType = "", socketType = "Option<String>" )
     ] ),
   ( cli = "note", socket = "issue/note", mcp = "vissue_note", mutates = true, local = false,
@@ -223,7 +231,7 @@ const operations :List(Operation) = [
     note = "",
     fields = [
       ( cli = "project", tool = "project", socket = "project", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
-      ( cli = "dry-run", tool = "dry_run", socket = "dry_run", note = "", toolType = "Option<bool>", socketType = "bool" )
+      ( cli = "dry-run", tool = "dry_run", socket = "dry_run", note = "", toolType = "Option<bool>", socketType = "bool" , omittable = true )
     ] ),
   ( cli = "agenda", socket = "issue/agenda", mcp = "vissue_agenda", mutates = false, local = false,
     note = "",
@@ -235,6 +243,7 @@ const operations :List(Operation) = [
   ( cli = "ancestors", socket = "issue/ancestors", mcp = "vissue_ancestors", mutates = false, local = false,
     note = "",
     fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "no flag: the command line takes it as a positional argument, which is why the schema recorded every flag of this verb and not the parameter it is about. The tool spells it issue_id and the socket spells it id", toolType = "String", socketType = "String" ),
       ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
       ( cli = "depth", tool = "depth", socket = "depth", note = "", toolType = "Option<usize>", socketType = "Option<usize>" )
     ] ),
@@ -278,6 +287,7 @@ const operations :List(Operation) = [
   ( cli = "impact", socket = "issue/impact", mcp = "vissue_impact", mutates = false, local = false,
     note = "",
     fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "no flag: the command line takes it as a positional argument, which is why the schema recorded every flag of this verb and not the parameter it is about. The tool spells it issue_id and the socket spells it id", toolType = "String", socketType = "String" ),
       ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
       ( cli = "depth", tool = "depth", socket = "depth", note = "", toolType = "Option<usize>", socketType = "Option<usize>" )
     ] ),
@@ -302,6 +312,7 @@ const operations :List(Operation) = [
   ( cli = "related", socket = "issue/related", mcp = "vissue_related", mutates = false, local = false,
     note = "",
     fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "no flag: the command line takes it as a positional argument, which is why the schema recorded every flag of this verb and not the parameter it is about. The tool spells it issue_id and the socket spells it id", toolType = "String", socketType = "String" ),
       ( cli = "depth", tool = "depth", socket = "depth", note = "", toolType = "Option<usize>", socketType = "Option<usize>" ),
       ( cli = "format", tool = "format", socket = "", note = "command line only: it chooses a text rendering, and the remote surfaces answer in structure", toolType = "Option<String>", socketType = "" ),
       ( cli = "limit", tool = "limit", socket = "limit", note = "", toolType = "Option<usize>", socketType = "Option<usize>" )
@@ -309,6 +320,7 @@ const operations :List(Operation) = [
   ( cli = "search", socket = "issue/search", mcp = "vissue_search", mutates = false, local = false,
     note = "",
     fields = [
+      ( cli = "", tool = "query", socket = "query", note = "no flag: the command line takes it as a positional argument, which is why the schema recorded every flag of this verb and not the parameter it is about", toolType = "String", socketType = "String" ),
       ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
       ( cli = "limit", tool = "limit", socket = "limit", note = "", toolType = "Option<usize>", socketType = "Option<usize>" )
     ] ),
@@ -321,6 +333,7 @@ const operations :List(Operation) = [
   ( cli = "tree", socket = "issue/tree", mcp = "vissue_tree", mutates = false, local = false,
     note = "",
     fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "no flag: the command line takes it as a positional argument, which is why the schema recorded every flag of this verb and not the parameter it is about. The tool spells it issue_id and the socket spells it id", toolType = "String", socketType = "String" ),
       ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
       ( cli = "format", tool = "format", socket = "format", note = "", toolType = "Option<String>", socketType = "Option<String>" )
     ] ),
@@ -382,7 +395,7 @@ const operations :List(Operation) = [
     note = "",
     fields = [
       ( cli = "id", tool = "id", socket = "id", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
-      ( cli = "last", tool = "last", socket = "last", note = "", toolType = "Option<u64>", socketType = "u64" ),
+      ( cli = "last", tool = "last", socket = "last", note = "", toolType = "Option<u64>", socketType = "u64" , omittable = true ),
       ( cli = "poll-ms", tool = "poll_ms", socket = "poll_ms", note = "", toolType = "Option<u64>", socketType = "Option<u64>" ),
       ( cli = "timeout-ms", tool = "timeout_ms", socket = "timeout_ms", note = "", toolType = "Option<u64>", socketType = "Option<u64>" ),
       ( cli = "until-terminal", tool = "until_terminal", socket = "", note = "the method infers it from `id` being present", toolType = "Option<bool>", socketType = "" )
@@ -445,6 +458,6 @@ const operations :List(Operation) = [
     note = "no subcommand of its own: the command line spells it `mirror --check PATH`, and a tool cannot take a flag",
     fields = [
       ( cli = "", tool = "path", socket = "path", note = "the file being judged; the command line passes it to --check", toolType = "String", socketType = "String" ),
-      ( cli = "", tool = "projects", socket = "projects", note = "empty means the stamp's own list, since the file records what it covered", toolType = "Option<Vec<String>>", socketType = "Vec<String>" )
+      ( cli = "", tool = "projects", socket = "projects", note = "empty means the stamp's own list, since the file records what it covered", toolType = "Option<Vec<String>>", socketType = "Vec<String>", omittable = true )
     ] ),
 ];

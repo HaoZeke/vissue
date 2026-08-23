@@ -682,6 +682,29 @@ fn the_socket_answers_every_method_the_schema_names() {
     );
 }
 
+/// A value of the type the schema names, and one the type must reject.
+///
+/// `None` for a type with no obvious JSON shape, which the check then skips rather
+/// than guessing at.
+fn sample_and_violation(socket_type: &str) -> Option<(Value, Value)> {
+    let inner = socket_type
+        .strip_prefix("Option<")
+        .and_then(|t| t.strip_suffix('>'))
+        .unwrap_or(socket_type)
+        .trim();
+    // An array is not a string, a number, a bool or a char, and a number is not an
+    // array, so each type gets a value serde has to refuse.
+    Some(match inner {
+        "String" => (json!("x"), json!([])),
+        "char" => (json!("A"), json!([])),
+        "bool" => (json!(true), json!([])),
+        "u8" | "u16" | "u32" | "u64" | "usize" | "i32" | "i64" => (json!(1), json!([])),
+        "f32" | "f64" => (json!(1.5), json!([])),
+        _ if inner.starts_with("Vec<") => (json!([]), json!(1)),
+        _ => return None,
+    })
+}
+
 /// Each method takes the parameters the schema names for it.
 ///
 /// The verb check says `issue/append` answers. It does not say the method takes
@@ -689,55 +712,118 @@ fn the_socket_answers_every_method_the_schema_names() {
 /// next: the issue being acted on is `id` here and `issue_id` as a tool argument,
 /// which is a real difference a caller has to know and which nothing recorded.
 ///
-/// Read off the param structs in `rpc.rs`, which is where serde decides the wire
-/// names, so what is checked is what a client has to send.
+/// Asked of a running owner rather than read out of the source. A parameter is
+/// present because the method refuses a value of the wrong type for it, and required
+/// because the method refuses the request without it -- both of which are what a
+/// client experiences, where a Rust type spelled in a source line is a claim about
+/// it. Two source scans stood here before, one to find the handler a match arm names
+/// and one to find the type it decodes, and both were rewritten after reporting
+/// working methods as unimplemented.
+///
+/// Nothing here executes: every request is built to fail at decode, and the
+/// `-32602` that comes back is the parameter check refusing it. That is why a
+/// mutating method can be asked this without writing anything.
 #[test]
 fn each_method_takes_the_parameters_the_schema_names() {
-    let rpc = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../vissue-control/src/rpc.rs"),
-    )
-    .expect("rpc.rs");
-    let dispatch_src =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/unix/dispatch.rs"))
-            .expect("dispatch.rs");
+    let h = Harness::new();
+    let mut client = h.connect();
+
+    let invalid_params = |client: &mut Client, method: &str, params: Value| -> bool {
+        matches!(client.request(method, params), Err(Error::Rpc(e)) if e.code == -32602)
+    };
+
+    // A synthetic value has to be one the method accepts, and a few parameters have
+    // small domains: a priority is A, B or C, and "x" is refused after decoding
+    // rather than during it. Held here as data because it is about these parameters
+    // and not about their types.
+    // An empty method means the value suits the parameter wherever it appears.
+    let constrained: &[(&str, &str, Value)] = &[
+        ("", "priority", json!("A")),
+        ("", "state", json!("TODO")),
+        ("", "if_state", json!("TODO")),
+        ("issue/tree", "format", json!("nodes")),
+        ("issue/related", "format", json!("ids")),
+    ];
 
     let mut wrong = Vec::new();
     for op in vissue_core::surface::operations() {
-        // Same rule as the tool check: only verbs whose parameters the schema
-        // names. A read method takes a shared param type or none.
+        // Same rule as the tool check: only verbs whose parameters the schema names.
+        // A read method takes a shared param type or none.
         if op.socket.is_empty() || !op.fields.iter().any(|f| !f.socket.is_empty()) {
             continue;
         }
-        // The params type comes from the handler that decodes it, not from the
-        // method's name. Several methods share one: list and ready both take
-        // IssueListParams, export, graph and roadmap take ProjectFilterParams,
-        // ancestors and impact take WalkParams. Deriving `<Verb>Params` reported
-        // working methods as unimplemented, which is the guess being wrong rather
-        // than the method.
-        let Some(struct_name) = method_params_type(&dispatch_src, &op.socket) else {
-            wrong.push(format!("{}: no handler decoding a params type", op.socket));
-            continue;
-        };
-        let Some(body) = vissue_core::surface::struct_body(&rpc, &struct_name) else {
-            wrong.push(format!("{}: no {struct_name} to check", op.socket));
-            continue;
-        };
-        for field in &op.fields {
-            if field.socket.is_empty() {
+        let typed: Vec<(&str, Value, Value, bool)> = op
+            .fields
+            .iter()
+            .filter(|f| !f.socket.is_empty())
+            .filter_map(|f| {
+                let (mut good, bad) = sample_and_violation(&f.socket_type)?;
+                if let Some((_, _, value)) = constrained
+                    .iter()
+                    .find(|(m, n, _)| *n == f.socket && (m.is_empty() || *m == op.socket))
+                {
+                    good = value.clone();
+                }
+                let optional = f.socket_type.starts_with("Option<") || f.omittable;
+                Some((f.socket.as_str(), good, bad, optional))
+            })
+            .collect();
+
+        let base: serde_json::Map<String, Value> = typed
+            .iter()
+            .map(|(name, good, _, _)| ((*name).to_string(), good.clone()))
+            .collect();
+
+        // Without this the method's whole row is vacuous. If the schema does not name
+        // every parameter the method requires, a request built from the schema fails
+        // to decode whatever else is done to it, so every wrong-type check below
+        // would pass by refusing a request that was already being refused. The
+        // decode error names the parameter it wanted.
+        match client.request(&op.socket, Value::Object(base.clone())) {
+            Err(Error::Rpc(e)) if e.code == -32602 => {
+                wrong.push(format!(
+                    "{}: a request naming every parameter the schema records is still \
+                     refused, so the schema does not name them all: {}",
+                    op.socket, e.message
+                ));
                 continue;
             }
-            let Some(line) = vissue_core::surface::declared_field(body, &field.socket) else {
-                wrong.push(format!("{struct_name} has no {}", field.socket));
-                continue;
-            };
-            // And its type, since a field going from a number to a string keeps its
-            // name and no name check would notice.
-            if !field.socket_type.is_empty() && !line.contains(&field.socket_type) {
+            _ => {}
+        }
+
+        for (name, _, bad, optional) in &typed {
+            // A value of the wrong type has to be refused, which it can only be by a
+            // method that reads this parameter and holds it to this type.
+            let mut violating = base.clone();
+            violating.insert((*name).to_string(), bad.clone());
+            if !invalid_params(&mut client, &op.socket, Value::Object(violating)) {
                 wrong.push(format!(
-                    "{struct_name}.{} is not {}: {}",
-                    field.socket,
-                    field.socket_type,
-                    line.trim()
+                    "{} accepts {} of the wrong type, so it does not take it as {}",
+                    op.socket,
+                    name,
+                    op.fields
+                        .iter()
+                        .find(|f| f.socket == *name)
+                        .map_or("", |f| f.socket_type.as_str())
+                ));
+            }
+
+            // And optionality, which is the part of the contract a caller plans
+            // around: a parameter that becomes required breaks everyone who omitted
+            // it.
+            let mut without = base.clone();
+            without.remove(*name);
+            let refused = invalid_params(&mut client, &op.socket, Value::Object(without));
+            if *optional && refused {
+                wrong.push(format!(
+                    "{} requires {name}, which the schema names optional",
+                    op.socket
+                ));
+            }
+            if !*optional && !refused {
+                wrong.push(format!(
+                    "{} answers without {name}, which the schema names required",
+                    op.socket
                 ));
             }
         }
@@ -753,6 +839,10 @@ fn each_method_takes_the_parameters_the_schema_names() {
 /// The mirror of the check above, and the direction that was missing everywhere: a
 /// method the schema omits was invisible to every test, exactly as a verb the schema
 /// omitted used to be.
+///
+/// The one check here that reads source, because it is the one question a handshake
+/// cannot answer: a client can ask whether a named method answers, and no client can
+/// ask for the names it has not been told. The match arms are that list.
 #[test]
 fn every_method_the_server_dispatches_is_in_the_schema() {
     let dispatch =
@@ -787,31 +877,6 @@ fn every_method_the_server_dispatches_is_in_the_schema() {
         unknown.is_empty(),
         "these methods are dispatched and no schema row mentions them: {unknown:?}"
     );
-}
-
-/// The params type a method decodes, found through the handler its match arm names.
-///
-/// Written carefully because the first attempt was not: it searched for the first
-/// `": "` in the rest of the file and then looked backwards, which found something
-/// for every method and the right thing for none.
-fn method_params_type(dispatch: &str, method: &str) -> Option<String> {
-    // The match arm names the handler.
-    let arm = dispatch.find(&format!("\"{method}\" => "))?;
-    let arm_line = dispatch[arm..].lines().next()?;
-    let handler = arm_line.split("=> ").nth(1)?.split('(').next()?.trim();
-
-    // The handler's own body, and no further.
-    let at = dispatch.find(&format!("fn {handler}("))?;
-    let body = &dispatch[at..];
-    let stop = body[1..].find("\nfn ").map_or(body.len(), |e| e + 1);
-    let body = &body[..stop];
-
-    // `let params: XParams = decode(params)?;`
-    let line = body.lines().find(|l| {
-        l.trim_start().starts_with("let params:") || l.trim_start().starts_with("let _params:")
-    })?;
-    let ty = line.split(':').nth(1)?.split('=').next()?.trim();
-    Some(ty.to_string())
 }
 
 /// Every mutating reply has the same shape.

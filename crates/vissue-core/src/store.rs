@@ -151,9 +151,26 @@ pub fn with_issues_locks<R, F>(paths: &[&Path], f: F) -> Result<R>
 where
     F: FnOnce() -> Result<R>,
 {
-    let mut keys: Vec<PathBuf> = paths.iter().map(|p| (*p).to_path_buf()).collect();
-    keys.sort();
-    keys.dedup();
+    // Deduplicated by the file each path resolves to, not by how it was spelled.
+    //
+    // The process mutex is keyed on the canonical path, so two spellings of one
+    // file hand back the same non-reentrant mutex; locking it twice in this loop
+    // is a self-deadlock, and the second advisory lock on the same file from a
+    // second descriptor blocks as well. Two configured roots that are links to
+    // one tree, or the same root written two ways, are enough to reach it, and a
+    // mint now locks every twin file rather than one.
+    let mut seen: Vec<PathBuf> = Vec::new();
+    let mut keys: Vec<PathBuf> = Vec::new();
+    let mut ordered: Vec<PathBuf> = paths.iter().map(|p| (*p).to_path_buf()).collect();
+    ordered.sort();
+    for path in ordered {
+        let identity = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if seen.contains(&identity) {
+            continue;
+        }
+        seen.push(identity);
+        keys.push(path);
+    }
     let mutexes: Vec<Arc<Mutex<()>>> = keys.iter().map(|k| process_mutex_for(k)).collect();
     let mut proc_guards = Vec::with_capacity(mutexes.len());
     let mut cross_guards = Vec::with_capacity(keys.len());

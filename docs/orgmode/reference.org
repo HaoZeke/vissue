@@ -273,7 +273,10 @@ tracker root you are willing to let the caller edit, not at a home directory.
 
 Every read-modify-write cycle takes a process-local mutex and an advisory lock
 on =issues.org.lock=, then writes through a temporary that is flushed to the
-device, uniquely named, and renamed into place. Concurrent creates from
+device, uniquely named, and renamed into place. A cycle over several files takes
+the locks in sorted order and counts a file once however it was spelled: the
+mutex is keyed on the resolved path, so two roots that are links to one tree
+would otherwise take the same non-reentrant mutex twice and hang. Concurrent creates from
 several processes therefore neither lose headings nor collide on the
 temporary, and a crash mid-write leaves the previous file rather than a
 truncated one. Any other tool writing the same file is expected to take that
@@ -309,14 +312,25 @@ which of them voted.
 the heading, one line each, so the file shows who thinks what without a tool.
 
 One ballot per identity. Casting again replaces it and says what changed, which
-keeps an agent that reconsiders from appearing twice.
+keeps an agent that reconsiders from appearing twice. A drawer edited by hand into
+two lines for one name collapses to the last of them on the next read, because the
+tally counts on the invariant.
 
-The tally distinguishes three outcomes, because a count that calls all three
+An identity may not contain a colon followed by a space. A choice may, which is
+why the line splits on the first one, and an identity holding one would be read
+back as a shorter name with the rest of itself attached to the choice. =vote=
+refuses rather than filing the ballot under an agent that never voted.
+
+Lines the parser does not recognise are kept where they are, so a comment left in
+the drawer survives the next vote.
+
+The tally distinguishes four outcomes, because a count that calls them all
 agreement is worth nothing:
 
-- *consensus*, when one choice holds more than half the ballots;
+- *consensus*, when one choice holds more than half of at least two ballots;
 - *plurality only*, when one choice leads without a majority;
-- *no consensus*, when the lead is tied.
+- *no consensus*, when the lead is tied;
+- *one ballot only*, when a single agent has voted, which nobody has agreed with.
 
 A choice is one line and may contain a colon, so ="ship: after the audit"= is a
 vote and not a parse error.

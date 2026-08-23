@@ -839,7 +839,8 @@ pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> 
             .iter()
             .find(|x| x.id == id)
             .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
-        return Ok(tally_text(id, &read_ballots(h)));
+        let (ballots, _) = read_ballots(h);
+        return Ok(tally_text(id, &ballots));
     };
     let choice = choice.trim();
     if choice.is_empty() {
@@ -848,6 +849,23 @@ pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> 
     if choice.contains('\n') {
         return Err(anyhow!("a vote is one line").into());
     }
+    // A ballot line is `[date] agent: choice` and the choice may hold ": ", which
+    // is the point, so the split takes the first one. An identity holding ": "
+    // would be read back as a shorter name with the rest of itself prepended to
+    // the choice: the ballot filed under the wrong agent, and nothing saying so.
+    // Refused rather than mangled, and the message says what to change, because
+    // an identity is configuration.
+    if identity.contains(": ") {
+        return Err(anyhow!(
+            "the identity {identity:?} contains a colon and a space, which a ballot line \
+             cannot hold unambiguously; set VISSUE_AGENT or `agent` in the config to a \
+             name without one"
+        )
+        .into());
+    }
+    if identity.trim().is_empty() {
+        return Err(anyhow!("a ballot needs an identity to file it under").into());
+    }
     with_issues_lock(&path, || {
         let mut doc = IssueDoc::parse_file(&project, &path)?;
         let h = doc
@@ -855,7 +873,7 @@ pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> 
             .iter_mut()
             .find(|x| x.id == id)
             .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
-        let mut ballots = read_ballots(h);
+        let (mut ballots, foreign) = read_ballots(h);
         let stamp = today_inactive_bracket();
         let previous = ballots.iter().position(|b| b.agent == identity);
         let changed_from = previous.map(|i| ballots[i].choice.clone());
@@ -868,7 +886,7 @@ pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> 
             Some(i) => ballots[i] = ballot,
             None => ballots.push(ballot),
         }
-        write_ballots(h, &ballots);
+        write_ballots(h, &ballots, &foreign);
         doc.write()?;
         let mut out = match changed_from {
             Some(old) if old == choice => format!("{id}: {identity} already voted {choice}\n"),
@@ -880,37 +898,63 @@ pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> 
     })
 }
 
-/// Ballots on a heading, in the order the drawer holds them.
-fn read_ballots(h: &IssueHeading) -> Vec<Ballot> {
+/// Ballots on a heading, plus any line of the drawer this does not understand.
+///
+/// The foreign lines are carried rather than dropped. The drawer is org a person
+/// can edit, and a rewrite keeping only what the parser recognised would eat a
+/// comment somebody left there, silently, on the next vote.
+fn read_ballots(h: &IssueHeading) -> (Vec<Ballot>, Vec<String>) {
     let Some(drawer) = h
         .extra_drawers
         .iter()
         .find(|d| drawer_name_is(d, VOTES_DRAWER))
     else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
-    drawer
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            if line.starts_with(':') {
-                return None;
-            }
-            // `[date] agent: choice`, and the choice may hold colons.
-            let (stamp, rest) = line.strip_prefix('[')?.split_once("] ")?;
-            let (agent, choice) = rest.split_once(": ")?;
-            let agent = agent.trim();
-            let choice = choice.trim();
-            if agent.is_empty() || choice.is_empty() {
-                return None;
-            }
-            Some(Ballot {
-                agent: agent.to_string(),
-                choice: choice.to_string(),
-                stamp: format!("[{stamp}]"),
-            })
-        })
-        .collect()
+    let mut ballots: Vec<Ballot> = Vec::new();
+    let mut foreign: Vec<String> = Vec::new();
+    for line in drawer.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // The drawer's own delimiters are structure rather than content.
+        if trimmed.eq_ignore_ascii_case(&format!(":{VOTES_DRAWER}:"))
+            || trimmed.eq_ignore_ascii_case(":END:")
+        {
+            continue;
+        }
+        match parse_ballot(trimmed) {
+            // One ballot per agent is the invariant the tally counts on, and a
+            // hand-edited drawer can hold two lines for one name. Collapsed on
+            // read, last line winning, so a duplicate cannot make one agent
+            // count twice and the recast path cannot leave the older line
+            // behind by replacing only the first.
+            Some(b) => match ballots.iter_mut().find(|x| x.agent == b.agent) {
+                Some(existing) => *existing = b,
+                None => ballots.push(b),
+            },
+            None => foreign.push(trimmed.to_string()),
+        }
+    }
+    (ballots, foreign)
+}
+
+/// `[date] agent: choice`. The choice may hold ": ", so the first one delimits
+/// and the agent may not contain it; [`vote`] refuses an identity that does.
+fn parse_ballot(line: &str) -> Option<Ballot> {
+    let (stamp, rest) = line.strip_prefix('[')?.split_once("] ")?;
+    let (agent, choice) = rest.split_once(": ")?;
+    let agent = agent.trim();
+    let choice = choice.trim();
+    if agent.is_empty() || choice.is_empty() {
+        return None;
+    }
+    Some(Ballot {
+        agent: agent.to_string(),
+        choice: choice.to_string(),
+        stamp: format!("[{stamp}]"),
+    })
 }
 
 fn drawer_name_is(drawer: &str, name: &str) -> bool {
@@ -923,18 +967,34 @@ fn drawer_name_is(drawer: &str, name: &str) -> bool {
         .is_some_and(|n| n.eq_ignore_ascii_case(name))
 }
 
-/// Replace the heading's votes drawer, dropping it when nobody has voted.
-fn write_ballots(h: &mut IssueHeading, ballots: &[Ballot]) {
-    h.extra_drawers.retain(|d| !drawer_name_is(d, VOTES_DRAWER));
-    if ballots.is_empty() {
+/// Replace the heading's votes drawer in place, dropping it when it would be empty.
+///
+/// In place, because `retain` then `push` moves the drawer past every other one on
+/// the heading, so each vote would also reorder unrelated org.
+fn write_ballots(h: &mut IssueHeading, ballots: &[Ballot], foreign: &[String]) {
+    let at = h
+        .extra_drawers
+        .iter()
+        .position(|d| drawer_name_is(d, VOTES_DRAWER));
+    if ballots.is_empty() && foreign.is_empty() {
+        if let Some(i) = at {
+            h.extra_drawers.remove(i);
+        }
         return;
     }
     let mut drawer = format!(":{VOTES_DRAWER}:\n");
     for b in ballots {
         drawer.push_str(&format!("{} {}: {}\n", b.stamp, b.agent, b.choice));
     }
+    for line in foreign {
+        drawer.push_str(line);
+        drawer.push('\n');
+    }
     drawer.push_str(":END:\n");
-    h.extra_drawers.push(drawer);
+    match at {
+        Some(i) => h.extra_drawers[i] = drawer,
+        None => h.extra_drawers.push(drawer),
+    }
 }
 
 /// The tally, and whether it is a consensus.
@@ -969,6 +1029,15 @@ fn tally_text(id: &str, ballots: &[Ballot]) -> String {
     let tied = rows.iter().filter(|(_, who)| who.len() == top).count();
     if tied > 1 {
         let _ = writeln!(out, "  no consensus: {tied} options tied at {top}");
+    } else if total < 2 {
+        // One agent agreeing with itself is not a consensus, and calling it one
+        // is how a single unreviewed opinion gets acted on as though it had been
+        // checked. This is the whole failure the tally exists to prevent.
+        let _ = writeln!(
+            out,
+            "  one ballot only: {}, which nobody has agreed with yet",
+            rows[0].0
+        );
     } else if top * 2 > total {
         let _ = writeln!(out, "  consensus: {} ({top} of {total})", rows[0].0);
     } else {
@@ -2865,5 +2934,161 @@ mod tests {
             tally.contains(&format!("{n} votes from 1 option")),
             "a ballot was lost: {tally}"
         );
+    }
+    /// One agent agreeing with itself is not a consensus. Calling it one is how a
+    /// single unreviewed opinion gets acted on as though it had been checked.
+    #[test]
+    fn a_single_ballot_is_not_called_a_consensus() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        let out = voted(&layout, &id, "agent-a", "ship");
+        assert!(out.contains("one ballot only: ship"), "{out}");
+        assert!(!out.contains("consensus: ship"), "{out}");
+
+        // A second agent agreeing makes it one.
+        let out = voted(&layout, &id, "agent-b", "ship");
+        assert!(out.contains("consensus: ship (2 of 2)"), "{out}");
+    }
+
+    /// The ballot line splits on the first ": " so a choice may contain one. An
+    /// identity containing one would therefore come back as a shorter name with
+    /// the rest of itself glued to the choice, filing the vote under an agent
+    /// that never voted. Refused, because silently misattributing is worse.
+    #[test]
+    fn an_identity_that_the_line_format_cannot_hold_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        let err = vote(&layout, &id, Some("ship"), "team: alpha").unwrap_err();
+        assert!(err.to_string().contains("colon"), "{err}");
+        assert!(vote(&layout, &id, Some("ship"), "   ").is_err());
+
+        // And the tally is untouched by the refusal.
+        assert!(
+            vote(&layout, &id, None, "reader")
+                .unwrap()
+                .contains("no votes")
+        );
+    }
+
+    /// The drawer is org a person can edit. A rewrite that kept only the lines
+    /// this parser understands would eat a comment left there, on the next vote,
+    /// without saying anything.
+    #[test]
+    fn a_hand_written_line_in_the_drawer_survives_a_vote() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        voted(&layout, &id, "agent-a", "ship");
+
+        // Someone edits the drawer by hand.
+        let path = layout.project_issues_path("sample");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let edited = text.replace(
+            ":VOTES:\n",
+            ":VOTES:\n# decided at the Tuesday review, do not clear\n",
+        );
+        std::fs::write(&path, edited).unwrap();
+
+        voted(&layout, &id, "agent-b", "hold");
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            after.contains("# decided at the Tuesday review, do not clear"),
+            "the hand-written line was eaten: {after}"
+        );
+        assert!(after.contains("agent-a: ship"), "{after}");
+        assert!(after.contains("agent-b: hold"), "{after}");
+    }
+
+    /// Two spellings of one file must lock it once. The process mutex is keyed on
+    /// the canonical path, so a second lock on the same mutex is a self-deadlock
+    /// and a second advisory lock on the same file blocks too. A mint locks every
+    /// twin file now, so two roots that are links to one tree reach this.
+    ///
+    /// Written as a create rather than a unit test of the helper because the hang
+    /// is what is being ruled out, and it has to be ruled out on the path callers
+    /// take.
+    ///
+    /// Through a symlink, and that detail is the test. A first attempt used
+    /// `dir/./PREFIX/...` against `dir/PREFIX/...` and passed with the bug still
+    /// in, because `Path` compares by components and drops `.`, so the plain
+    /// dedup already collapsed them. Only a link makes two paths that differ by
+    /// components and name one file.
+    #[cfg(unix)]
+    #[test]
+    fn one_file_named_two_ways_is_locked_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        let direct = layout.project_issues_path("sample");
+        create(&layout, "sample", "first", CreateOpts::default()).unwrap();
+
+        // A second name for the same tree, the way two configured roots can be.
+        let link = dir.path().join("linked");
+        std::os::unix::fs::symlink(dir.path().join(DEFAULT_PREFIX), &link).unwrap();
+        let indirect = link.join("sample").join("issues.org");
+        assert!(indirect.exists(), "the link does not reach the file");
+        assert_ne!(
+            direct.components().count(),
+            0,
+            "the two paths must differ by components or this proves nothing"
+        );
+        assert!(
+            direct != indirect,
+            "the two paths compare equal, so the plain dedup would already collapse them"
+        );
+
+        let twins = vec![direct.clone(), indirect];
+        let id = create(
+            &layout,
+            "sample",
+            "second",
+            CreateOpts {
+                quiet: true,
+                extra_id_paths: &twins,
+                ..Default::default()
+            },
+        )
+        .expect("create hung or failed on an aliased lock path")
+        .trim()
+        .to_string();
+        assert!(id.starts_with("sample-"), "{id}");
+    }
+
+    /// A drawer edited by hand can hold two lines for one agent. The tally counts
+    /// on one ballot per agent, so the duplicate has to collapse rather than let
+    /// one voter count twice.
+    #[test]
+    fn two_hand_written_lines_for_one_agent_collapse_to_the_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "what to do", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        voted(&layout, &id, "agent-b", "hold");
+
+        let path = layout.project_issues_path("sample");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let edited = text.replace(
+            ":VOTES:\n",
+            ":VOTES:\n[2026-01-01 Thu] agent-a: ship\n[2026-02-02 Mon] agent-a: rework\n",
+        );
+        std::fs::write(&path, edited).unwrap();
+
+        let tally = vote(&layout, &id, None, "reader").unwrap();
+        // agent-a counts once, as rework, so two agents and two options.
+        assert!(tally.contains("2 votes from 2 options"), "{tally}");
+        assert!(tally.contains("rework"), "{tally}");
+        assert!(!tally.contains("ship"), "{tally}");
+
+        // And the rewrite leaves one line for that agent, not two.
+        voted(&layout, &id, "agent-c", "hold");
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(after.matches("agent-a:").count(), 1, "{after}");
     }
 }

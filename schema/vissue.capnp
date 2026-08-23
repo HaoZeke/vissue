@@ -45,9 +45,21 @@ struct Operation {
   # today, and the schema records that rather than pretending otherwise.
 
   aliases @7 :List(Text);
-  # Other names the command line answers to for this verb. `create` answers to `q`,
-  # which prints only the new id. Recorded because the check that every subcommand
-  # appears here found `q` and had no way to know it was not a verb of its own.
+  # Other names the command line answers to for this verb: one verb under two
+  # spellings, taking the same flags either way. A subcommand that merely does a
+  # similar job with fewer flags is not this -- it is its own row with
+  # `shorthandFor` set -- because a row of ten fields would then answer for a verb
+  # that accepts three.
+
+  shorthandFor @8 :Text;
+  # The operation this verb is a narrower spelling of, empty for the ordinary case.
+  # `q` is a shorthand for `create`: it takes three of create's fields and prints
+  # only the id. A shorthand needs no surface of its own, because everything it can
+  # do the operation it names can do, and that is checked rather than asserted --
+  # the named operation has to exist, has to reach the socket if this one mutates,
+  # and has to take every field this one takes. A mutating verb that reaches no
+  # surface and names nothing is a hole in the change stream, which is the thing
+  # this field must not become an excuse for.
 
   local @6 :Bool;
   # True for a verb that only makes sense in the process it is typed into: the
@@ -117,7 +129,7 @@ const globalFlags :List(Text) = [
 
 const operations :List(Operation) = [
   ( cli = "create", socket = "issue/create", mcp = "vissue_create", mutates = true, local = false,
-    aliases = ["q"],
+    aliases = [],
     note = "",
     fields = [
       ( cli = "project", tool = "project", socket = "project", note = "", toolType = "String", socketType = "String" ),
@@ -131,6 +143,14 @@ const operations :List(Operation) = [
       ( cli = "body-file", tool = "", socket = "", note = "no tool argument: a path resolves on the host running the server, not the caller's", toolType = "", socketType = "" ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment", toolType = "", socketType = "Option<String>" ),
       ( cli = "quiet", tool = "", socket = "", note = "command line only: it trims the output to the id, and a caller reading a field does not need it", toolType = "", socketType = "" )
+    ] ),
+  ( cli = "q", socket = "", mcp = "", mutates = true, local = false,
+    aliases = [], shorthandFor = "create",
+    note = "quick capture: a subcommand of its own rather than an alias of create, because it takes three of create's fields and prints only the id. No socket method or tool of its own, because create reaches both and takes every field this takes.",
+    fields = [
+      ( cli = "project", tool = "", socket = "", note = "", toolType = "", socketType = "" ),
+      ( cli = "type", tool = "", socket = "", note = "the flag cannot be a Rust field of that name, which is a keyword", toolType = "", socketType = "" ),
+      ( cli = "parent", tool = "", socket = "", note = "", toolType = "", socketType = "" )
     ] ),
   ( cli = "update", socket = "issue/update", mcp = "vissue_update", mutates = true, local = false,
     note = "",

@@ -34,6 +34,8 @@ pub struct Operation {
     pub local: bool,
     /// Other names the command line answers to for this verb.
     pub aliases: Vec<String>,
+    /// The operation this verb is a narrower spelling of, empty for the ordinary case.
+    pub shorthand_for: String,
     /// Why a surface is empty, when one is.
     pub note: String,
     /// Fields the verb takes, each named per surface.
@@ -106,6 +108,7 @@ fn read_one(row: operation::Reader<'_>) -> Operation {
                     .collect()
             })
             .unwrap_or_default(),
+        shorthand_for: text(row.get_shorthand_for()),
         note: text(row.get_note()),
         fields,
     }
@@ -334,19 +337,94 @@ mod tests {
         assert!(ops.iter().any(|o| o.cli == "vote"), "vote is missing");
     }
 
-    /// Every mutating verb has a socket method. This was false for five verbs at
-    /// once, and for `append` the whole time the socket existed.
+    /// Every mutating verb reaches the socket, itself or through the verb it is a
+    /// shorthand for. This was false for five verbs at once, and for `append` the
+    /// whole time the socket existed.
+    ///
+    /// A write that has to leave the socket puts a hole in the change stream exactly
+    /// where that write was, so the reachability is what matters rather than the
+    /// method count: `q` has no method and needs none, because `create` has one and
+    /// takes everything `q` takes.
     #[test]
-    fn every_mutating_verb_has_a_socket_method() {
-        let missing: Vec<String> = operations()
-            .into_iter()
-            .filter(|o| o.mutates && o.socket.is_empty())
-            .map(|o| o.cli)
-            .collect();
+    fn every_mutating_verb_reaches_the_socket() {
+        let ops = operations();
+        let mut missing = Vec::new();
+        for op in ops.iter().filter(|o| o.mutates && o.socket.is_empty()) {
+            if op.shorthand_for.is_empty() {
+                missing.push(format!("{} reaches no socket method", op.cli));
+                continue;
+            }
+            match ops.iter().find(|o| o.cli == op.shorthand_for) {
+                None => missing.push(format!(
+                    "{} is a shorthand for {}, which is in no row",
+                    op.cli, op.shorthand_for
+                )),
+                Some(target) if target.socket.is_empty() => missing.push(format!(
+                    "{} is a shorthand for {}, which reaches no socket method either",
+                    op.cli, op.shorthand_for
+                )),
+                Some(_) => {}
+            }
+        }
         assert!(
             missing.is_empty(),
-            "these change a file and have no socket method: {missing:?}"
+            "these change a file and no socket method can: {missing:?}"
         );
+    }
+
+    /// A shorthand takes a subset of the fields of the verb it shortens.
+    ///
+    /// That subset is what makes the exemption above sound. A shorthand taking a
+    /// field its target does not is not a narrower spelling of it, and answering for
+    /// it with the target's socket method would drop that field on the floor.
+    #[test]
+    fn a_shorthand_takes_a_subset_of_what_it_shortens() {
+        let ops = operations();
+        let mut wrong = Vec::new();
+        for op in ops.iter().filter(|o| !o.shorthand_for.is_empty()) {
+            let Some(target) = ops.iter().find(|o| o.cli == op.shorthand_for) else {
+                continue; // reported by every_mutating_verb_reaches_the_socket
+            };
+            for field in &op.fields {
+                if field.cli.is_empty() {
+                    continue;
+                }
+                if !target.fields.iter().any(|f| f.cli == field.cli) {
+                    wrong.push(format!(
+                        "{} takes --{} and {} does not",
+                        op.cli, field.cli, target.cli
+                    ));
+                }
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "these shorthands take fields the verb they shorten does not: {wrong:?}"
+        );
+    }
+
+    /// A shorthand names a verb other than itself, and that verb is not itself a
+    /// shorthand. A cycle or a chain would make the reachability argument circular.
+    #[test]
+    fn a_shorthand_points_at_a_verb_that_stands_on_its_own() {
+        let ops = operations();
+        let mut wrong = Vec::new();
+        for op in ops.iter().filter(|o| !o.shorthand_for.is_empty()) {
+            if op.shorthand_for == op.cli {
+                wrong.push(format!("{} is a shorthand for itself", op.cli));
+            }
+            if let Some(target) = ops
+                .iter()
+                .find(|o| o.cli == op.shorthand_for)
+                .filter(|t| !t.shorthand_for.is_empty())
+            {
+                wrong.push(format!(
+                    "{} shortens {}, which shortens {}",
+                    op.cli, target.cli, target.shorthand_for
+                ));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:?}");
     }
 
     /// A surface left empty says why, so a deliberate omission cannot pass for an

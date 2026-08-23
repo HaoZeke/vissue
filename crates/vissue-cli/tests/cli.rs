@@ -575,18 +575,44 @@ fn a_reader_that_closes_the_pipe_is_not_a_failure() {
     use std::io::Read as _;
     use std::process::Stdio;
 
+    // A pipe holds 64 KiB on Linux by default. The writer has to still be mid-corpus
+    // when the reader vanishes, so the corpus has to out-measure the buffer -- which
+    // is a byte count rather than an issue count. Long bodies reach it in two dozen
+    // writes where short titles need hundreds, and each create re-reads and rewrites
+    // the whole project file, so the count is what the setup costs.
+    const PIPE_BUFFER: usize = 64 * 1024;
+    let body = "b".repeat(8 * 1024);
+
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_str().unwrap().to_string();
-    for i in 0..400 {
+    for i in 0..24 {
         let out = vissue_cmd()
-            .args(["--root", &root, "q", "-p", "demo"])
-            .arg(format!(
-                "issue {i} with a title long enough that four hundred of them exceed a pipe buffer"
-            ))
+            .args([
+                "--root", &root, "create", "-p", "demo", "--quiet", "--body", &body,
+            ])
+            .arg(format!("issue {i} with a body long enough to fill a pipe"))
             .output()
             .expect("run vissue");
         assert!(out.status.success());
     }
+
+    // Without this the test passes whatever the writer does: a corpus that fits the
+    // buffer never blocks the writer, so dropping the reader proves nothing.
+    let whole = vissue_cmd()
+        .args(["--root", &root, "export"])
+        .output()
+        .expect("run vissue");
+    assert!(
+        whole.status.success(),
+        "export failed: {}",
+        String::from_utf8_lossy(&whole.stderr)
+    );
+    assert!(
+        whole.stdout.len() > 2 * PIPE_BUFFER,
+        "the corpus exports {} bytes, which a {PIPE_BUFFER}-byte pipe swallows without \
+         ever blocking the writer, so this test would assert nothing",
+        whole.stdout.len()
+    );
 
     let mut child = vissue_cmd()
         .args(["--root", &root, "export"])
@@ -1756,29 +1782,64 @@ fn the_command_line_offers_every_verb_the_schema_names() {
     );
 }
 
+/// The command line's own account of itself, read once.
+///
+/// `vissue surface` walks the built `clap::Command` and prints every subcommand with
+/// its aliases and long flags. Asking the parser is exact where reading its rendered
+/// help is a guess: a flag reaches the JSON because the parser accepts it, not
+/// because a line of help happened to spell it in a way a filter recognised. One
+/// process answers for the whole surface, so the checks below cost one spawn between
+/// them rather than one per verb.
+fn cli_surface() -> &'static Vec<CliVerb> {
+    static SURFACE: std::sync::OnceLock<Vec<CliVerb>> = std::sync::OnceLock::new();
+    SURFACE.get_or_init(|| {
+        let out = vissue(&["surface"]);
+        assert!(
+            out.status.success(),
+            "vissue surface failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let verbs: Vec<CliVerb> = serde_json::from_slice(&out.stdout)
+            .expect("vissue surface emits a JSON array of verbs");
+        assert!(
+            verbs.len() > 20,
+            "the command line reports {} subcommands, which is too few to be the real surface",
+            verbs.len()
+        );
+        verbs
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct CliVerb {
+    name: String,
+    hidden: bool,
+    aliases: Vec<String>,
+    flags: Vec<String>,
+}
+
 /// Each verb offers the flags the schema names for it.
 ///
 /// Naming a verb on each surface stops the verb going missing. It does not stop the
 /// surfaces disagreeing about what to call a field, which is the next way this
 /// drifts: a socket method taking `body` where the subcommand takes `--text` is two
 /// spellings of one idea and nothing would notice.
-///
-/// Read out of each subcommand's own help, so this is the parser answering rather
-/// than a scan of the source that declares it.
 #[test]
 fn each_verb_offers_the_flags_the_schema_names() {
+    let surface = cli_surface();
     let mut wrong = Vec::new();
     for op in vissue_core::surface::operations() {
         if op.cli.is_empty() || op.fields.is_empty() {
             continue;
         }
-        let help = vissue(&[&op.cli, "--help"]);
-        let text = String::from_utf8_lossy(&help.stdout).to_string();
+        let Some(verb) = surface.iter().find(|v| v.name == op.cli) else {
+            continue; // every_subcommand_appears_in_the_schema owns the other direction
+        };
         for field in &op.fields {
             if field.cli.is_empty() {
                 continue;
             }
-            if !text.contains(&format!("--{}", field.cli)) {
+            if !verb.flags.contains(&field.cli) {
                 wrong.push(format!("{} has no --{}", op.cli, field.cli));
             }
         }
@@ -1791,39 +1852,26 @@ fn each_verb_offers_the_flags_the_schema_names() {
 
 /// Every subcommand appears in the schema.
 ///
-/// This is the check that makes a *new* verb impossible to add unnoticed. Until it
-/// existed, the schema constrained only the verbs it already mentioned: a brand-new
-/// subcommand failed nothing, because nothing asked whether the schema knew about
-/// it, which is precisely how the earlier gaps arrived. `vote` was added to the
-/// command line and no test anywhere had an opinion.
+/// This is the check that makes a *new* verb impossible to add unnoticed. Without
+/// it the schema constrains only the verbs it already mentions: a brand-new
+/// subcommand fails nothing, because nothing asks whether the schema knows about it,
+/// which is how the earlier gaps arrived. `vote` reached the command line and no
+/// test anywhere had an opinion.
 ///
 /// Shell-completion variants are excluded because clap generates one subcommand per
 /// shell from a single `completions` verb, and they are not separate operations.
+/// Hidden subcommands describe the binary rather than the tracker, so a schema of
+/// tracker operations is the wrong place to enumerate them.
 #[test]
 fn every_subcommand_appears_in_the_schema() {
     const SHELLS: &[&str] = &["bash", "zsh", "fish", "elvish", "powershell"];
 
-    let help = vissue(&["--help"]);
-    let text = String::from_utf8_lossy(&help.stdout).to_string();
-    // clap lists subcommands one per line, indented, before the options block.
-    let listed: Vec<String> = text
-        .lines()
-        .take_while(|l| !l.starts_with("Options:"))
-        .filter(|l| l.starts_with("  ") && !l.trim().starts_with('-'))
-        .filter_map(|l| l.split_whitespace().next())
-        .filter(|w| w.chars().all(|c| c.is_ascii_lowercase() || c == '-'))
-        .filter(|w| !w.is_empty() && !SHELLS.contains(w) && *w != "help")
-        .map(str::to_string)
-        .collect();
-    assert!(
-        listed.len() > 20,
-        "no subcommands parsed out of help: {listed:?}"
-    );
-
     let known = vissue_core::surface::cli_verbs();
-    let unknown: Vec<&String> = listed
+    let unknown: Vec<&str> = cli_surface()
         .iter()
-        .filter(|v| !known.iter().any(|k| k == *v))
+        .filter(|v| !v.hidden && v.name != "help" && !SHELLS.contains(&v.name.as_str()))
+        .map(|v| v.name.as_str())
+        .filter(|name| !known.iter().any(|k| k == name))
         .collect();
     assert!(
         unknown.is_empty(),
@@ -1831,12 +1879,69 @@ fn every_subcommand_appears_in_the_schema() {
     );
 }
 
+/// The schema and the parser agree about which names are aliases.
+///
+/// An alias is one verb under two names, so it takes the flags of the verb it
+/// aliases. A separate subcommand that merely does a similar job takes its own, and
+/// calling it an alias overstates what a caller can pass: the schema recorded `q` as
+/// an alias of `create`, and `q` rejects `--body` and `--priority`, so a row that
+/// listed create's ten fields answered for a verb that accepts three.
+///
+/// Both directions matter. An alias the parser accepts and the schema omits is a
+/// verb no surface check can see; a name the schema calls an alias and the parser
+/// treats as its own subcommand needs its own row.
+#[test]
+fn the_schema_and_the_parser_agree_about_aliases() {
+    let surface = cli_surface();
+    let ops = vissue_core::surface::operations();
+
+    let mut wrong = Vec::new();
+    for op in &ops {
+        for alias in &op.aliases {
+            if surface.iter().any(|v| &v.name == alias) {
+                wrong.push(format!(
+                    "the schema calls {alias} an alias of {} and the parser makes it a \
+                     subcommand of its own, which takes its own flags",
+                    op.cli
+                ));
+            } else if !surface
+                .iter()
+                .any(|v| v.name == op.cli && v.aliases.contains(alias))
+            {
+                wrong.push(format!(
+                    "the schema calls {alias} an alias of {} and the parser does not",
+                    op.cli
+                ));
+            }
+        }
+    }
+    for verb in surface {
+        if verb.hidden {
+            continue;
+        }
+        for alias in &verb.aliases {
+            if !ops
+                .iter()
+                .any(|o| o.cli == verb.name && o.aliases.contains(alias))
+            {
+                wrong.push(format!(
+                    "{} answers to {alias} and no schema row says so",
+                    verb.name
+                ));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the schema and the command line disagree about aliases: {wrong:?}"
+    );
+}
+
 /// Every flag a verb takes is in the schema.
 ///
-/// The flag checks ran schema to surface only: a flag the schema names has to exist,
-/// and a flag that exists and the schema omits went unseen. That is the same
-/// asymmetry as at the verb level, one level down, and it was open while the verb
-/// level was closed.
+/// The flag checks run schema to surface: a flag the schema names has to exist. A
+/// flag that exists and the schema omits is the same asymmetry as at the verb level,
+/// one level down, and this is the direction that catches it.
 ///
 /// Global flags are subtracted from `globalFlags` in the schema rather than repeated
 /// on forty rows, so a per-verb row stays about what the verb actually takes. A verb
@@ -1845,10 +1950,10 @@ fn every_subcommand_appears_in_the_schema() {
 #[test]
 fn every_flag_a_verb_takes_is_in_the_schema() {
     let globals = vissue_core::surface::global_flags();
-    let ops = vissue_core::surface::operations();
+    let surface = cli_surface();
 
     let mut unknown = Vec::new();
-    for op in &ops {
+    for op in vissue_core::surface::operations() {
         // A local verb's flags are about this process rather than about an
         // operation: the HUD's nine are window management, `serve --detach` is a
         // lifecycle choice. Enumerating them in a schema of operations buys nothing
@@ -1856,24 +1961,12 @@ fn every_flag_a_verb_takes_is_in_the_schema() {
         if op.cli.is_empty() || op.local {
             continue;
         }
-        let help = vissue(&[&op.cli, "--help"]);
-        let text = String::from_utf8_lossy(&help.stdout).to_string();
-        // Long flags only. Short forms are an alias for one of them and clap prints
-        // them on the same line.
-        let mut taken: Vec<String> = text
-            .lines()
-            .filter_map(|line| line.split("--").nth(1))
-            .filter_map(|rest| rest.split_whitespace().next())
-            .map(|f| f.trim_end_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-'))
-            .filter(|f| !f.is_empty() && f.chars().all(|c| c.is_ascii_lowercase() || c == '-'))
-            .map(str::to_string)
-            .collect();
-        taken.sort_unstable();
-        taken.dedup();
-
+        let Some(verb) = surface.iter().find(|v| v.name == op.cli) else {
+            continue;
+        };
         let named: Vec<&str> = op.fields.iter().map(|f| f.cli.as_str()).collect();
-        for flag in taken {
-            if globals.contains(&flag) || named.contains(&flag.as_str()) {
+        for flag in &verb.flags {
+            if globals.contains(flag) || named.contains(&flag.as_str()) {
                 continue;
             }
             unknown.push(format!("{} --{flag}", op.cli));

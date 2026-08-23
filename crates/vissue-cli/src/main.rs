@@ -479,6 +479,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// This binary's own surface as JSON: every subcommand, its aliases, and its
+    /// long flags.
+    ///
+    /// Hidden because it describes the tool rather than the tracker, and a person
+    /// reading `--help` is looking for the second. It exists so the checks that hold
+    /// the command line to `schema/vissue.capnp` can ask the parser what it accepts
+    /// rather than parse what it prints, in one process rather than one per verb.
+    #[command(hide = true)]
+    Surface,
     /// Print the resolved binary, root, and prefix.
     Identity,
     /// Own the per-user Unix control socket.
@@ -1120,6 +1129,26 @@ fn run() -> Result<()> {
                     emitln!("{}", project.key);
                 }
             }
+        }
+        Command::Surface => {
+            let mut cmd = Cli::command();
+            cmd.build();
+            let verbs: Vec<serde_json::Value> = cmd
+                .get_subcommands()
+                .map(|sub| {
+                    let flags: Vec<&str> = sub
+                        .get_arguments()
+                        .filter_map(clap::Arg::get_long)
+                        .collect();
+                    serde_json::json!({
+                        "name": sub.get_name(),
+                        "hidden": sub.is_hide_set(),
+                        "aliases": sub.get_all_aliases().collect::<Vec<_>>(),
+                        "flags": flags,
+                    })
+                })
+                .collect();
+            emitln!("{}", serde_json::to_string_pretty(&verbs)?);
         }
         Command::Completions { shell } => {
             let mut cmd = Cli::command();

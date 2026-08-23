@@ -401,6 +401,21 @@ any directory. Pass =--root= explicitly for a scratch tracker, and =vissue
 identity= reports which binary and which root are in play before you commit
 to a mutation.
 
+* Ask the binary what it accepts
+
+=vissue surface= walks the parser and prints every subcommand with its aliases and
+long flags as JSON. Read it from a wrapper, a completion table of your own, or a check
+over this command line.
+
+#+begin_src console
+$ vissue surface | jq -r '.[] | select(.hidden == false) | .name'
+$ vissue surface | jq -r '.[] | select(.name == "count") | .flags[]'
+#+end_src
+
+Parsing =--help= answers the same question worse. Help text is laid out for a person,
+so a wrapper reading it breaks the first time a description grows long enough to wrap.
+It also cannot tell a flag from a word in a sentence about one.
+
 * Install shell completions
 
 Generated from the binary's own argument definitions, so they cannot drift.

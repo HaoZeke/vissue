@@ -228,6 +228,10 @@ $ vissue completions zsh > ~/.zfunc/_vissue
 $ vissue man > ~/.local/share/man/man1/vissue.1
 ```
 
+`vissue surface` prints the command line as JSON, one object per subcommand with its
+aliases and long flags. Read that from a wrapper or a check rather than parsing help
+text, which is laid out for a person.
+
 ## Documentation
 
 Full documentation is at **[vissue.rgoswami.me](https://vissue.rgoswami.me)**.

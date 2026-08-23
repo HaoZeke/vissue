@@ -30,6 +30,7 @@
 | =hud=                                                                     | Iced task board; =--rofi= for the dmenu picker (=--mode=) |
 | =keys=                                                                    | The board key catalog; =--check= validates an overlay, =--occupancy= lists taken chords |
 | =completions=, =man=                                                      | Shell completion scripts and the manual page                             |
+| =surface=                                                                 | This binary's own subcommands, aliases and flags as JSON; hidden, and not about the tracker |
 
 * Projects
 
@@ -309,6 +310,38 @@ The command line answers through =vissue surface=, a hidden subcommand that walk
 the built =clap::Command= and emits every subcommand with its aliases and long flags.
 A flag is checked because the parser accepts it, not because a line of help spelled
 it in a recognisable way.
+
+Hidden because it describes the tool and not the tracker, and somebody reading
+=--help= is looking for the second. Hidden is not secret. It runs, it is documented
+here, and a wrapper needing to know what this binary accepts asks it instead of
+parsing help output.
+
+One JSON array, one object per subcommand, in the order clap keeps them:
+
+#+begin_src console
+$ vissue surface
+[
+  {
+    "aliases": [],
+    "flags": ["project", "state", "ready", "root", "prefix", "no-route", "help"],
+    "hidden": false,
+    "name": "count"
+  },
+  ...
+]
+#+end_src
+
+| Field      | Meaning                                                                  |
+|------------+--------------------------------------------------------------------------|
+| =name=     | The subcommand as clap spells it                                         |
+| =hidden=   | Whether =--help= lists it                                                |
+| =aliases=  | Other names this same verb answers to, taking the same flags             |
+| =flags=    | Long flags, without dashes, including the global ones every subcommand carries |
+
+Short forms are absent because each is an alias for a long one, and a positional
+argument is absent because it has no flag to name: =create= takes its title
+positionally, so =title= is in no =flags= list. The schema records both, which is why
+the checks read positional parameters from there rather than from here.
 
 The tools answer through an MCP =tools/list= over stdio, which returns the same
 schema an agent is given: each argument's name, its JSON type, and whether it is

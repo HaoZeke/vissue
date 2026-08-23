@@ -898,47 +898,29 @@ fn a_body_can_be_piped_in() {
     );
 }
 
-/// The reference documents every subcommand the binary offers.
+/// The reference documents every subcommand the binary offers, hidden ones included.
 ///
-/// The command table is what a reader consults to find out what vissue can
-/// do, so a verb missing from it is a verb that effectively does not exist.
-/// Reading `--help` rather than a second list keeps the two together.
+/// The command table is what a reader consults to find out what vissue can do, so a
+/// verb missing from it is a verb that effectively does not exist.
+///
+/// Hidden counts. `--help` not listing a verb is a choice about what a person reading
+/// help is looking for, and says nothing about whether the verb needs writing down:
+/// `surface` is hidden and other tooling is expected to call it, so a reader who finds
+/// it in a script has somewhere to look it up. Reading the parser's own list rather
+/// than its help output is what makes the hidden ones visible here at all.
+///
+/// `help` is clap's, not this binary's.
 #[test]
 fn the_reference_lists_every_subcommand() {
-    let help = stdout(&vissue(&["--help"]));
-    let mut in_commands = false;
-    let mut commands: Vec<String> = Vec::new();
-    for line in help.lines() {
-        if line.starts_with("Commands:") {
-            in_commands = true;
-            continue;
-        }
-        if in_commands && line.starts_with("Options:") {
-            break;
-        }
-        if !in_commands {
-            continue;
-        }
-        // Subcommand rows are indented; continuation lines of a long
-        // description are indented further and carry no verb.
-        let trimmed = line.trim_start();
-        if trimmed.is_empty() || line.len() - trimmed.len() > 4 {
-            continue;
-        }
-        if let Some(name) = trimmed.split_whitespace().next()
-            && name != "help"
-        {
-            commands.push(name.to_string());
-        }
-    }
-    assert!(commands.len() > 20, "no subcommands parsed: {commands:?}");
-
     let reference = fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/orgmode/reference.org"),
     )
     .expect("reference");
-    let missing: Vec<&String> = commands
+
+    let missing: Vec<&str> = cli_surface()
         .iter()
+        .map(|verb| verb.name.as_str())
+        .filter(|name| *name != "help")
         .filter(|name| !reference.contains(&format!("={name}=")))
         .collect();
     assert!(

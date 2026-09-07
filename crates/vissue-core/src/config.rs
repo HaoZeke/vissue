@@ -477,6 +477,111 @@ mod tests {
         );
     }
 
+    /// A weight the iteration cannot use is refused rather than clamped. A
+    /// `self_weight` of 2 is a typo, and clamping it to 1 would hand back a
+    /// consensus in which nobody listened to anybody and say nothing about why.
+    #[test]
+    fn a_consensus_weight_the_iteration_cannot_use_is_refused() {
+        for (body, wanted) in [
+            ("[consensus]\nself_weight = 2.0\n", "self_weight"),
+            ("[consensus]\nself_weight = -0.5\n", "self_weight"),
+            ("[consensus]\ntolerance = 0.0\n", "tolerance"),
+            ("[consensus]\ntolerance = -1.0\n", "tolerance"),
+            ("[consensus]\nmax_iterations = 0\n", "max_iterations"),
+            (
+                "[consensus.trust]\nalice = { bob = -1.0 }\n",
+                "consensus.trust.alice.bob",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join("vissue.toml"), body).unwrap();
+            let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+            let err = VissueConfig::load(&layout).unwrap_err().to_string();
+            assert!(err.contains(wanted), "{body:?} -> {err}");
+            assert!(
+                err.contains("vissue.toml"),
+                "the message has to name the file: {err}"
+            );
+        }
+    }
+
+    /// The whole range is usable, ends included: zero self-weight is the
+    /// periodic case the consensus report exists to name, and one is an agent
+    /// that listens to nobody.
+    #[test]
+    fn the_ends_of_the_self_weight_range_are_accepted() {
+        for value in ["0.0", "1.0"] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(
+                dir.path().join("vissue.toml"),
+                format!("[consensus]\nself_weight = {value}\n"),
+            )
+            .unwrap();
+            let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+            let cfg = VissueConfig::load(&layout).expect(value);
+            assert_eq!(cfg.consensus.self_weight, value.parse::<f64>().unwrap());
+        }
+    }
+
+    /// Trust merges row by row, like every other override. A file that retunes
+    /// one agent must not silently drop the rows it says nothing about.
+    #[test]
+    fn a_trust_row_overrides_only_the_agent_it_names() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("vissue.toml"),
+            "[consensus.trust]\nalice = { bob = 1.0 }\ncarol = { alice = 1.0 }\n",
+        )
+        .unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        fs::write(
+            layout.projects_dir().join("issues.config.toml"),
+            "[consensus.trust]\nalice = { carol = 4.0 }\n",
+        )
+        .unwrap();
+
+        let cfg = VissueConfig::load(&layout).unwrap();
+        assert_eq!(
+            cfg.consensus
+                .trust
+                .get("alice")
+                .and_then(|r| r.get("carol")),
+            Some(&4.0),
+            "the named row is replaced whole"
+        );
+        assert!(
+            cfg.consensus
+                .trust
+                .get("alice")
+                .is_some_and(|r| !r.contains_key("bob")),
+            "replaced, not merged into: {:?}",
+            cfg.consensus.trust
+        );
+        assert_eq!(
+            cfg.consensus
+                .trust
+                .get("carol")
+                .and_then(|r| r.get("alice")),
+            Some(&1.0),
+            "a row the second file says nothing about survives"
+        );
+    }
+
+    /// Nothing configured is the shape the consensus verb reduces to a tally in.
+    #[test]
+    fn the_consensus_defaults_converge_on_their_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        let cfg = VissueConfig::load(&layout).unwrap().consensus;
+        assert!(cfg.trust.is_empty());
+        assert!(
+            cfg.self_weight > 0.0,
+            "a zero diagonal is what makes a trust graph periodic"
+        );
+        assert!(cfg.tolerance > 0.0 && cfg.max_iterations > 0);
+    }
+
     #[test]
     fn config_defaults_when_no_files_present() {
         let dir = tempfile::tempdir().unwrap();

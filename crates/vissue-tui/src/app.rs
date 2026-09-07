@@ -586,6 +586,10 @@ impl App {
                 Ok(hits) => self.detail_body = format_related(&hits),
                 Err(err) => self.detail_body = err.to_string(),
             },
+            DetailTab::Recall => match self.backend.recall(&id, 1) {
+                Ok(set) => self.detail_body = format_recall(&set),
+                Err(err) => self.detail_body = err.to_string(),
+            },
         }
     }
 
@@ -701,6 +705,46 @@ fn format_related(hits: &[vissue_core::views::RelatedHit]) -> String {
             hit.score,
             hit.evidence.join(", ")
         ));
+    }
+    out
+}
+
+/// The working set, laid out for the detail pane.
+///
+/// Narrower than the command line's rendering: the pane is a column beside a
+/// list, so the plan and the inputs are one line each and the deed accessions
+/// hang under the input that produced them.
+fn format_recall(set: &vissue_core::views::Recall) -> String {
+    let mut out = String::new();
+    for step in &set.plan {
+        out.push_str(&format!(
+            "plan {} [{}] {}\n",
+            step.id, step.state, step.title
+        ));
+    }
+    if set.inputs.is_empty() {
+        out.push_str("no declared inputs\n");
+    }
+    for input in &set.inputs {
+        out.push_str(&format!(
+            "{} [{}] {}  ({})\n",
+            input.id, input.state, input.title, input.relation
+        ));
+        for deed in &input.deeds {
+            out.push_str(&format!("  {deed}\n"));
+        }
+        if let Some(note) = &input.last_note {
+            out.push_str(&format!(
+                "  note: {}\n",
+                note.lines().next().unwrap_or_default().trim()
+            ));
+        }
+    }
+    if !set.produced.is_empty() {
+        out.push_str("produced here\n");
+        for deed in &set.produced {
+            out.push_str(&format!("  {deed}\n"));
+        }
     }
     out
 }

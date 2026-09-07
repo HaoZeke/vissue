@@ -10,7 +10,8 @@ use vissue_core::events;
 use vissue_core::ops::{self, UpdateOutcome};
 use vissue_core::store;
 use vissue_core::views::{
-    AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRec, ListQuery, RelatedHit, SearchHit, TreeNode,
+    AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRec, ListQuery, Recall, RelatedHit, SearchHit,
+    TreeNode,
 };
 
 use crate::backend::{BackendKind, BoardBackend, ListPage, MutResult, UpdateReq};
@@ -147,6 +148,10 @@ impl BoardBackend for CoreBackend {
 
     fn related(&self, id: &str, depth: usize, limit: usize) -> Result<Vec<RelatedHit>, Error> {
         self.with_service(|svc| svc.related(id, depth, limit))
+    }
+
+    fn recall(&self, id: &str, depth: usize) -> Result<Recall, Error> {
+        self.with_service(|svc| svc.recall(id, depth))
     }
 
     fn projects(&self) -> Result<Vec<String>, Error> {

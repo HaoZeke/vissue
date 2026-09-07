@@ -10,13 +10,14 @@ use vissue_control::client::Client;
 use vissue_control::rpc::{
     CONFLICT, CYCLE, ClaimParams, CreateParams, Error as RpcError, INVALID_STATE, IdParams,
     InitializeResult, IssueListParams, IssueListResult, MutResult as WireMut, NOT_FOUND,
-    NoteParams, Notification, RelatedParams, Request, SearchParams, TreeParams, UpdateParams,
+    NoteParams, Notification, RecallParams, RelatedParams, Request, SearchParams, TreeParams,
+    UpdateParams,
 };
 use vissue_control::{InitializeParams, PROTOCOL_VERSION};
 use vissue_core::config::Layout;
 use vissue_core::error::Error;
 use vissue_core::views::{
-    AgendaRow, ClaimRow, Excerpt, IssueDetail, ListQuery, RelatedHit, SearchHit, TreeNode,
+    AgendaRow, ClaimRow, Excerpt, IssueDetail, ListQuery, Recall, RelatedHit, SearchHit, TreeNode,
 };
 
 use crate::backend::{BackendKind, BoardBackend, ListPage, MutResult, SinceGate, UpdateReq};
@@ -386,6 +387,14 @@ impl BoardBackend for ControlBackend {
             id: id.to_string(),
             depth: Some(depth),
             limit: Some(limit),
+        }))?;
+        decode(value)
+    }
+
+    fn recall(&self, id: &str, depth: usize) -> Result<Recall, Error> {
+        let value = self.call(&Request::IssueRecall(RecallParams {
+            id: id.to_string(),
+            depth: Some(depth),
         }))?;
         decode(value)
     }

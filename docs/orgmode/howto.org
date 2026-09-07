@@ -381,7 +381,8 @@ $ vissue tui --offline
 #+end_src
 
 Panes: Ready, List, Claims, Agenda, Search. Detail tabs on the selected
-row: show, excerpt, tree, related. Keys (also on =?=):
+row: show, excerpt, tree, related, recall. The last is the working set:
+what the node stands on and what those inputs produced. Keys (also on =?=):
 
 | Key | Action |
 |-----+--------|

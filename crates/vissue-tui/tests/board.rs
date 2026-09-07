@@ -260,6 +260,12 @@ fn detail_tabs_open_reload_and_prompt_escape() {
     app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.detail_tab, vissue_tui::DetailTab::Related);
     app.handle_key(key(KeyCode::Enter));
+    assert_eq!(app.detail_tab, vissue_tui::DetailTab::Recall);
+    assert!(
+        !app.detail_body.is_empty(),
+        "the working set pane says what the node stands on, or that it stands on nothing"
+    );
+    app.handle_key(key(KeyCode::Enter));
     assert_eq!(app.detail_tab, vissue_tui::DetailTab::Show);
     app.handle_key(ch('o'));
     assert!(app.status_line().contains("opened atlas-1a2b"));
@@ -436,6 +442,13 @@ impl BoardBackend for UnchangedAfterFirst {
     ) -> Result<Vec<vissue_core::views::RelatedHit>, vissue_core::error::Error> {
         self.inner.related(id, d, n)
     }
+    fn recall(
+        &self,
+        id: &str,
+        depth: usize,
+    ) -> Result<vissue_core::views::Recall, vissue_core::error::Error> {
+        self.inner.recall(id, depth)
+    }
     fn projects(&self) -> Result<Vec<String>, vissue_core::error::Error> {
         self.inner.projects()
     }
@@ -593,6 +606,13 @@ impl BoardBackend for SinceOnRepeat {
         n: usize,
     ) -> Result<Vec<vissue_core::views::RelatedHit>, vissue_core::error::Error> {
         self.inner.related(id, d, n)
+    }
+    fn recall(
+        &self,
+        id: &str,
+        depth: usize,
+    ) -> Result<vissue_core::views::Recall, vissue_core::error::Error> {
+        self.inner.recall(id, depth)
     }
     fn projects(&self) -> Result<Vec<String>, vissue_core::error::Error> {
         self.inner.projects()

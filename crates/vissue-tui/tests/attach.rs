@@ -178,6 +178,13 @@ impl BoardBackend for RecordingBackend {
     ) -> Result<Vec<vissue_core::views::RelatedHit>, vissue_core::error::Error> {
         panic!("RecordingBackend::related is unused in this test")
     }
+    fn recall(
+        &self,
+        _id: &str,
+        _depth: usize,
+    ) -> Result<vissue_core::views::Recall, vissue_core::error::Error> {
+        panic!("RecordingBackend::recall is unused in this test")
+    }
     fn projects(&self) -> Result<Vec<String>, vissue_core::error::Error> {
         Ok(vec![])
     }

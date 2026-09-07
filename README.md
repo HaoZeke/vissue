@@ -269,7 +269,8 @@ worker = { maintainer = 1.0 }
 ## Terminal board and HUD
 
 `vissue tui` is a ratatui board over ready, list, claims, agenda, and
-search. It paints from the files first. Unless `--offline`, it then
+search. The detail pane cycles show, excerpt, tree, related, and recall,
+so the working set is one key away from the row that names the work. It paints from the files first. Unless `--offline`, it then
 attaches to `vissue serve`, starting serve when the socket is free. A
 socket bound to another root stays on the files so a claim cannot hit
 the wrong vault. `q` quits; `?` lists the keys.

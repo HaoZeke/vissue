@@ -3,7 +3,7 @@
 use vissue_core::config::Layout;
 use vissue_core::error::Error;
 use vissue_core::views::{
-    AgendaRow, ClaimRow, Excerpt, IssueDetail, ListQuery, RelatedHit, SearchHit, TreeNode,
+    AgendaRow, ClaimRow, Excerpt, IssueDetail, ListQuery, Recall, RelatedHit, SearchHit, TreeNode,
 };
 
 /// Which store the board is talking to.
@@ -169,6 +169,13 @@ pub trait BoardBackend: Send + Sync + std::fmt::Debug {
     ///
     /// Returns an error if the issue does not exist or related hits cannot be scored.
     fn related(&self, id: &str, depth: usize, limit: usize) -> Result<Vec<RelatedHit>, Error>;
+    /// The working set for `id`: plan, declared inputs and their deeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the issue does not exist or the blocker graph cannot
+    /// be built.
+    fn recall(&self, id: &str, depth: usize) -> Result<Recall, Error>;
     /// Project names under the layout prefix.
     ///
     /// # Errors

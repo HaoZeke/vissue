@@ -2632,6 +2632,13 @@ mod tests {
         ) -> Result<Vec<vissue_core::views::RelatedHit>, vissue_core::error::Error> {
             self.inner.related(id, d, n)
         }
+        fn recall(
+            &self,
+            id: &str,
+            depth: usize,
+        ) -> Result<vissue_core::views::Recall, vissue_core::error::Error> {
+            self.inner.recall(id, depth)
+        }
         fn projects(&self) -> Result<Vec<String>, vissue_core::error::Error> {
             self.inner.projects()
         }

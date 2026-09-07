@@ -74,15 +74,18 @@ pub enum DetailTab {
     Tree,
     /// Related-issue hits.
     Related,
+    /// The working set: plan, declared inputs, and what they produced.
+    Recall,
 }
 
 impl DetailTab {
     /// Tab order cycled by Enter in the detail pane.
-    pub const ALL: [DetailTab; 4] = [
+    pub const ALL: [DetailTab; 5] = [
         DetailTab::Show,
         DetailTab::Excerpt,
         DetailTab::Tree,
         DetailTab::Related,
+        DetailTab::Recall,
     ];
 
     /// Tab label drawn on the detail border.
@@ -92,6 +95,7 @@ impl DetailTab {
             Self::Excerpt => "excerpt",
             Self::Tree => "tree",
             Self::Related => "related",
+            Self::Recall => "recall",
         }
     }
 

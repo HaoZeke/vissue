@@ -32,7 +32,14 @@ else
   fi
   for org in "${files[@]}"; do
     base="$(basename "$org" .org)"
-    pandoc -f org -t rst --wrap=preserve -o "$OUT_DIR/${base}.rst" "$org"
+    # --columns wide enough that pandoc emits simple tables rather than grid
+    # tables, which at 400 it does for every table here. A grid cell is wrapped
+    # to its column width, and wrapping splits a long `=verbatim=` across two
+    # lines: docutils then has an inline literal that never closes, which is a
+    # broken literal on the rendered page. The split point moves with the
+    # pandoc version, so the same source built clean on one host and warned on
+    # another.
+    pandoc -f org -t rst --wrap=preserve --columns=400 -o "$OUT_DIR/${base}.rst" "$org"
     echo "  wrote $OUT_DIR/${base}.rst"
   done
 fi

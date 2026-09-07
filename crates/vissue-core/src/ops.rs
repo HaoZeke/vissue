@@ -1050,6 +1050,124 @@ fn tally_text(id: &str, ballots: &[Ballot]) -> String {
     out
 }
 
+/// Prefixes a deed accession can open with.
+///
+/// deedar mints `deed-<kind>-<slug>` and answers `get` for a `sha256:` of the
+/// canonical deed or of one product path. Those two forms are the whole
+/// vocabulary, so a value in neither is a title, a path, or a note that landed
+/// in the wrong field, and storing it would leave a citation nothing resolves.
+const DEED_PREFIXES: &[&str] = &["deed-", "sha256:"];
+
+/// Whether `value` looks like something deedar can be asked for.
+///
+/// The shape rather than the store: vissue cites deeds and never opens one, so
+/// this cannot ask whether the deed exists, only whether the id could name one.
+#[must_use]
+pub fn is_deed_accession(value: &str) -> bool {
+    let value = value.trim();
+    if value.contains(|c: char| c.is_whitespace() || c == ',') {
+        return false;
+    }
+    DEED_PREFIXES
+        .iter()
+        .any(|prefix| value.strip_prefix(*prefix).is_some_and(|rest| !rest.is_empty()))
+}
+
+/// Cite, drop, or list the deeds an issue's work produced.
+///
+/// A claim says who is working and a note says what happened; neither says what
+/// the work *made*, so the next unit had to reread a transcript to find out. A
+/// deed is deedar's name for the product, and the accession is the whole handoff:
+/// `deedar get <id>` returns the frozen record, `deedar trail <id>` walks what it
+/// was built from. The tracker stores the id and nothing else, because the deed
+/// store owns the bytes and duplicating them here would give the corpus a second
+/// copy to drift.
+///
+/// With neither `add` nor `remove`, this reads: the citations on the heading, in
+/// the order they were cited.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, an added value is not a deed
+/// accession, or the file cannot be rewritten.
+pub fn deed(layout: &Layout, id: &str, add: &[String], remove: &[String]) -> Result<String> {
+    let (h, path, project) =
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+    if add.is_empty() && remove.is_empty() {
+        return Ok(deed_list_text(id, &h.deeds()));
+    }
+    for value in add {
+        if !is_deed_accession(value) {
+            return Err(anyhow!(
+                "{value:?} is not a deed accession; deedar mints `deed-<kind>-<slug>` \
+                 and answers `get` for a `sha256:` of the deed or of one product path"
+            )
+            .into());
+        }
+    }
+    with_issues_lock(&path, || {
+        let mut doc = IssueDoc::parse_file(&project, &path)?;
+        let h = doc
+            .headings
+            .iter_mut()
+            .find(|x| x.id == id)
+            .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+        let mut cited = h.deeds();
+        let mut changed: Vec<String> = Vec::new();
+        for value in add {
+            let value = value.trim();
+            // Citing twice is what a retried step does, and a second copy of the
+            // id would make `trail` walk the same deed twice for no reason.
+            if cited.iter().any(|x| x == value) {
+                continue;
+            }
+            cited.push(value.to_string());
+            changed.push(format!("deeds += {value}"));
+        }
+        for value in remove {
+            let value = value.trim();
+            let before = cited.len();
+            cited.retain(|x| x != value);
+            if cited.len() != before {
+                changed.push(format!("deeds -= {value}"));
+            }
+        }
+        if changed.is_empty() {
+            return Ok(format!(
+                "{id}: no change\n{}",
+                deed_list_text(id, &cited)
+            ));
+        }
+        if cited.is_empty() {
+            crate::props::remove(&mut h.properties, crate::props::DEEDS);
+        } else {
+            crate::props::insert(&mut h.properties, crate::props::DEEDS, cited.join(" "));
+        }
+        doc.write()?;
+        Ok(format!(
+            "{id}: {}\n{}",
+            changed.join(", "),
+            deed_list_text(id, &cited)
+        ))
+    })
+}
+
+/// The citations on one heading, one per line.
+fn deed_list_text(id: &str, cited: &[String]) -> String {
+    if cited.is_empty() {
+        return format!("{id}: no deeds cited\n");
+    }
+    let mut out = format!(
+        "{id}: {} deed{}\n",
+        cited.len(),
+        if cited.len() == 1 { "" } else { "s" }
+    );
+    for value in cited {
+        let _ = writeln!(out, "  {value}");
+    }
+    out
+}
+
 /// Fold an inbox-convention org file into tracked issues.
 ///
 /// Each top-level `* TODO <title>` heading that does not already carry a
@@ -1565,6 +1683,125 @@ mod tests {
             .headings[0]
             .id
             .clone()
+    }
+
+    /// The citation is the handoff, so it has to survive the round trip through
+    /// the file rather than living in the process that wrote it.
+    #[test]
+    fn a_cited_deed_is_readable_back_off_the_heading() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "name the note", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        let out = deed(&layout, &id, &["deed-patch-note".to_string()], &[]).unwrap();
+        assert!(out.contains("deeds += deed-patch-note"), "{out}");
+        assert_eq!(
+            issue_at(&layout, "sample", &id).deeds(),
+            vec!["deed-patch-note".to_string()]
+        );
+    }
+
+    /// Two citations, and the order they were cited in is the order they read
+    /// back: a trail is walked from the first product to the last.
+    #[test]
+    fn citations_keep_the_order_they_were_added_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "two products", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        deed(&layout, &id, &["deed-file-note".to_string()], &[]).unwrap();
+        deed(&layout, &id, &["deed-patch-note".to_string()], &[]).unwrap();
+        assert_eq!(
+            issue_at(&layout, "sample", &id).deeds(),
+            vec!["deed-file-note".to_string(), "deed-patch-note".to_string()]
+        );
+    }
+
+    /// A retried step cites the same deed twice. Two copies would make a trail
+    /// walk one deed twice and say nothing by doing it.
+    #[test]
+    fn citing_the_same_deed_twice_leaves_one_citation() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "retried", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        deed(&layout, &id, &["deed-file-note".to_string()], &[]).unwrap();
+        let again = deed(&layout, &id, &["deed-file-note".to_string()], &[]).unwrap();
+        assert!(again.contains("no change"), "{again}");
+        assert_eq!(issue_at(&layout, "sample", &id).deeds().len(), 1);
+    }
+
+    /// Dropping the last citation drops the property rather than leaving an
+    /// empty one, which `normalize` would otherwise have to clean up.
+    #[test]
+    fn removing_the_last_citation_removes_the_property() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "mistaken", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        deed(&layout, &id, &["deed-file-oops".to_string()], &[]).unwrap();
+        deed(&layout, &id, &[], &["deed-file-oops".to_string()]).unwrap();
+        let h = issue_at(&layout, "sample", &id);
+        assert!(h.deeds().is_empty());
+        assert!(
+            !h.properties.contains_key(crate::props::DEEDS),
+            "an empty citation list is not a citation list: {:?}",
+            h.properties
+        );
+    }
+
+    /// A path, a title, or a sentence in this field is a citation that resolves
+    /// to nothing, and the failure would only show up in whatever tried to open
+    /// it much later.
+    #[test]
+    fn a_value_deedar_could_not_be_asked_for_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "bad citation", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+
+        let err = deed(&layout, &id, &["/tmp/note.md".to_string()], &[]).unwrap_err();
+        assert!(err.to_string().contains("not a deed accession"), "{err}");
+        assert!(
+            issue_at(&layout, "sample", &id).deeds().is_empty(),
+            "a refused citation must not land"
+        );
+    }
+
+    /// Both accession forms deedar answers `get` for.
+    #[test]
+    fn both_deed_forms_are_accessions() {
+        assert!(is_deed_accession("deed-quote-rfc2094-nll"));
+        assert!(is_deed_accession(
+            "sha256:0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7"
+        ));
+        assert!(!is_deed_accession("deed-"), "a prefix alone names nothing");
+        assert!(!is_deed_accession("sha256:"), "a prefix alone names nothing");
+        assert!(!is_deed_accession(""));
+        // Whitespace and commas separate the list, so a value holding one would
+        // read back as two citations neither of which was cited.
+        assert!(!is_deed_accession("deed-file a"));
+        assert!(!is_deed_accession("deed-file,a"));
+    }
+
+    /// Reading is a read: `deed` with nothing to add or drop must not rewrite.
+    #[test]
+    fn listing_citations_does_not_touch_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "read only", CreateOpts::default()).unwrap();
+        let id = only_id(&layout, "sample");
+        deed(&layout, &id, &["deed-file-note".to_string()], &[]).unwrap();
+
+        let path = layout.project_issues_path("sample");
+        let before = fs::read_to_string(&path).unwrap();
+        let out = deed(&layout, &id, &[], &[]).unwrap();
+        assert!(out.contains("deed-file-note"), "{out}");
+        assert_eq!(before, fs::read_to_string(&path).unwrap());
     }
 
     #[test]

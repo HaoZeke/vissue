@@ -226,6 +226,18 @@ impl IssueHeading {
         crate::org::blocker_ids_from_properties(&self.properties)
     }
 
+    /// Deed accessions this issue's work produced.
+    ///
+    /// The tracker cites; it does not store. A deed is deedar's noun for what a
+    /// unit of work made, and the id is the whole join: the next unit opens it
+    /// with `deedar get` rather than rereading a transcript. Commas and
+    /// whitespace both separate, as they do for `:BLOCKED_BY:`.
+    pub fn deeds(&self) -> Vec<String> {
+        crate::props::get(&self.properties, crate::props::DEEDS)
+            .map(crate::org::split_id_list)
+            .unwrap_or_default()
+    }
+
     /// Org Effort estimate (`Effort` or `EFFORT`), when set.
     pub fn effort(&self) -> Option<&str> {
         crate::org::effort_from_properties(&self.properties)

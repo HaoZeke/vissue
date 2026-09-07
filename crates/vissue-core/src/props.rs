@@ -42,6 +42,8 @@ pub const CLAIMED_AT: &str = "CLAIMED_AT";
 pub const FILES: &str = "FILES";
 /// How to know the issue is done.
 pub const VERIFY: &str = "VERIFY";
+/// Deed accessions this issue's work produced, as deedar mints them.
+pub const DEEDS: &str = "DEEDS";
 /// Origin issue for a bounce or discovery.
 pub const DISCOVERED_FROM: &str = "DISCOVERED_FROM";
 /// Successor issue for a bounce.
@@ -60,6 +62,7 @@ pub const CANONICAL_ORDER: &[&str] = &[
     CLAIMED_AT,
     FILES,
     VERIFY,
+    DEEDS,
     DISCOVERED_FROM,
     PIVOTED_TO,
     SIBLING_TERMINAL,

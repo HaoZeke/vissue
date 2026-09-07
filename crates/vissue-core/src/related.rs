@@ -346,6 +346,15 @@ fn score_direct_relations(
         for relation in declared_relations(target, target_id, issue, known_ids) {
             bump(candidates, index, 1_000.0, relation);
         }
+        // Two issues citing one deed worked on the same product. That is a
+        // declared fact rather than a resemblance, so it scores with the edges
+        // and not with the tags: the deed is the thing they have in common, and
+        // it is named.
+        for cited in target.deeds() {
+            if issue.deeds().iter().any(|other| *other == cited) {
+                bump(candidates, index, 1_000.0, &format!("deed:{cited}"));
+            }
+        }
         let shared_tags = terms[target_idx]
             .tags
             .intersection(&terms[index].tags)

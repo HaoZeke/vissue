@@ -274,6 +274,12 @@ pub struct RecallInput {
     pub relation: String,
     /// Deed accessions cited on that heading.
     pub deeds: Vec<String>,
+    /// The most recent note in that input's logbook, when it has one.
+    ///
+    /// What happened to the input, for the case where it produced no deed. A
+    /// blocker that closed without naming a product would otherwise hand the
+    /// next unit its title and nothing else.
+    pub last_note: Option<String>,
 }
 
 /// One related heading from a walk: children, ancestors, impact, or backlinks.

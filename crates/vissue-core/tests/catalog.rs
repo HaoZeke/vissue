@@ -1037,3 +1037,77 @@ fn recall_of_an_unknown_id_is_an_error() {
     let err = recall_from(&issues, "p-nope", 1).unwrap_err();
     assert!(matches!(err, Error::IssueNotFound { .. }), "{err:?}");
 }
+
+/// An input that closed without naming a product still has to hand the next
+/// unit something. The last thing said about it is what a reader falls back on.
+#[test]
+fn an_input_carries_the_last_thing_said_about_it() {
+    let mut blocker = issue("p", "p-first", "DONE", "the groundwork");
+    blocker.heading.logbook = vec![
+        vissue_core::model::LogEntry {
+            timestamp: "[2026-09-06 Sun]".into(),
+            from_state: None,
+            to_state: None,
+            note: Some("landed without the fast path".into()),
+            raw: None,
+        },
+        vissue_core::model::LogEntry {
+            timestamp: "[2026-09-05 Sat]".into(),
+            from_state: None,
+            to_state: None,
+            note: Some("started".into()),
+            raw: None,
+        },
+    ];
+    let issues = vec![
+        blocker,
+        with_property(
+            issue("p", "p-next", "TODO", "the next step"),
+            "BLOCKED_BY",
+            "p-first",
+        ),
+    ];
+
+    let set = recall_from(&issues, "p-next", 1).unwrap();
+    assert_eq!(
+        set.inputs[0].last_note.as_deref(),
+        Some("landed without the fast path"),
+        "the logbook is newest first, so the first note is the last word"
+    );
+}
+
+/// Two issues citing one deed worked on the same product. That is declared, so
+/// it outranks a resemblance and the evidence names the deed.
+#[test]
+fn a_shared_deed_is_evidence_of_a_relation() {
+    let issues = vec![
+        with_property(
+            issue("p", "p-a", "DONE", "write the exporter"),
+            "DEEDS",
+            "deed-patch-exporter",
+        ),
+        with_property(
+            issue("p", "p-b", "TODO", "unrelated words entirely"),
+            "DEEDS",
+            "deed-patch-exporter",
+        ),
+        issue("p", "p-c", "TODO", "write the exporter again"),
+    ];
+
+    let hits = CatalogService::from_recs(&issues)
+        .related("p-a", 2, 10)
+        .unwrap();
+    let first = hits.first().expect("a hit");
+    assert_eq!(
+        first.id, "p-b",
+        "a shared deed outranks a shared word: {hits:?}"
+    );
+    assert!(
+        first
+            .evidence
+            .iter()
+            .any(|e| e == "deed:deed-patch-exporter"),
+        "the evidence names the deed: {:?}",
+        first.evidence
+    );
+}

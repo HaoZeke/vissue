@@ -256,6 +256,15 @@ pub fn recall(layout: &Layout, id: &str, depth: usize) -> Result<String> {
         for deed in &input.deeds {
             writeln!(out, "    {deed}")?;
         }
+        if let Some(note) = &input.last_note {
+            // The last thing said about an input is what a reader falls back on
+            // when it named no product.
+            writeln!(
+                out,
+                "    note: {}",
+                note.lines().next().unwrap_or_default().trim()
+            )?;
+        }
     }
 
     writeln!(out, "\nProduced")?;
@@ -1660,6 +1669,17 @@ fn check_issue<'a>(
             f.err(format_args!(
                 "{} (in {}) :BLOCKED_BY: {} -> not found",
                 h.id, project, blk
+            ));
+        }
+    }
+    // A citation nothing can be asked for fails wherever it is finally opened,
+    // which is a different process on a different day. `deed` refuses one; a
+    // hand-edited drawer is how one gets in anyway.
+    for cited in h.deeds() {
+        if !crate::ops::is_deed_accession(&cited) {
+            f.warn(format_args!(
+                "{} (in {}) :DEEDS: {} -> not a deed accession",
+                h.id, project, cited
             ));
         }
     }

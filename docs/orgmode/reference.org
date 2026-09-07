@@ -83,7 +83,8 @@ a URL is not fetched. =vissue normalize= rewrites a tracker onto that shape;
 
 =:DEEDS:= holds the deed accessions this issue's work produced, in the order
 they were cited, and accepts commas, whitespace, or both like =:BLOCKED_BY:=.
-The tracker cites; it stores no product bytes. =deed --add= refuses a value
+The tracker cites; it stores no product bytes. =check= warns on a citation that is
+not one, since a hand-edited drawer is how one gets in. =deed --add= refuses a value
 that is not an accession (=deed-<kind>-<slug>=, or a =sha256:= of the deed or
 of one product path), because a citation nothing can resolve fails later and
 somewhere else.
@@ -700,8 +701,10 @@ Plan
 Inputs
   keys-ovly              DONE      Overlay on_key  [blocked-by]
     deed-patch-overlay
+    note: landed without the modifier table
   keys-toml              DONE      keys.toml schema and key names  [blocked-by]
     (no deeds cited)
+    note: the names follow xkbcommon, not Emacs
 
 Produced
   (nothing cited yet)
@@ -725,6 +728,10 @@ keys-ovly: 1 deed
 $ deedar get $(vissue recall keys-tuih --deeds-only)
 #+end_src
 
+Each input also carries the last note in its logbook. An input that closed
+without naming a product would otherwise hand the next unit its title and
+nothing else, and the last thing said about it is what a reader falls back on.
+
 The blocker walk is one hop by default. A deed records its own =sources= and
 =deedar trail= walks them, so a second hop here would re-derive, less well, a
 graph the deed store already holds. =--depth= widens it when the inputs cited
@@ -732,7 +739,9 @@ nothing.
 
 Nothing is scored and nothing is embedded. =recall= answers what the plan says
 the work stands on; =related= answers which other issues resemble it, ranks
-them, and prints the evidence for each. Mixing the two would make the exact
+them, and prints the evidence for each -- including =deed:<accession>= when two
+issues cite one deed, which is a declared fact and scores with the edges rather
+than with the resemblances. Mixing the two would make the exact
 answer look like the ranked one.
 
 * Crates

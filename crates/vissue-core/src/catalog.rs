@@ -926,6 +926,13 @@ fn recall_input(rec: &IssueRec, relation: &str) -> RecallInput {
         title: rec.heading.title.clone(),
         relation: relation.to_string(),
         deeds: rec.heading.deeds(),
+        // Newest first, so the first note in the drawer is the last thing that
+        // was said about the issue.
+        last_note: rec
+            .heading
+            .logbook
+            .iter()
+            .find_map(|entry| entry.note.clone()),
     }
 }
 

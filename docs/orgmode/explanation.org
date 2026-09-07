@@ -142,14 +142,25 @@ table is:
 | =ready=, =check=, =search=, =claims=    | Parse every project: $O(\lvert I \rvert)$           |
 | =tree=, =graph=, =cycles=, =backlinks=  | Parse every project, then $O(\lvert I \rvert + \lvert E \rvert)$ |
 | =related=                               | The above, plus a term index over the corpus        |
+| =recall=                                | Parse every project, then the parent chain and a bounded blocker walk |
+| =deed=                                  | Parse and rewrite one project file, under its lock  |
+| =consensus=                             | Parse one project file, then $O(rn^2m)$ over $n$ voters, $m$ options, $r$ rounds |
 | =gen=                                   | Read one integer                                    |
 
 That last row is why the change stream exists. A poller asking whether
 anything moved should not pay for a corpus parse to find out nothing
 did, so =gen= reads a counter and =events= reads only the tail of a log.
 
-The costs are linear and the constant is a file read, which stays comfortable
-into the thousands of issues and would not stay comfortable into the millions.
+The consensus row looks worse than it is: $n$ is the number of agents that
+voted on one issue, which is a handful, and the rounds are geometric in the
+mixing rate.
+
+The costs are linear and the constant is a file read. Measured on a synthetic
+tracker of 20,000 issues across 10 projects, every issue carrying a parent and
+a blocker, release build and warm page cache: =recall= 78 ms, =related= 155 ms,
+=ready= 512 ms, =gen= under a millisecond. At 5,000 issues those are 20, 36, 90
+and under one. That stays comfortable into the tens of thousands of issues and
+would not stay comfortable into the millions.
 That is the trade the format makes: no schema migration, and a backlog that
 diffs. An optional =vissue serve= is a cache of that parse plus a push of
 =vault/changed=; it is not a second store. Crashing it loses nothing, and

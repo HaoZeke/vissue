@@ -123,6 +123,15 @@ pub struct IssuesSection {
     /// How long a claim may sit on a STARTED issue before hygiene calls it
     /// stale.
     pub stale_claim_days: i64,
+    /// Whether `hygiene` reports work that closed without naming what it made.
+    ///
+    /// Off by default, because plenty of issues produce nothing a deed store
+    /// would hold: a decision, a review, a question answered. On a tracker
+    /// where the next unit is expected to open the last one's product, work
+    /// that closed citing nothing is a hole in the handoff, and this is what
+    /// makes that visible instead of leaving it to be discovered by whoever
+    /// needed it.
+    pub expect_deeds: bool,
 }
 
 impl Default for IssuesSection {
@@ -131,6 +140,7 @@ impl Default for IssuesSection {
             default_priority: 'C',
             id_length: 4,
             stale_claim_days: 7,
+            expect_deeds: false,
         }
     }
 }
@@ -144,6 +154,7 @@ struct IssuesOverride {
     default_priority: Option<char>,
     id_length: Option<usize>,
     stale_claim_days: Option<i64>,
+    expect_deeds: Option<bool>,
 }
 
 impl IssuesOverride {
@@ -156,6 +167,9 @@ impl IssuesOverride {
         }
         if let Some(value) = self.stale_claim_days {
             base.stale_claim_days = value;
+        }
+        if let Some(value) = self.expect_deeds {
+            base.expect_deeds = value;
         }
     }
 }

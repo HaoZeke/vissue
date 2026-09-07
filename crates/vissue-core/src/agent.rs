@@ -177,6 +177,26 @@ pub fn hygiene(layout: &Layout, stale_days: Option<i64>) -> Result<String> {
         }
     }
 
+    // Only where the tracker says the handoff matters. Elsewhere it would
+    // report every answered question and closed review as a hole.
+    let mut closed_without_a_product = 0usize;
+    if crate::config::VissueConfig::load(layout)?
+        .issues
+        .expect_deeds
+    {
+        for (project, h) in load_all(layout)? {
+            if h.state != "DONE" || !h.deeds().is_empty() {
+                continue;
+            }
+            closed_without_a_product += 1;
+            writeln!(
+                out,
+                "[warn] closed without naming what it made: {} ({project})  {}",
+                h.id, h.title
+            )?;
+        }
+    }
+
     let check = report::check(layout)?;
     if check.errors == 0 {
         writeln!(out, "[ok] check passed")?;
@@ -188,7 +208,7 @@ pub fn hygiene(layout: &Layout, stale_days: Option<i64>) -> Result<String> {
     }
     writeln!(
         out,
-        "summary: started_not_ready={started_not_ready} stale_claims={stale_claims} unclaimed_started={unclaimed_started} projects={} errors={} warnings={}",
+        "summary: started_not_ready={started_not_ready} stale_claims={stale_claims} unclaimed_started={unclaimed_started} closed_without_a_product={closed_without_a_product} projects={} errors={} warnings={}",
         list_projects(layout)?.len(),
         check.errors,
         check.warnings
@@ -256,6 +276,47 @@ mod tests {
         assert!(
             row["file"].as_str().unwrap().contains("issues.org:"),
             "{row}"
+        );
+    }
+
+    /// Work that closed naming nothing is a hole in the handoff, but only on a
+    /// tracker that expects one. Reporting it everywhere would flag every
+    /// answered question and closed review, which is how a checklist stops
+    /// being read.
+    #[test]
+    fn closed_work_that_named_no_product_is_reported_only_where_it_is_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        create(&layout, "sample", "made something", CreateOpts::default()).unwrap();
+        create(&layout, "sample", "made nothing", CreateOpts::default()).unwrap();
+        let doc = IssueDoc::parse_file("sample", &layout.project_issues_path("sample")).unwrap();
+        let (first, second) = (doc.headings[0].id.clone(), doc.headings[1].id.clone());
+        crate::ops::deed(&layout, &first, &["deed-file-thing".to_string()], &[]).unwrap();
+        for id in [&first, &second] {
+            update(&layout, id, Some("DONE"), None, None, None).unwrap();
+        }
+
+        let quiet = hygiene(&layout, None).unwrap();
+        assert!(
+            quiet.contains("closed_without_a_product=0"),
+            "off by default: {quiet}"
+        );
+        assert!(!quiet.contains("closed without naming"), "{quiet}");
+
+        fs::write(
+            dir.path().join("vissue.toml"),
+            "[issues]\nexpect_deeds = true\n",
+        )
+        .unwrap();
+        let strict = hygiene(&layout, None).unwrap();
+        assert!(
+            strict.contains("closed_without_a_product=1"),
+            "one of the two named nothing: {strict}"
+        );
+        assert!(
+            strict.contains(&second) && !strict.contains(&format!("made: {first}")),
+            "the one that cited a deed is not a hole: {strict}"
         );
     }
 

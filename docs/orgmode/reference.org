@@ -142,6 +142,7 @@ overriding the compiled defaults key by key.
 | =issues.default_priority=    | =C=        | Cookie when =create= gets none and the file has no =#+PRIORITIES:= |
 | =issues.id_length=           | =4=        | Base36 characters in a generated id suffix  |
 | =issues.stale_claim_days=    | =7=        | When =hygiene= calls a claim stale          |
+| =issues.expect_deeds=        | =false=    | Whether =hygiene= reports work that closed naming no deed |
 | =consensus.self_weight=      | =0.5=      | Weight an agent puts on its own opinion when its trust row does not name it |
 | =consensus.tolerance=        | =1e-9=     | Largest disagreement that still counts as settled |
 | =consensus.max_iterations=   | =500=      | Rounds before the shares are reported as an estimate |
@@ -738,6 +739,12 @@ keys-ovly: 1 deed
   deed-patch-overlay
 $ deedar get $(vissue recall keys-tuih --deeds-only)
 #+end_src
+
+On a tracker where the next unit is expected to open the last one's product,
+set =issues.expect_deeds = true= and =hygiene= reports every issue that closed
+citing nothing. Off by default: plenty of issues produce nothing a deed store
+would hold, and a checklist that flags every answered question stops being
+read.
 
 Each input also carries the last note in its logbook. An input that closed
 without naming a product would otherwise hand the next unit its title and

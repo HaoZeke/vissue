@@ -671,7 +671,13 @@ failures:
 
 - *split*, when the trust graph holds more than one closed group. Two review
   teams that cite only each other never converge on anything, whatever the
-  arithmetic does, and the report names the groups.
+  arithmetic does. The report names each group and what it settled on:
+
+  #+begin_src console
+  no consensus: the trust graph holds 2 group(s) that do not listen to each other
+    alice, bob                       ship 1.000
+    carol, dave                      hold 1.000
+  #+end_src
 - *oscillating*, when the one closed group has a period. A pair who listen only
   to each other and not at all to themselves swap opinions forever.
 

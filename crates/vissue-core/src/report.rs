@@ -430,7 +430,21 @@ fn consensus_text(
                 outcome.factions.len()
             );
             for faction in &outcome.factions {
-                let _ = writeln!(out, "    {}", faction.join(", "));
+                // What a group settled on is the actionable half of a split.
+                // The members share a limit, so the first of them speaks for
+                // the group.
+                let held = faction
+                    .first()
+                    .and_then(|who| outcome.agents.iter().find(|a| a.agent == *who))
+                    .and_then(|row| {
+                        row.limit
+                            .iter()
+                            .enumerate()
+                            .max_by(|a, b| a.1.total_cmp(b.1))
+                            .map(|(at, share)| format!("{} {share:.3}", outcome.choices[at]))
+                    })
+                    .unwrap_or_default();
+                let _ = writeln!(out, "    {:<32} {held}", faction.join(", "));
             }
         }
         Settling::Oscillating => {

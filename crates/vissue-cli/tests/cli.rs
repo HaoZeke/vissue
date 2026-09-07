@@ -2134,3 +2134,49 @@ fn the_accession_list_names_each_deed_once() {
         "deed-file-shared\n"
     );
 }
+
+/// Two review groups that cite only each other never converge, and the report
+/// has to say what each of them settled on. Naming the groups without naming
+/// their positions leaves a reader knowing there is a disagreement and not what
+/// it is about.
+#[test]
+fn a_split_report_says_what_each_group_holds() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    fs::write(
+        dir.path().join("vissue.toml"),
+        "[consensus.trust]\nalice = { bob = 1.0 }\nbob = { alice = 1.0 }\n\
+         carol = { dave = 1.0 }\ndave = { carol = 1.0 }\n",
+    )
+    .unwrap();
+    let own = |agent: &str, args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        vissue_cmd()
+            .env("VISSUE_AGENT", agent)
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+
+    let id = stdout(&own("alice", &["create", "-p", "api", "Ship it?", "-q"]))
+        .trim()
+        .to_string();
+    for (agent, choice) in [
+        ("alice", "ship"),
+        ("bob", "ship"),
+        ("carol", "hold"),
+        ("dave", "hold"),
+    ] {
+        own(agent, &["vote", &id, "--for", choice]);
+    }
+
+    let split = stdout(&own("alice", &["consensus", &id]));
+    assert!(split.contains("no consensus"), "{split}");
+    assert!(split.contains("2 group(s)"), "{split}");
+    assert!(split.contains("alice, bob"), "{split}");
+    assert!(
+        split.contains("ship 1.000") && split.contains("hold 1.000"),
+        "each group has to say what it settled on: {split}"
+    );
+}

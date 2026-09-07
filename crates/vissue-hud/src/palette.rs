@@ -118,11 +118,13 @@ pub enum DetailTab {
     Related,
     /// Logbook notes.
     Notes,
+    /// The working set: the plan above the issue and what its inputs produced.
+    Recall,
 }
 
 impl DetailTab {
     /// Tab order cycled by Enter on a selected row.
-    pub const ALL: [Self; 3] = [Self::Tree, Self::Related, Self::Notes];
+    pub const ALL: [Self; 4] = [Self::Tree, Self::Related, Self::Notes, Self::Recall];
 
     /// Tab label drawn on the right-hand pane.
     pub fn label(self) -> &'static str {
@@ -130,6 +132,7 @@ impl DetailTab {
             Self::Tree => "tree",
             Self::Related => "related",
             Self::Notes => "notes",
+            Self::Recall => "recall",
         }
     }
 
@@ -383,6 +386,7 @@ pub struct Palette {
     tree_ids: Vec<String>,
     tree_focus: Option<String>,
     related_hits: Vec<vissue_core::views::RelatedHit>,
+    recall: Option<vissue_core::views::Recall>,
     related_marks: std::collections::BTreeMap<String, (String, bool, bool)>,
     help_md: icedtea::widget::MarkdownDoc,
     project: Option<String>,
@@ -497,6 +501,7 @@ impl Palette {
             tree_ids: Vec::new(),
             tree_focus: None,
             related_hits: Vec::new(),
+            recall: None,
             related_marks: std::collections::BTreeMap::new(),
             help_md: icedtea::widget::parse(HELP),
             project: None,
@@ -671,6 +676,11 @@ impl Palette {
     /// Related-tab hits for the focused issue.
     pub fn related_hits(&self) -> &[vissue_core::views::RelatedHit] {
         &self.related_hits
+    }
+
+    /// The working set for the painted issue, when the Recall tab loaded one.
+    pub fn recall(&self) -> Option<&vissue_core::views::Recall> {
+        self.recall.as_ref()
     }
 
     /// Priority, blocked, and claimed for a related hit, if loaded.
@@ -1639,6 +1649,8 @@ impl Palette {
             self.tree_ids.clear();
             self.related_hits.clear();
             self.related_marks.clear();
+            self.recall = None;
+            self.recall = None;
             return;
         };
         match self.backend.excerpt(id) {
@@ -1692,6 +1704,13 @@ impl Palette {
                         }
                         self.related_hits = hits;
                     }
+                    Err(err) => self.message = err.to_string(),
+                }
+            }
+            DetailTab::Recall => {
+                self.recall = None;
+                match self.backend.recall(id, 1) {
+                    Ok(set) => self.recall = Some(set),
                     Err(err) => self.message = err.to_string(),
                 }
             }
@@ -1933,6 +1952,7 @@ impl Palette {
             self.tree_focus = None;
             self.related_hits.clear();
             self.related_marks.clear();
+            self.recall = None;
             self.refresh_task_list();
             return Ok(());
         }

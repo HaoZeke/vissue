@@ -434,8 +434,12 @@ forest; List / Claims / Agenda then stay inside that project.
 Filters, search, and add sit on one row. =/= focuses search.
 Esc returns to the list. Ready and List nest children under =PARENT=.
 The selected row keeps the issue visible (properties above a wrapping
-body), with tree / related / notes on the right. List titles wrap
-inside the pane. The tree tab expands or collapses the outline.
+body), with tree / related / notes / recall on the right. List titles wrap
+inside the pane. The tree tab expands or collapses the outline. The recall
+tab is the working set: the plan above the issue, each declared input with
+what it produced, and the last thing said about it. A 360-pixel overlay
+has room for three tab labels, so recall sits past the edge of the strip;
+Enter cycles to it.
 Escape on the project list unmaps the overlay; =vissue hud --toggle=
 shows it again. Closing the mapped window quits.
 =n= shows the logbook and writes a note. Keys are a catalog;

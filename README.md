@@ -294,7 +294,7 @@ compositor include to install. Filters, search, and add sit on one
 row. Chrome is
 [icedtea](https://crates.io/crates/icedtea) 0.11: chips, cards, markdown,
 the search field, and the type scale. The selected row keeps the issue
-visible (properties above a wrapping body) with tree / related / notes on the
+visible (properties above a wrapping body) with tree / related / notes / recall on the
 right. List titles wrap inside the pane. The tree tab expands or collapses
 the outline. Escape on the project list unmaps the overlay; `vissue hud
 --toggle` (or `--show` / `--hide`) talks to the running owner. Closing the

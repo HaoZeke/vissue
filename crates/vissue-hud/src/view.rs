@@ -704,6 +704,7 @@ fn detail_tab_body<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message
         DetailTab::Tree => tree_list(palette, tea),
         DetailTab::Related => related_list(palette, tea),
         DetailTab::Notes => notes_body(palette, tea),
+        DetailTab::Recall => recall_list(palette, tea),
     }
 }
 
@@ -942,6 +943,119 @@ fn related_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     col.into()
 }
 
+/// The working set: the plan above the issue, then each declared input with
+/// what it produced.
+///
+/// One card per input, like the related pane, because the reader is doing the
+/// same thing with both: looking at a row and deciding whether to open it. The
+/// deed accessions sit under their input rather than in a list of their own, so
+/// it stays obvious which piece of work made which product.
+fn recall_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
+    let Some(set) = palette.recall() else {
+        return widget::meta(
+            tab_empty_copy(DetailTab::Recall),
+            tea,
+            A11y::new("recall", Role::Group),
+        );
+    };
+    if set.plan.is_empty() && set.inputs.is_empty() && set.produced.is_empty() {
+        return widget::meta(
+            tab_empty_copy(DetailTab::Recall),
+            tea,
+            A11y::new("recall", Role::Group),
+        );
+    }
+    let mut col = column![].spacing(4);
+    for step in &set.plan {
+        let id = step.id.clone();
+        col = col.push(
+            mouse_area(
+                container(
+                    column![
+                        widget::meta(
+                            format!("plan  {}", step.id),
+                            tea,
+                            A11y::new("plan", Role::Status)
+                        ),
+                        text(step.title.clone())
+                            .size(tea.body())
+                            .font(icedtea::typo::UI)
+                            .color(tea.muted)
+                            .wrapping(iced::widget::text::Wrapping::Word)
+                            .width(Fill),
+                    ]
+                    .spacing(4)
+                    .padding([8, 6]),
+                )
+                .width(Fill)
+                .style(move |_| icedtea::style::card(tea, false)),
+            )
+            .on_press(Message::OpenIssue(id)),
+        );
+    }
+    for input in &set.inputs {
+        let id = input.id.clone();
+        let title_color = if input.state == "DONE" {
+            tea.muted
+        } else {
+            tea.text
+        };
+        let mut body = column![
+            widget::meta(
+                format!("{}  {}  [{}]", input.state, input.id, input.relation),
+                tea,
+                A11y::new("input", Role::Status)
+            ),
+            text(input.title.clone())
+                .size(tea.body())
+                .font(icedtea::typo::UI)
+                .color(title_color)
+                .wrapping(iced::widget::text::Wrapping::Word)
+                .width(Fill),
+        ]
+        .spacing(4)
+        .width(Fill)
+        .align_x(Alignment::Start);
+        for deed in &input.deeds {
+            body = body.push(widget::meta(
+                deed.clone(),
+                tea,
+                A11y::new("deed", Role::Status),
+            ));
+        }
+        if input.deeds.is_empty() {
+            body = body.push(widget::meta(
+                "no deeds cited".to_string(),
+                tea,
+                A11y::new("deed", Role::Status),
+            ));
+        }
+        if let Some(note) = &input.last_note {
+            body = body.push(widget::meta(
+                format!("note: {}", note.lines().next().unwrap_or_default().trim()),
+                tea,
+                A11y::new("note", Role::Status),
+            ));
+        }
+        col = col.push(
+            mouse_area(
+                container(body.padding([8, 6]))
+                    .width(Fill)
+                    .style(move |_| icedtea::style::card(tea, false)),
+            )
+            .on_press(Message::OpenIssue(id)),
+        );
+    }
+    for deed in &set.produced {
+        col = col.push(widget::meta(
+            format!("produced  {deed}"),
+            tea,
+            A11y::new("produced", Role::Status),
+        ));
+    }
+    col.into()
+}
+
 fn related_why(evidence: &[String]) -> String {
     evidence
         .iter()
@@ -980,6 +1094,7 @@ fn tab_empty_copy(tab: DetailTab) -> &'static str {
         DetailTab::Tree => "No parent or child links.",
         DetailTab::Related => "No related issues.",
         DetailTab::Notes => "No logbook yet. n writes a note.",
+        DetailTab::Recall => "Nothing declared: this stands on nothing.",
     }
 }
 
@@ -1138,13 +1253,41 @@ mod tests {
         assert!(!crate::view::extra_blocked_mark("TODO", false));
     }
 
+    /// The narrow overlay fits three tab labels and the wide pane fits every
+    /// one. Four labels do not fit 360px under any spelling worth having: the
+    /// strip charges 48px of chrome per tab before a character is drawn, so
+    /// four cost more than the pane has whatever they are called.
+    ///
+    /// Which makes reachability the thing that has to hold instead. A label the
+    /// strip clips is a tab a mouse cannot press, so the keyboard must still
+    /// visit it, and that is what the second half of this asserts.
     #[test]
-    fn side_tab_titles_all_fit_a_360_pane() {
+    fn every_side_tab_is_reachable_even_where_the_strip_clips() {
         let titles: Vec<String> = DetailTab::ALL
             .iter()
             .map(|t| t.label().to_string())
             .collect();
         assert_eq!(icedtea::widget::tab_visible_count(&titles, 360.0), 3);
-        assert_eq!(icedtea::widget::tab_visible_count(&titles, 960.0), 3);
+        assert_eq!(
+            icedtea::widget::tab_visible_count(&titles, 960.0),
+            DetailTab::ALL.len(),
+            "the wide pane has room for all of them and must show all of them"
+        );
+
+        let mut seen = vec![DetailTab::ALL[0]];
+        let mut at = DetailTab::ALL[0];
+        for _ in 1..DetailTab::ALL.len() {
+            at = at.next();
+            assert!(!seen.contains(&at), "the cycle repeats before it finishes");
+            seen.push(at);
+        }
+        assert_eq!(
+            at.next(),
+            DetailTab::ALL[0],
+            "the cycle has to close, or the last tab is a dead end"
+        );
+        for tab in DetailTab::ALL {
+            assert!(seen.contains(&tab), "{tab:?} is not reachable by cycling");
+        }
     }
 }

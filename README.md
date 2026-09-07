@@ -210,6 +210,17 @@ keys-ovly: deeds += deed-patch-overlay
 $ deedar get $(vissue recall keys-tuih --deeds-only)
 ```
 
+The tracker never opens the store, so it cannot say whether a citation still
+resolves; `check` only says whether one is shaped like an accession. The store
+answers that, over the whole working set at once, and exits non-zero if any of
+it fails:
+
+```console
+$ vissue recall keys-tuih --deeds-only | deedar evidence -
+deed-patch-overlay ok
+1 of 1 verified
+```
+
 One blocker hop is the default. A deed records its own `sources` and `deedar
 trail` walks them, so the rest of the chain is on the deeds, written by the
 units that made them rather than reconstructed by the one reading them. The

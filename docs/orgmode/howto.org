@@ -186,6 +186,28 @@ $ deedar get $(vissue recall parser-9k2m --deeds-only)
 The tracker stores the accession and nothing else. =deed --remove= drops a
 citation, and =deed= with neither flag lists them.
 
+* Check that the citations still resolve
+
+The tracker stores accessions and never opens the store, so it cannot tell you
+whether a cited deed is still there. =check= says whether a citation is
+*shaped* like one; the deed store says whether it *is* one. Compose them:
+
+#+begin_src console
+$ vissue recall parser-3xq7 --deeds-only | deedar evidence -
+deed-patch-backpressure ok
+deed-file-manifest FAILED: deed not found: deed-file-manifest
+1 of 2 verified
+#+end_src
+
+=deedar evidence -= reads one id per line, checks each, and exits non-zero if
+any failed, so a job can gate on it. Run it over a whole project by feeding it
+every citation in the corpus:
+
+#+begin_src console
+$ vissue export | jq -r '.properties.DEEDS // empty' | tr ", " "\n" \
+    | grep . | sort -u | deedar evidence -
+#+end_src
+
 * Decide something several agents disagree about
 
 =vote= records one ballot per identity and counts them. =consensus= weighs the

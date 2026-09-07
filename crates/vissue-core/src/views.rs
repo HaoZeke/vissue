@@ -81,6 +81,13 @@ pub struct IssueDetail {
     pub tags: Vec<String>,
     /// Ids listed in `:BLOCKED_BY:`.
     pub blocked_by: Vec<String>,
+    /// Deed accessions listed in `:DEEDS:`.
+    ///
+    /// Typed beside `blocked_by` rather than left in `properties` for the same
+    /// reason: a client that paints what an issue produced should not have to
+    /// know how the drawer spells a list.
+    #[serde(default)]
+    pub deeds: Vec<String>,
     /// `:PARENT:` id, when set.
     pub parent: Option<String>,
     /// Identity holding the issue, when claimed.

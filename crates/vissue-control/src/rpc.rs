@@ -2071,6 +2071,7 @@ mod tests {
             org_tags: vec![],
             tags: vec![],
             blocked_by: vec![],
+            deeds: vec![],
             parent: None,
             claimed_by: None,
             claimed_at: None,

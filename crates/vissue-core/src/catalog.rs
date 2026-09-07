@@ -338,6 +338,7 @@ fn issue_detail(rec: &IssueRec) -> IssueDetail {
         priority: rec.heading.priority.to_string(),
         properties: rec.heading.properties.clone(),
         org_tags: rec.heading.org_tags.clone(),
+        deeds: rec.heading.deeds(),
         tags: rec.tag_settings.all_tags(&rec.heading.tags()),
         blocked_by: rec.heading.blocked_by(),
         parent: rec.heading.parent().map(str::to_string),

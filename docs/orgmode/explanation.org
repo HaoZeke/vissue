@@ -155,6 +155,91 @@ diffs. An optional =vissue serve= is a cache of that parse plus a push of
 =vault/changed=; it is not a second store. Crashing it loses nothing, and
 every verb still works with it down.
 
+* Why =recall= is not retrieval
+
+An agent about to work a node needs what the node stands on. The usual answer
+is to build an index of everything the project ever said and ask it, at work
+time, which of that resembles the node: embeddings, a keyword score, a fused
+rank, a cutoff. Agent memory systems are largely this, and they report how well
+it works as a recall-at-k against a benchmark corpus.
+
+vissue does not have that question, because the corpus already answers it.
+=:BLOCKED_BY:= is what has to exist first. =:PARENT:= is the plan the node
+belongs to. =:DISCOVERED_FROM:= is where a bounce came from. Those are not
+inferred, they were written down by whoever split the work, and they are the
+same edges =ready= reads to decide the node could be started at all. =recall=
+walks them.
+
+That is a different kind of answer, not a better score on the same one. There
+is no k, no threshold, and nothing to tune, because there is no ranking: the
+set is what the plan says, and it is right or the plan is wrong. It cannot
+drift, because there is no second index to go stale. It is auditable,
+because every member of the set is there for a named edge a reader can see in
+the file. And it costs one parse of the corpus.
+
+The price is real and worth stating. A node whose plan is wrong gets a working
+set that is wrong in the same way, and no amount of retrieval quality would
+have saved it. Something relevant that nobody declared an edge to will not
+appear. =related= exists for exactly that gap: it ranks by resemblance, prints
+the evidence for each hit, and writes nothing back [24], [25], [26]. Keeping
+the two verbs apart is what stops the exact answer from being reported in the
+same shape as the guess.
+
+* Why a deed rather than a summary
+
+An input to a node is only useful if the next unit can open what it produced.
+The tempting shortcut is to have the finishing unit write a summary of its work
+into the tracker, and the next one read that. A summary is lossy in a way
+nobody notices until it matters. It is written before anyone knows what the
+next unit will need. It cannot be checked against what was actually made. A
+second summary of a summary loses more.
+
+So the tracker stores an accession and not a description.
+[[https://github.com/indynull/deedar][deedar]] mints a deed for the product,
+freezes it, and issues evidence over its bytes; =:DEEDS:= holds that id. The
+next unit opens the deed itself, and =deedar trail= walks what it was built
+from, which is why =recall= only needs one blocker hop: the rest of the chain
+is on the deeds, recorded by the units that made them rather than reconstructed
+by the one reading them [30].
+
+The separation is the point. vissue owns the order of the work; the deed store
+owns the products and their provenance. Neither holds a copy of the other, so
+there is nothing to keep in sync.
+
+* Why a tally is not a consensus
+
+=vote= counts ballots and refuses to call a plurality agreement. That is as far
+as counting goes, and it is not far enough: agents are not interchangeable. A
+maintainer, a reviewer whose last two calls were wrong, and a worker that has
+seen this file once each cast one ballot, and a count says the three are worth
+the same.
+
+DeGroot [27] is the standard model of the thing a count is missing. Each agent
+replaces its opinion with the weighted average of the opinions it listens to,
+and the iteration is run to where it settles. What comes out is not just a
+weighted number: the left Perron vector of the influence matrix is each agent's
+*social power*, the weight its ballot actually carried, and it is measured
+rather than declared. An agent nobody listens to has power zero however loudly
+it voted [29].
+
+The interesting output is the one a count cannot produce at all. DeGroot's
+iteration reaches agreement exactly when the trust graph has one closed group
+every agent can reach and that group is aperiodic [28]. Two review teams that
+cite only each other never converge, whatever the arithmetic does. That is a
+fact about the reviewers, and reporting it as a number would be worse than
+reporting nothing.
+
+vissue decides which of those cases holds from the graph rather than from the
+iteration, by finding the closed strongly connected components and their
+period. Deciding it from the arithmetic means asking whether a number stopped
+moving, and a group that mixes slowly stops moving long before its members
+agree, which reads as a division that is not there.
+
+With no trust configured every agent listens to every other equally, the matrix
+is doubly stochastic, and the consensus is the tally as a fraction.
+Configuration only moves weight away from that, so nothing surprising happens
+to a tracker nobody has set up.
+
 * Why =related= does not write edges
 
 Walk =:PARENT:=, =:BLOCKED_BY:=, =:DISCOVERED_FROM:=, and Org links
@@ -305,6 +390,19 @@ a relation in the audit table above.
     Neurobiologically Inspired Long-Term Memory for Large Language Models,"
     2024, doi:
     [[https://doi.org/10.48550/arXiv.2405.14831][10.48550/arXiv.2405.14831]].
+27. M. H. DeGroot, "Reaching a Consensus," /Journal of the American
+    Statistical Association/, 1974, doi:
+    [[https://doi.org/10.1080/01621459.1974.10480137][10.1080/01621459.1974.10480137]].
+28. R. L. Berger, "A Necessary and Sufficient Condition for Reaching a
+    Consensus Using DeGroot's Method," /Journal of the American Statistical
+    Association/, 1981, doi:
+    [[https://doi.org/10.1080/01621459.1981.10477662][10.1080/01621459.1981.10477662]].
+29. B. Golub and M. O. Jackson, "Naive Learning in Social Networks and the
+    Wisdom of Crowds," /American Economic Journal: Microeconomics/, 2010,
+    doi: [[https://doi.org/10.1257/mic.2.1.112][10.1257/mic.2.1.112]].
+30. Y. L. Simmhan, B. Plale, and D. Gannon, "A survey of data provenance in
+    e-science," /ACM SIGMOD Record/, 2005, doi:
+    [[https://doi.org/10.1145/1084805.1084812][10.1145/1084805.1084812]].
 
 See also the [[https://orgmode.org/manual/][Org mode manual]], the
 [[https://modelcontextprotocol.io/][Model Context Protocol]],

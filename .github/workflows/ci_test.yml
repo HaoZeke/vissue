@@ -192,6 +192,20 @@ jobs:
           "$BIN" --root tests/fixture_vault export | while read -r line; do
             printf '%s' "$line" | python3 -c 'import json,sys; json.load(sys.stdin)'
           done
+      - name: The working set and the consensus answer over the fixture
+        run: |
+          set -euo pipefail
+          BIN=./target/release/vissue
+          # Both are reads. The last step of this job diffs the fixture, so
+          # running them here is also what proves they stay reads.
+          "$BIN" --root tests/fixture_vault recall atlas-3e4f
+          "$BIN" --root tests/fixture_vault recall atlas-3e4f --json |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["id"]=="atlas-3e4f", d'
+          "$BIN" --root tests/fixture_vault recall atlas-3e4f --deeds-only
+          "$BIN" --root tests/fixture_vault consensus atlas-3e4f
+          "$BIN" --root tests/fixture_vault consensus atlas-3e4f --json |
+            python3 -c 'import json,sys; json.load(sys.stdin)'
+
       - name: Mirror is regenerable and unchanged on a second run
         run: |
           set -euo pipefail

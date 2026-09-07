@@ -126,6 +126,36 @@ grep -q ":docs:urgent:" "$issues" || fail "vissue dropped the Org tags on rewrit
 grep -q "^CLOSED:.*DEADLINE:" "$issues" || fail "vissue dropped the planning line"
 lint_clean "$issues" "issues.org after a round trip"
 
+echo "7b. a deed citation is an ordinary property, and survives Emacs"
+"$bin" --root "$root" deed "$first_id" --add deed-patch-parser >/dev/null
+grep -q ":DEEDS:.*deed-patch-parser" "$issues" || fail "the citation did not land"
+lint_clean "$issues" "issues.org with a citation"
+# Org is the authority on whether the drawer still reads as a property. Asking
+# vissue would only prove vissue can read what vissue wrote.
+cited=$(emacs --batch -Q --eval "(progn
+    (require 'org)
+    (find-file \"$issues\")
+    (org-mode)
+    (goto-char (point-min))
+    (re-search-forward \"$first_id\")
+    (princ (or (org-entry-get (point) \"DEEDS\") \"\")))" 2>/dev/null)
+test "$cited" = "deed-patch-parser" ||
+  fail "org-entry-get read the citation as '$cited'"
+# And an Emacs-written one reads back, which is the direction that matters for
+# a person naming a product by hand.
+emacs --batch -Q --eval "(progn
+    (require 'org)
+    (find-file \"$issues\")
+    (org-mode)
+    (goto-char (point-min))
+    (re-search-forward \"$first_id\")
+    (org-entry-put (point) \"DEEDS\" \"deed-patch-parser deed-file-notes\")
+    (save-buffer))" 2>/dev/null
+"$bin" --root "$root" recall "$first_id" >/dev/null ||
+  fail "vissue could not read a citation Emacs wrote"
+"$bin" --root "$root" deed "$first_id" | grep -q "deed-file-notes" ||
+  fail "vissue dropped the citation Emacs added"
+
 echo "8. a second rewrite changes nothing"
 before=$(cat "$issues")
 "$bin" --root "$root" list >/dev/null

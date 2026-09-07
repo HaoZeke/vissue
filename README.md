@@ -14,7 +14,11 @@
 A plan is a directed acyclic graph of org headings. One file per project
 stores the nodes. `:PARENT:` groups work under a plan. `:BLOCKED_BY:` is
 the partial order. `ready` is the frontier any agent can pick up. `claim`
-is the lock so two agents do not take the same node.
+is the lock so two agents do not take the same node. `recall` is what a
+node stands on, walked from those same edges. `:DEEDS:` names what the
+work produced, so the next node opens it instead of rereading a
+transcript. `consensus` weighs the ballots several agents cast on a node
+by how much the group listens to each of them.
 
 An issue is a top-level org heading. The file is the database: no SQLite, no
 second store. A command parses the files it needs. An optional `vissue serve`
@@ -32,8 +36,11 @@ work-stealing ready deque [9] over that order, which is also how a
 rebuild DAG exposes dirty sources [8]. `related` is a named
 neighborhood over declared edges, the same discipline as a citation
 graph [12], [14], [17] and the opposite of an extracted memory graph
-[24], [25], [26]. OokCite is how those papers were found and checked,
-not a second reading list to copy.
+[24], [25], [26]. `:DEEDS:` names what a unit of work produced rather
+than describing it [30], and `consensus` averages opinions over declared
+trust [27], [28], [29]. The numbered sources are in the
+[explanation](https://vissue.rgoswami.me/explanation.html); OokCite is
+how they were found and checked, not a second reading list to copy.
 
 ```
 <root>/Software/<project>/issues.org
@@ -158,10 +165,106 @@ it [2], [3], [4]; vissue stores the resulting directed graph, names the
 ready set [8], [9], and refuses a cyclic edit [5], [6].
 
 `related` asks what else in the corpus is a neighbor, and why.
-Explicit `:PARENT:`, `:BLOCKED_BY:`, `:DISCOVERED_FROM:`, and Org body
-links outrank shared tags and rare terms [22]. The command prints the
-evidence (`blocked_by`, `org_link`, `term:keymap`) and writes nothing
+Explicit `:PARENT:`, `:BLOCKED_BY:`, `:DISCOVERED_FROM:`, a shared deed,
+and Org body links outrank shared tags and rare terms [22]. The command
+prints the evidence (`blocked_by`, `deed:deed-patch-overlay`,
+`term:keymap`) and writes nothing back [24], [25], [26].
+
+## Working memory: what the node stands on
+
+A claim says who is working. It does not say what the work should open first.
+The usual answer is to index everything the project ever said and ask, at work
+time, which of it resembles the node. The corpus already answers that question
+without an index: `:BLOCKED_BY:` is what has to exist first, `:PARENT:` is the
+plan the node belongs to, `:DISCOVERED_FROM:` is where a bounce came from.
+
+`recall` walks those three and prints the result. No embedding, no ranking, no
+threshold, and nothing to keep in sync: the set is what the plan says, and
+every member of it is there for an edge a reader can point at in the file.
+
+```console
+$ vissue recall keys-tuih
+keys-tuih              BLOCKED   Terminal UI set_keymap and overlay on_key  (keys)
+
+Plan
+  keys-e0pl              TODO      Epic: Colemak leader sequence
+
+Inputs
+  keys-ovly              DONE      Overlay on_key  [blocked-by]
+    deed-patch-overlay
+    note: landed without the modifier table
+
+Produced
+  (nothing cited yet)
+```
+
+The accession under an input is the handoff.
+[deedar](https://github.com/indynull/deedar) mints a **deed** for what a unit
+of work produced, freezes it, and issues evidence over its bytes. `deed` cites
+that id on the heading; nothing else about the product is copied here, because
+the deed store owns it.
+
+```console
+$ vissue deed keys-ovly --add deed-patch-overlay
+keys-ovly: deeds += deed-patch-overlay
+$ deedar get $(vissue recall keys-tuih --deeds-only)
+```
+
+One blocker hop is the default. A deed records its own `sources` and `deedar
+trail` walks them, so the rest of the chain is on the deeds, written by the
+units that made them rather than reconstructed by the one reading them. The
+cost of this design is equally plain: work nobody declared an edge to does not
+appear. `related` is the verb for that gap, and it ranks and writes nothing
 back [24], [25], [26].
+
+## Consensus: whose agreement it is
+
+`vote` counts, and it already refuses to call a plurality agreement. Counting
+is the right answer only when every voter is worth the same, and agents are
+not. `consensus` weighs the same ballots by who the group listens to, using
+DeGroot averaging [27] over a trust graph that lives in the configuration and
+is versioned with the work.
+
+```console
+$ vissue vote api-3xq7
+  consensus: ship (2 of 3)
+
+$ vissue consensus api-3xq7
+api-3xq7: 3 ballots over 2 options, trust configured
+  count
+    ship                     2 (alice, bob)
+    hold                     1 (carol)
+  consensus after 18 round(s)
+    hold                     0.714
+    ship                     0.286
+  social power
+    carol                    0.714
+    alice                    0.286
+    bob                      0.000
+  holds: hold (0.714 of the group's weight)
+  the count leads with ship and the group's weight does not
+```
+
+Social power is the left Perron vector of the influence matrix [29]: the weight
+each ballot actually carried. Nobody listens to `bob`, so `bob` moved the group
+by nothing, which is a thing a count cannot say.
+
+The result the model refuses to produce matters as much. DeGroot converges to
+agreement exactly when the trust graph holds one closed group every agent can
+reach and that group is aperiodic [28]. Two review teams that cite only each
+other never converge, and `consensus` reports that rather than averaging across
+them. It decides which case holds from the graph's closed components and their
+period, not from whether the arithmetic stopped moving, because a group that
+mixes slowly stops moving long before its members agree.
+
+Configure nothing and every agent listens to every other equally: the matrix is
+doubly stochastic and the consensus is the tally as a fraction.
+
+```toml
+[consensus.trust]
+reviewer = { maintainer = 3.0, worker = 1.0 }
+worker = { maintainer = 1.0 }
+```
 
 ## Terminal board and HUD
 

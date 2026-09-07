@@ -16,7 +16,7 @@
 | =consensus=                                                               | Weigh the same ballots by who the group listens to; social power and the two ways there is none |
 | =deed=                                                                    | Cite (=--add=), drop (=--remove=), or list the deeds this issue's work produced |
 | =recall=                                                                  | The working set for an issue: plan, inputs and their deeds, and its own |
-| =--json= on a read                                                        | =list=, =show=, =ready=, =claims=, =digest=, =search=, =children=, =ancestors=, =impact=, =backlinks=, =agenda=, =tree=, =body-excerpt=, =projects=, =recall= |
+| =--json= on a read                                                        | =list=, =show=, =ready=, =claims=, =digest=, =search=, =children=, =ancestors=, =impact=, =backlinks=, =agenda=, =tree=, =body-excerpt=, =projects=, =recall=, =consensus= |
 | =fold=                                                                    | Turn an inbox file's unstamped =* TODO= headings into issues             |
 | =whoami=                                                                  | The identity a claim would record                                        |
 | =ready=, =count=, =search=, =children=, =ancestors=, =impact=, =related=, =stale= | Query the corpus; bounded dependency and related traversal        |
@@ -680,6 +680,10 @@ numbers stopped moving: DeGroot's iteration converges exactly when the graph
 has one closed group every agent can reach and that group is aperiodic. A
 group that mixes slowly stops moving long before its agents agree, so reading
 the arithmetic would report a division that is not there.
+
+=consensus --json= gives the same result as structure: the choice set, each
+agent's limit and social power, the settling (=agreed=, =split=, =oscillating=),
+whether the iteration ran out of rounds, and the factions when there are any.
 
 =max_iterations= bounds the work. Reaching it does not change the verdict,
 which the structure already settled; the shares are then reported as an

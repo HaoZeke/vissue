@@ -261,7 +261,12 @@ enum Command {
     /// `vote` counts. This averages over the trust graph in `[consensus.trust]`,
     /// reports each agent's social power, and says when there is no consensus to
     /// reach rather than reporting one that is not there.
-    Consensus { id: String },
+    Consensus {
+        id: String,
+        /// Emit a JSON object instead of text
+        #[arg(long)]
+        json: bool,
+    },
     /// Add a dated note to the top of an issue's logbook; state and claim untouched.
     Note {
         id: String,
@@ -1206,9 +1211,13 @@ fn run() -> Result<()> {
                 )?;
             }
         }
-        Command::Consensus { id } => {
+        Command::Consensus { id, json } => {
             let found = layout_for_id(&router, &id)?;
-            emit!("{}", report::consensus(&found, &id)?)
+            emit_shape(
+                json,
+                || vissue_core::consensus::of_issue(&found, &id),
+                || report::consensus(&found, &id),
+            )?;
         }
         Command::Vote { id, choice } => {
             let found = layout_for_id(&router, &id)?;

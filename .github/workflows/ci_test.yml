@@ -118,6 +118,28 @@ jobs:
           path: lcov.info
           if-no-files-found: error
 
+  docs:
+    name: the site builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      # The exporter prefers pandoc and falls back to Emacs. Only the
+      # preferred path is installed here: the fallback exists for hosts
+      # without pandoc, and this host has one.
+      - name: Pandoc
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
+      - name: Export org and build the site
+        run: |
+          set -euo pipefail
+          bash docs/scripts/export_org_to_rst.sh
+          python -m pip install -q -r docs/requirements.txt
+          # -n is nitpicky: an org link that exported into a role sphinx
+          # cannot resolve is a dead link on the published page.
+          sphinx-build -b html -n -W docs/source docs/build
+
   org-interop:
     name: Emacs reads what vissue writes
     runs-on: ubuntu-latest

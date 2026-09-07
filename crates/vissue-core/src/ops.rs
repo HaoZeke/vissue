@@ -898,6 +898,20 @@ pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> 
     })
 }
 
+/// The ballots cast on one issue, in the order the drawer holds them.
+///
+/// Exposed because a tally is not the only question worth asking of them:
+/// [`crate::consensus`] weighs the same ballots by who the group listens to.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus or the file cannot be read.
+pub fn ballots(layout: &Layout, id: &str) -> Result<Vec<Ballot>> {
+    let (h, _path, _project) =
+        find_by_id(layout, id)?.ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+    Ok(read_ballots(&h).0)
+}
+
 /// Ballots on a heading, plus any line of the drawer this does not understand.
 ///
 /// The foreign lines are carried rather than dropped. The drawer is org a person

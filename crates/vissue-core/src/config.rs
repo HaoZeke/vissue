@@ -9,6 +9,7 @@ use anyhow::Context;
 
 use crate::error::Result;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -95,6 +96,7 @@ struct RootConfig {
     prefix: Option<String>,
     agent: Option<String>,
     issues: IssuesOverride,
+    consensus: ConsensusOverride,
 }
 
 impl RootConfig {
@@ -158,17 +160,129 @@ impl IssuesOverride {
     }
 }
 
+/// Who listens to whom, and how hard the consensus iteration tries.
+///
+/// The trust rows are the influence graph DeGroot averages over. Each row names
+/// the agents one agent listens to, in whatever units the author finds natural:
+/// only the ratios matter, because [`crate::consensus`] normalises the row. An
+/// agent with no row listens to itself with `self_weight` and splits the rest
+/// equally over the others, which makes an unconfigured tracker report the tally
+/// as a fraction rather than something surprising.
+///
+/// ```toml
+/// [consensus]
+/// self_weight = 0.5
+///
+/// [consensus.trust]
+/// reviewer = { maintainer = 3.0, worker = 1.0 }
+/// worker = { maintainer = 1.0 }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConsensusSection {
+    /// Weight an agent puts on its own opinion when its row does not name it.
+    pub self_weight: f64,
+    /// Largest disagreement that still counts as settled.
+    pub tolerance: f64,
+    /// Rounds to try before calling the trust graph periodic.
+    pub max_iterations: usize,
+    /// Trust rows, keyed by the identity that holds the opinion.
+    pub trust: BTreeMap<String, BTreeMap<String, f64>>,
+}
+
+impl Default for ConsensusSection {
+    fn default() -> Self {
+        Self {
+            // Positive on purpose. A zero diagonal is what makes a trust graph
+            // periodic, and a tracker nobody has configured should converge.
+            self_weight: 0.5,
+            tolerance: 1e-9,
+            max_iterations: 500,
+            trust: BTreeMap::new(),
+        }
+    }
+}
+
+/// The subset of [`ConsensusSection`] a configuration file names.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct ConsensusOverride {
+    self_weight: Option<f64>,
+    tolerance: Option<f64>,
+    max_iterations: Option<usize>,
+    trust: BTreeMap<String, BTreeMap<String, f64>>,
+}
+
+impl ConsensusOverride {
+    /// Apply this layer, refusing values the iteration cannot use.
+    ///
+    /// Refused rather than clamped: a `self_weight` of 2 is a typo, and clamping
+    /// it to 1 would hand back a consensus in which nobody listened to anybody
+    /// and say nothing about why.
+    fn apply_to(&self, base: &mut ConsensusSection, whence: &Path) -> Result<()> {
+        if let Some(value) = self.self_weight {
+            if !(0.0..=1.0).contains(&value) {
+                return Err(anyhow::anyhow!(
+                    "{}: consensus.self_weight is {value}, which is not a share between 0 and 1",
+                    whence.display()
+                )
+                .into());
+            }
+            base.self_weight = value;
+        }
+        if let Some(value) = self.tolerance {
+            if !(value > 0.0 && value.is_finite()) {
+                return Err(anyhow::anyhow!(
+                    "{}: consensus.tolerance is {value}, which is not a positive distance",
+                    whence.display()
+                )
+                .into());
+            }
+            base.tolerance = value;
+        }
+        if let Some(value) = self.max_iterations {
+            if value == 0 {
+                return Err(anyhow::anyhow!(
+                    "{}: consensus.max_iterations is 0, which runs no rounds at all",
+                    whence.display()
+                )
+                .into());
+            }
+            base.max_iterations = value;
+        }
+        for (agent, row) in &self.trust {
+            for (other, weight) in row {
+                if !(*weight >= 0.0 && weight.is_finite()) {
+                    return Err(anyhow::anyhow!(
+                        "{}: consensus.trust.{agent}.{other} is {weight}, \
+                         which is not a weight",
+                        whence.display()
+                    )
+                    .into());
+                }
+            }
+            // Row by row, like every other override: a file that retunes one
+            // agent's trust does not silently drop the rows it says nothing
+            // about.
+            base.trust.insert(agent.clone(), row.clone());
+        }
+        Ok(())
+    }
+}
+
 /// Effective configuration for one layout.
 #[derive(Debug, Clone, Default)]
 pub struct VissueConfig {
     /// Knobs that shape newly created issues and hygiene thresholds.
     pub issues: IssuesSection,
+    /// Who listens to whom when a consensus is computed.
+    pub consensus: ConsensusSection,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 struct PrefixConfigFile {
     issues: IssuesOverride,
+    consensus: ConsensusOverride,
 }
 
 impl VissueConfig {
@@ -182,9 +296,11 @@ impl VissueConfig {
     /// parsed.
     pub fn load(layout: &Layout) -> Result<Self> {
         let mut issues = IssuesSection::default();
-        RootConfig::load(layout.root())?
-            .issues
-            .apply_to(&mut issues);
+        let mut consensus = ConsensusSection::default();
+        let root_path = layout.root().join("vissue.toml");
+        let root = RootConfig::load(layout.root())?;
+        root.issues.apply_to(&mut issues);
+        root.consensus.apply_to(&mut consensus, &root_path)?;
         let path = layout.projects_dir().join("issues.config.toml");
         if path.exists() {
             let raw =
@@ -192,8 +308,9 @@ impl VissueConfig {
             let parsed: PrefixConfigFile =
                 toml::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
             parsed.issues.apply_to(&mut issues);
+            parsed.consensus.apply_to(&mut consensus, &path)?;
         }
-        Ok(Self { issues })
+        Ok(Self { issues, consensus })
     }
 }
 

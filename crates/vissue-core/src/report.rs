@@ -296,6 +296,138 @@ pub fn recall_deeds(layout: &Layout, id: &str, depth: usize) -> Result<String> {
     Ok(out)
 }
 
+/// The DeGroot consensus over an issue's ballots, weighted by who the group
+/// listens to.
+///
+/// `vote` counts; this weighs. Both are printed, because the useful thing about
+/// the weighted answer is where it differs from the count, and a reader shown
+/// only one of them cannot tell whether the trust configuration did anything.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, `id` is not in it, or the
+/// configuration names a weight the iteration cannot use.
+pub fn consensus(layout: &Layout, id: &str) -> Result<String> {
+    let ballots = crate::ops::ballots(layout, id)?;
+    let cfg = crate::config::VissueConfig::load(layout)?.consensus;
+    let outcome = crate::consensus::degroot(&ballots, &cfg);
+    Ok(consensus_text(id, &ballots, &outcome))
+}
+
+fn consensus_text(
+    id: &str,
+    ballots: &[crate::ops::Ballot],
+    outcome: &crate::consensus::Outcome,
+) -> String {
+    use crate::consensus::{Settling, TrustSource};
+
+    if ballots.is_empty() {
+        return format!("{id}: no votes\n");
+    }
+    let mut out = format!(
+        "{id}: {} ballot{} over {} option{}, trust {}\n",
+        ballots.len(),
+        if ballots.len() == 1 { "" } else { "s" },
+        outcome.choices.len(),
+        if outcome.choices.len() == 1 { "" } else { "s" },
+        match outcome.trust {
+            TrustSource::Default => "default (equal weight)",
+            TrustSource::Configured => "configured",
+        }
+    );
+
+    let counts = crate::consensus::tally(ballots);
+    let mut ranked: Vec<(&String, &Vec<String>)> = counts.iter().collect();
+    ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(b.0)));
+    let _ = writeln!(out, "  count");
+    for (choice, who) in &ranked {
+        let _ = writeln!(out, "    {:<24} {} ({})", choice, who.len(), who.join(", "));
+    }
+
+    match outcome.settling {
+        Settling::Agreed => {
+            let consensus = outcome.consensus.as_ref().expect("agreed carries a limit");
+            let mut shares: Vec<(&str, f64)> = outcome
+                .choices
+                .iter()
+                .map(String::as_str)
+                .zip(consensus.iter().copied())
+                .collect();
+            shares.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
+            let _ = writeln!(
+                out,
+                "  consensus after {} round(s){}",
+                outcome.rounds,
+                if outcome.budget_reached {
+                    ", which is the whole budget: the shares are an estimate"
+                } else {
+                    ""
+                }
+            );
+            for (choice, share) in &shares {
+                let _ = writeln!(out, "    {choice:<24} {share:.3}");
+            }
+            let mut power: Vec<(&str, f64)> = outcome
+                .agents
+                .iter()
+                .map(|a| (a.agent.as_str(), a.power.unwrap_or_default()))
+                .collect();
+            power.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
+            let _ = writeln!(out, "  social power");
+            for (agent, weight) in &power {
+                let _ = writeln!(out, "    {agent:<24} {weight:.3}");
+            }
+            match outcome.leader() {
+                // One agent agreeing with itself is not agreement, and the
+                // weighted answer is exactly as unchecked as the count was.
+                Some(_) if ballots.len() < 2 => {
+                    let _ = writeln!(
+                        out,
+                        "  one ballot only: {}, which nobody has agreed with yet",
+                        ranked[0].0
+                    );
+                }
+                Some((choice, share)) => {
+                    let _ = writeln!(out, "  holds: {choice} ({share:.3} of the group's weight)");
+                    if ranked[0].0 != choice {
+                        // The whole reason to weigh rather than count.
+                        let _ = writeln!(
+                            out,
+                            "  the count leads with {} and the group's weight does not",
+                            ranked[0].0
+                        );
+                    }
+                }
+                None => {
+                    let _ = writeln!(
+                        out,
+                        "  no lead: the group's weight is split evenly across the options"
+                    );
+                }
+            }
+        }
+        Settling::Split => {
+            let _ = writeln!(
+                out,
+                "  no consensus: the trust graph holds {} group(s) that do not listen to each other",
+                outcome.factions.len()
+            );
+            for faction in &outcome.factions {
+                let _ = writeln!(out, "    {}", faction.join(", "));
+            }
+        }
+        Settling::Oscillating => {
+            let _ = writeln!(
+                out,
+                "  no consensus: {} rounds did not settle, which is a trust graph with no \
+                 weight on its own opinions",
+                outcome.rounds
+            );
+        }
+    }
+    out
+}
+
 /// Case-insensitive substring scan over id, title, properties, and body. Linear
 /// in the corpus, which is the right cost until the issue count climbs.
 ///

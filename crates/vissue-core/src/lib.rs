@@ -9,6 +9,7 @@
 pub mod agent;
 pub mod catalog;
 pub mod config;
+pub mod consensus;
 pub mod digest;
 pub mod error;
 pub mod events;
@@ -42,7 +43,7 @@ pub mod vissue_capnp {
 }
 pub mod views;
 
-pub use config::{DEFAULT_PREFIX, Layout, VissueConfig};
+pub use config::{ConsensusSection, DEFAULT_PREFIX, Layout, VissueConfig};
 pub use error::{Error, Result};
 pub use model::{IssueHeading, LogEntry, READY_STATES, TODO_HEADER, TODO_KEYWORDS};
 pub use ops::{CreateOpts, RejectOpts, UpdatePred};

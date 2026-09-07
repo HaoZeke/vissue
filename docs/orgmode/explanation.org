@@ -195,10 +195,11 @@ idea.
 | Design                        | Where the context comes from                    | What can go wrong                                     |
 |-------------------------------+-------------------------------------------------+-------------------------------------------------------|
 | Extracted memory store        | An index built from the transcript: keywords, embeddings, an entity graph, fused and cut off at k [24], [25], [26] | The right thing ranks below the cutoff, or the index drifts from what the files now say |
-| Harness-owned working set     | Whatever the turn loop kept after compaction    | The compaction policy decided, and nobody recorded what it dropped |
+| Harness-owned working set     | A view derived from the turn's own event log, compacted to fit  | What reaches the model is chosen by a compaction policy rather than by what the task needs |
 | A walk of declared edges      | =:PARENT:=, =:BLOCKED_BY:=, =:DISCOVERED_FROM:=, and the deeds those nodes cited | The plan is wrong, or nobody declared the edge        |
 
-The first two answer for anything that was ever said. This one answers only for
+The first two answer for anything that was ever said: one by searching an index
+built over it, the other by carrying a compacted view of it forward. This one answers only for
 what somebody wrote down as a dependency, which is a much smaller claim and the
 reason it can be exact. A tracker whose edges are careless gets a working set to
 match, and no retrieval quality would have rescued it: the failure has moved

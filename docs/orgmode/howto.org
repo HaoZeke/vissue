@@ -143,6 +143,65 @@ which is the audit trail of what happened to the issue; a report is prose
 about the work, which belongs under the heading where a reader looks for
 what the issue is about.
 
+* Open what the work stands on
+
+=recall= is the working set for one issue: the plan above it, what blocks it
+and what each of those produced, the issue it was bounced from, and what it has
+produced itself. Run it after claiming and before starting.
+
+#+begin_src console
+$ vissue claim parser-3xq7
+claimed parser-3xq7 by impl (BLOCKED -> STARTED)
+  `recall parser-3xq7` for 2 declared inputs, a plan above it
+$ vissue recall parser-3xq7
+$ vissue recall parser-3xq7 --json
+#+end_src
+
+It walks declared edges rather than ranking the corpus, so the set is what the
+plan says the work needs. =related= is the verb for the other question.
+
+* Name what a unit of work produced
+
+A claim says who is working and a note says what happened. Neither says what
+the work made, so the next unit had to reread a transcript to find out.
+
+[[https://github.com/indynull/deedar][deedar]] records a product as a *deed*
+and freezes it. =deed= cites that accession on the heading, and the next
+issue's =recall= hands it on:
+
+#+begin_src console
+$ deedar create patch --id deed-patch-backpressure --name "back-pressure" \
+    --tree . --diff work.patch --functionary impl --agent impl
+$ vissue deed parser-3xq7 --add deed-patch-backpressure
+parser-3xq7: deeds += deed-patch-backpressure
+$ vissue update parser-3xq7 --state DONE
+#+end_src
+
+Whoever picks up the issue this one was blocking opens the product directly:
+
+#+begin_src console
+$ deedar get $(vissue recall parser-9k2m --deeds-only)
+#+end_src
+
+The tracker stores the accession and nothing else. =deed --remove= drops a
+citation, and =deed= with neither flag lists them.
+
+* Decide something several agents disagree about
+
+=vote= records one ballot per identity and counts them. =consensus= weighs the
+same ballots by how much the group listens to each agent.
+
+#+begin_src console
+$ VISSUE_AGENT=reviewer vissue vote parser-3xq7 --for hold
+$ vissue vote parser-3xq7
+$ vissue consensus parser-3xq7
+#+end_src
+
+With no =[consensus.trust]= configured the weighted answer is the count as a
+fraction. Configure the rows and the report says where the two differ, which
+agent carried how much of the result, and whether the group can reach an
+agreement at all.
+
 * Follow the graph
 
 =tree= walks children and blockers below an id; =graph= emits the whole thing
@@ -159,8 +218,8 @@ $ vissue impact parser-k29f --depth 3
 * Ask what else is related, and why
 
 =related= gives a bounded, derived neighbourhood. Explicit =:PARENT:=,
-=:BLOCKED_BY:=, =:DISCOVERED_FROM:=, and Org body links rank above shared tags
-and rare terms. The result names its evidence and writes nothing back.
+=:BLOCKED_BY:=, =:DISCOVERED_FROM:=, a shared deed, and Org body links rank
+above shared tags and rare terms. The result names its evidence and writes nothing back.
 
 #+begin_src console
 $ vissue related parser-k29f --depth 2 --limit 20 --format org

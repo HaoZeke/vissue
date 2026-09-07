@@ -70,11 +70,16 @@ It is the open frontier, not a schedule. A parent with =:ORDERED: t=
 holds later children out of that list until the earlier ones are
 =DONE= or =CANCELLED=.
 
-* 4. Work an issue and close it
+* 4. Work an issue, name what it made, and close it
 
 #+begin_src console
 $ vissue claim parser-k29f
 claimed parser-k29f by you@yourhost (TODO -> STARTED)
+
+$ vissue deed parser-k29f --add deed-patch-manifest-header
+parser-k29f: deeds += deed-patch-manifest-header
+parser-k29f: 1 deed
+  deed-patch-manifest-header
 
 $ vissue update parser-k29f --state DONE
 parser-k29f: state STARTED -> DONE, claim released (you@yourhost)
@@ -85,13 +90,38 @@ Closing a blocker gives up the claim and names every issue still waiting on
 it. The hint goes to standard error, so a pipeline reading standard output is
 unaffected.
 
-* 5. Watch the backlog open up
+The accession in the middle is the handoff.
+[[https://github.com/indynull/deedar][deedar]] mints one for the thing the work
+produced and keeps the bytes; the tracker keeps the id, so whoever picks up the
+next issue can open the product instead of asking what happened. Nothing here
+requires deedar to be installed: the tracker only ever stores the id.
+
+* 5. Watch the backlog open up, and hand the product on
 
 #+begin_src console
 $ vissue update parser-3xq7 --unblock parser-k29f
 parser-3xq7: state BLOCKED -> TODO (auto on unblock), blocked_by -= parser-k29f
 $ vissue ready
 parser-3xq7            TODO      [#A]  Publish the release notes
+#+end_src
+
+Unblocking dropped the edge, so =recall= now has nothing to hand over. Ask it
+before clearing the blocker instead, which is the ordinary order: the next
+worker claims, reads what its inputs produced, and only then starts.
+
+#+begin_src console
+$ vissue recall parser-3xq7
+parser-3xq7            BLOCKED   Publish the release notes  (parser)
+
+Inputs
+  parser-k29f            DONE      Reject a manifest with no header  [blocked-by]
+    deed-patch-manifest-header
+
+Produced
+  (nothing cited yet)
+
+Body
+  (no body)
 #+end_src
 
 * 6. Put a second worker on it

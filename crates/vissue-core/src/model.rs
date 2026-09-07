@@ -84,7 +84,25 @@ pub struct LogEntry {
     pub raw: Option<String>,
 }
 
+/// Opening of the one logbook note the tracker writes for itself.
+pub const CLAIM_RELEASED_NOTE: &str = "claim released:";
+
 impl LogEntry {
+    /// Whether this line is the tracker's own bookkeeping rather than something
+    /// a worker said.
+    ///
+    /// A reader looking for the last word on an issue wants what somebody wrote
+    /// about the work. Releasing a claim files a note too, and it is the most
+    /// recent one on almost every closed issue, so a reader that took the first
+    /// note it found would nearly always be handed the same sentence about a
+    /// claim rather than anything about the work.
+    #[must_use]
+    pub fn is_bookkeeping(&self) -> bool {
+        self.note
+            .as_deref()
+            .is_some_and(|note| note.trim_start().starts_with(CLAIM_RELEASED_NOTE))
+    }
+
     /// One logbook line, matching the Org drawer form this crate writes.
     pub fn render(&self) -> String {
         if let Some(raw) = &self.raw {
@@ -316,6 +334,10 @@ impl IssueHeading {
 
     /// Drop the claim, leaving a logbook note so the history survives the
     /// properties being cleared.
+    ///
+    /// The note it writes is the one line in a logbook the tracker authors
+    /// itself; [`LogEntry::is_bookkeeping`] is how a reader tells it from
+    /// something a worker said.
     pub fn release_claim(&mut self) -> Option<(String, String)> {
         let who = self.properties.remove(CLAIMED_BY)?;
         let when = self.properties.remove(CLAIMED_AT).unwrap_or_default();
@@ -325,7 +347,7 @@ impl IssueHeading {
                 timestamp: LogEntry::now(),
                 from_state: None,
                 to_state: None,
-                note: Some(format!("claim released: {who} held since {when}")),
+                note: Some(format!("{CLAIM_RELEASED_NOTE} {who} held since {when}")),
                 raw: None,
             },
         );

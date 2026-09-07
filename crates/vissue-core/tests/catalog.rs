@@ -1076,6 +1076,44 @@ fn an_input_carries_the_last_thing_said_about_it() {
     );
 }
 
+/// Releasing a claim files a note of its own, and on a closed issue it is
+/// almost always the newest one. Handing that back as the last word would mean
+/// nearly every input reported the same sentence about a claim.
+#[test]
+fn the_last_word_is_not_the_tracker_talking_to_itself() {
+    let mut blocker = issue("p", "p-first", "DONE", "the groundwork");
+    blocker.heading.logbook = vec![
+        vissue_core::model::LogEntry {
+            timestamp: "[2026-09-07 Mon]".into(),
+            from_state: None,
+            to_state: None,
+            note: Some("claim released: impl held since [2026-09-06 Sun]".into()),
+            raw: None,
+        },
+        vissue_core::model::LogEntry {
+            timestamp: "[2026-09-06 Sun]".into(),
+            from_state: None,
+            to_state: None,
+            note: Some("landed without the fast path".into()),
+            raw: None,
+        },
+    ];
+    let issues = vec![
+        blocker,
+        with_property(
+            issue("p", "p-next", "TODO", "the next step"),
+            "BLOCKED_BY",
+            "p-first",
+        ),
+    ];
+
+    let set = recall_from(&issues, "p-next", 1).unwrap();
+    assert_eq!(
+        set.inputs[0].last_note.as_deref(),
+        Some("landed without the fast path")
+    );
+}
+
 /// Two issues citing one deed worked on the same product. That is declared, so
 /// it outranks a resemblance and the evidence names the deed.
 #[test]

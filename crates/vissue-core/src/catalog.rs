@@ -928,11 +928,13 @@ fn recall_input(rec: &IssueRec, relation: &str) -> RecallInput {
         relation: relation.to_string(),
         deeds: rec.heading.deeds(),
         // Newest first, so the first note in the drawer is the last thing that
-        // was said about the issue.
+        // was said about the issue. The tracker's own claim-release line is not
+        // one of those, and it is the newest note on almost every closed issue.
         last_note: rec
             .heading
             .logbook
             .iter()
+            .filter(|entry| !entry.is_bookkeeping())
             .find_map(|entry| entry.note.clone()),
     }
 }

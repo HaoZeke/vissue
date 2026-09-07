@@ -671,17 +671,48 @@ pub fn claim_as(layout: &Layout, id: &str, force: bool, identity: &str) -> Resul
         if h.claimed_by().is_none() {
             h.set_claim(identity);
         }
+        // Read off the heading before the write releases the borrow on it.
+        let standing = standing_on(h);
         doc.write()?;
         if was != "STARTED" {
             let _ = crate::events::emit_state_change(layout, &project, id, &was, "STARTED");
         }
-        if was == "STARTED" {
-            Ok(format!("claimed {id} by {identity}\n"))
+        let mut out = if was == "STARTED" {
+            format!("claimed {id} by {identity}\n")
         } else {
-            Ok(format!("claimed {id} by {identity} ({was} -> STARTED)\n"))
-        }
+            format!("claimed {id} by {identity} ({was} -> STARTED)\n")
+        };
+        out.push_str(&standing);
+        Ok(out)
     })?;
     Ok(report)
+}
+
+/// The line a claim adds when the issue has declared inputs.
+///
+/// A claim is where an agent starts working, and the working set is the next
+/// thing it needs. Off the heading in hand rather than a corpus walk, so taking
+/// a node costs no more than it did; `recall` does the walk when asked.
+fn standing_on(h: &IssueHeading) -> String {
+    let blockers = h.blocked_by().len();
+    let bounced = crate::props::get(&h.properties, crate::props::DISCOVERED_FROM).is_some();
+    if blockers == 0 && !bounced && h.parent().is_none() {
+        return String::new();
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if blockers > 0 {
+        parts.push(format!(
+            "{blockers} declared input{}",
+            if blockers == 1 { "" } else { "s" }
+        ));
+    }
+    if bounced {
+        parts.push("an origin it was bounced from".to_string());
+    }
+    if h.parent().is_some() {
+        parts.push("a plan above it".to_string());
+    }
+    format!("  `recall {}` for {}\n", h.id, parts.join(", "))
 }
 
 /// What an update changed, plus advice about issues left dangling by it.
@@ -1696,6 +1727,37 @@ mod tests {
             .headings[0]
             .id
             .clone()
+    }
+
+    /// A claim is where an agent starts working, so it is where the working set
+    /// has to be findable from. A verb nothing points at is a verb nobody runs.
+    #[test]
+    fn a_claim_points_at_the_working_set_when_there_is_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(&layout, "sample", "the groundwork", CreateOpts::default()).unwrap();
+        let first = only_id(&layout, "sample");
+        create(&layout, "sample", "the next step", CreateOpts::default()).unwrap();
+        let second = IssueDoc::parse_file("sample", &layout.project_issues_path("sample"))
+            .unwrap()
+            .headings
+            .into_iter()
+            .find(|h| h.id != first)
+            .unwrap()
+            .id;
+        update(&layout, &second, None, None, Some(&first), None).unwrap();
+
+        let claimed = claim_as(&layout, &second, false, "impl").unwrap();
+        assert!(
+            claimed.contains(&format!("`recall {second}`")),
+            "the claim has to say where the working set is: {claimed}"
+        );
+        assert!(claimed.contains("1 declared input"), "{claimed}");
+
+        // A node that stands on nothing gets no line, because there is nothing
+        // for recall to hand over and a pointer to an empty answer is noise.
+        let alone = claim_as(&layout, &first, false, "impl").unwrap();
+        assert!(!alone.contains("recall"), "{alone}");
     }
 
     /// The citation is the handoff, so it has to survive the round trip through

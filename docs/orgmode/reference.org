@@ -714,6 +714,17 @@ Body
   knowing which layout is loaded.
 #+end_src
 
+A claim is where an agent starts, so it says where the working set is:
+
+#+begin_src console
+$ vissue claim keys-tuih
+claimed keys-tuih by impl (BLOCKED -> STARTED)
+  `recall keys-tuih` for 1 declared input, a plan above it
+#+end_src
+
+A node that stands on nothing gets no such line. Read off the heading already
+in hand, so taking a node costs what it did.
+
 What an input *produced* is the point. =deed= cites the accessions
 [[https://github.com/indynull/deedar][deedar]] minted for the products of a
 unit of work, and =recall= hands them to the next unit, which opens them with

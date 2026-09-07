@@ -29,7 +29,7 @@ tracker diffs, merges, and greps like the repository it lives in, and a
 command-line tool, a Model Context Protocol server, and Emacs all read the
 same bytes.
 
-#+begin_src
+#+begin_src text
 <root>/Software/<project>/issues.org
 #+end_src
 

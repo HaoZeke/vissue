@@ -14,7 +14,7 @@ working with serve down; see [[#fallback][Fallback]].
 
 Default path, first match wins:
 
-#+begin_src
+#+begin_src text
 $VISSUE_CONTROL_SOCKET
 $XDG_RUNTIME_DIR/vissue/control.sock
 ~/.vissue/run/control.sock
@@ -271,7 +271,7 @@ that it is already running (pid and socket), and exits 0.
 
 =serve status= prints:
 
-#+begin_src
+#+begin_src text
 live: true
 pid: 12345
 socket: /run/user/1000/vissue/control.sock

@@ -5,14 +5,15 @@ use std::time::Instant;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use vissue_control::rpc::{
-    AgendaParams, AppendParams, ClaimParams, ClaimsParams, CountParams, CreateParams, DigestParams,
-    EventsGenResult, EventsSinceParams, EventsSinceResult, FoldParams, HygieneParams, IdParams,
-    IdentityResult, InitializeResult, IssueGetResult, IssueListParams, IssueListResult,
-    IssueSelected, JsonRpcError, JsonRpcRequest, JsonRpcResponse, MirrorCheckParams, MutResult,
-    NormalizeParams, NoteParams, Notification, PROTOCOL_VERSION, PingParams, ProjectFilterParams,
-    ProjectListResult, RefileParams, RejectParams, RelatedParams, ResolveParams, SearchParams,
-    StaleParams, TreeParams, TreeResult, UpdateParams, VoteParams, WaitParams, WalkParams,
-    error_from_core, internal_error, invalid_params, method_not_found, parse_initialize_params,
+    AgendaParams, AppendParams, ClaimParams, ClaimsParams, ConsensusParams, CountParams,
+    CreateParams, DeedParams, DigestParams, EventsGenResult, EventsSinceParams, EventsSinceResult,
+    FoldParams, HygieneParams, IdParams, IdentityResult, InitializeResult, IssueGetResult,
+    IssueListParams, IssueListResult, IssueSelected, JsonRpcError, JsonRpcRequest, JsonRpcResponse,
+    MirrorCheckParams, MutResult, NormalizeParams, NoteParams, Notification, PROTOCOL_VERSION,
+    PingParams, ProjectFilterParams, ProjectListResult, RecallParams, RefileParams, RejectParams,
+    RelatedParams, ResolveParams, SearchParams, StaleParams, TreeParams, TreeResult, UpdateParams,
+    VoteParams, WaitParams, WalkParams, error_from_core, internal_error, invalid_params,
+    method_not_found, parse_initialize_params,
 };
 use vissue_core::catalog::{CatalogService, load_recs, tree_text_from};
 use vissue_core::config::Layout;
@@ -64,6 +65,9 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
         "issue/update" => dispatch_update(state, session, req.params.as_ref()),
         "issue/claim" => dispatch_claim(state, session, req.params.as_ref()),
         "issue/vote" => dispatch_vote(state, session, req.params.as_ref()),
+        "issue/deed" => dispatch_deed(state, req.params.as_ref()),
+        "issue/recall" => dispatch_recall(state, req.params.as_ref()),
+        "issue/consensus" => dispatch_consensus(state, req.params.as_ref()),
         "issue/append" => dispatch_append(state, session, req.params.as_ref()),
         "issue/resolve" => dispatch_resolve(state, session, req.params.as_ref()),
         "issue/reject" => dispatch_reject(state, session, req.params.as_ref()),
@@ -151,6 +155,7 @@ fn is_mutating(method: &str) -> bool {
             | "issue/note"
             | "issue/refile"
             | "issue/vote"
+            | "issue/deed"
             | "issue/append"
             | "issue/resolve"
             | "issue/reject"
@@ -367,6 +372,41 @@ fn dispatch_related(state: &OwnerState, params: Option<&Value>) -> Result<Value,
         serde_json::to_value(svc.related(&params.id, depth, limit).map_err(map_core)?)
             .map_err(map_json)
     })
+}
+
+/// `issue/deed`: cite, drop, or read the deeds an issue produced.
+///
+/// A mutation even when both lists are empty, as far as the dispatch table is
+/// concerned, because the request that carries them is the same one. The core
+/// verb reads without rewriting in that case, so an empty call still costs
+/// nothing but a parse.
+fn dispatch_deed(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: DeedParams = decode(params)?;
+    let report =
+        ops::deed(&state.layout, &params.id, &params.add, &params.remove).map_err(map_core)?;
+    let issue = detail_one(&state.layout, &params.id);
+    mut_result(state, report, issue)
+}
+
+/// `issue/recall`: the working set for an issue, as structure.
+fn dispatch_recall(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: RecallParams = decode(params)?;
+    let depth = params.depth.unwrap_or(1);
+    with_service(state, |svc, _, _| {
+        serde_json::to_value(svc.recall(&params.id, depth).map_err(map_core)?).map_err(map_json)
+    })
+}
+
+/// `issue/consensus`: DeGroot over the issue's ballots, as structure.
+///
+/// Off the files rather than the cached catalog: the trust rows come from the
+/// configuration, which the catalog does not hold, and a consensus computed
+/// against a stale copy of either would be reported with the same confidence as
+/// a fresh one.
+fn dispatch_consensus(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
+    let params: ConsensusParams = decode(params)?;
+    let outcome = vissue_core::consensus::of_issue(&state.layout, &params.id).map_err(map_core)?;
+    serde_json::to_value(outcome).map_err(map_json)
 }
 
 fn dispatch_children(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {

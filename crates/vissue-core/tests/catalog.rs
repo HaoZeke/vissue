@@ -1002,7 +1002,11 @@ fn depth_widens_the_blocker_walk() {
             "deed-file-first",
         ),
         with_property(
-            with_property(issue("p", "p-mid", "DONE", "middle"), "BLOCKED_BY", "p-first"),
+            with_property(
+                issue("p", "p-mid", "DONE", "middle"),
+                "BLOCKED_BY",
+                "p-first",
+            ),
             "DEEDS",
             "deed-file-middle",
         ),

@@ -284,6 +284,48 @@ impl VissueServer {
         }))
     }
 
+    #[tool(
+        description = "Cite, drop, or list the deeds this issue's work produced. A deed is deedar's frozen record of a product: name the accession here when work finishes, and the next unit opens it with `deedar get` instead of rereading a transcript. Omit both lists to read the citations. Accessions are `deed-<kind>-<slug>`, or a `sha256:` of the deed or of one product path."
+    )]
+    async fn vissue_deed(
+        &self,
+        Parameters(args): Parameters<DeedArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let add = args.add.unwrap_or_default();
+        let remove = args.remove.unwrap_or_default();
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| ops::deed(&layout, &args.issue_id, &add, &remove)),
+        )
+    }
+
+    #[tool(
+        description = "The working set for an issue: the plan it sits in, the deeds produced by what blocks it, the issue it was bounced from, and what it has produced itself. Read this before starting work on a node. Assembled from the declared edges rather than by resemblance, so it is what the plan says the work stands on and not a ranked guess; `vissue_related` answers the resemblance question."
+    )]
+    async fn vissue_recall(
+        &self,
+        Parameters(args): Parameters<RecallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(
+            self.layout_for_id(&args.issue_id).and_then(|layout| {
+                report::recall(&layout, &args.issue_id, args.depth.unwrap_or(1))
+            }),
+        )
+    }
+
+    #[tool(
+        description = "Weigh an issue's ballots by who the group listens to (DeGroot averaging over the configured trust graph). Reports the count and the weighted position side by side, each agent's social power, and the two ways there is no consensus to report: a trust graph with more than one closed group, or one that never settles. Use it before acting on what a plurality looks like."
+    )]
+    async fn vissue_consensus(
+        &self,
+        Parameters(args): Parameters<ConsensusArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(
+            self.layout_for_id(&args.issue_id)
+                .and_then(|layout| report::consensus(&layout, &args.issue_id)),
+        )
+    }
+
     #[tool(description = "Every live claim, oldest first: who holds what issue, and for how long.")]
     async fn vissue_claims(
         &self,

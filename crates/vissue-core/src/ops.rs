@@ -1082,9 +1082,11 @@ pub fn is_deed_accession(value: &str) -> bool {
     if value.contains(|c: char| c.is_whitespace() || c == ',') {
         return false;
     }
-    DEED_PREFIXES
-        .iter()
-        .any(|prefix| value.strip_prefix(*prefix).is_some_and(|rest| !rest.is_empty()))
+    DEED_PREFIXES.iter().any(|prefix| {
+        value
+            .strip_prefix(*prefix)
+            .is_some_and(|rest| !rest.is_empty())
+    })
 }
 
 /// Cite, drop, or list the deeds an issue's work produced.
@@ -1147,10 +1149,7 @@ pub fn deed(layout: &Layout, id: &str, add: &[String], remove: &[String]) -> Res
             }
         }
         if changed.is_empty() {
-            return Ok(format!(
-                "{id}: no change\n{}",
-                deed_list_text(id, &cited)
-            ));
+            return Ok(format!("{id}: no change\n{}", deed_list_text(id, &cited)));
         }
         if cited.is_empty() {
             crate::props::remove(&mut h.properties, crate::props::DEEDS);
@@ -1794,7 +1793,10 @@ mod tests {
             "sha256:0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7"
         ));
         assert!(!is_deed_accession("deed-"), "a prefix alone names nothing");
-        assert!(!is_deed_accession("sha256:"), "a prefix alone names nothing");
+        assert!(
+            !is_deed_accession("sha256:"),
+            "a prefix alone names nothing"
+        );
         assert!(!is_deed_accession(""));
         // Whitespace and commas separate the list, so a value holding one would
         // read back as two citations neither of which was cited.

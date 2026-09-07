@@ -253,6 +253,13 @@ pub fn decode_response(method: &str, value: Value) -> Result<Response, Error> {
         crate::rpc::Method::IssueRefile => {
             Ok(Response::IssueRefile(serde_json::from_value(value)?))
         }
+        crate::rpc::Method::IssueDeed => Ok(Response::IssueDeed(serde_json::from_value(value)?)),
+        crate::rpc::Method::IssueRecall => {
+            Ok(Response::IssueRecall(serde_json::from_value(value)?))
+        }
+        crate::rpc::Method::IssueConsensus => {
+            Ok(Response::IssueConsensus(serde_json::from_value(value)?))
+        }
         crate::rpc::Method::ProjectList => {
             Ok(Response::ProjectList(serde_json::from_value(value)?))
         }

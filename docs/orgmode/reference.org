@@ -13,7 +13,10 @@
 | =body-excerpt=                                                            | A capped preview of an issue's file range; =show --org= for the whole heading |
 | =claims=                                                                  | Every live claim, oldest first: who holds what, for how long             |
 | =vote=                                                                    | Cast this agent's ballot (=--for=), or read the tally; one ballot per identity |
-| =--json= on a read                                                        | =list=, =show=, =ready=, =claims=, =digest=, =search=, =children=, =ancestors=, =impact=, =backlinks=, =agenda=, =tree=, =body-excerpt=, =projects= |
+| =consensus=                                                               | Weigh the same ballots by who the group listens to; social power and the two ways there is none |
+| =deed=                                                                    | Cite (=--add=), drop (=--remove=), or list the deeds this issue's work produced |
+| =recall=                                                                  | The working set for an issue: plan, inputs and their deeds, and its own |
+| =--json= on a read                                                        | =list=, =show=, =ready=, =claims=, =digest=, =search=, =children=, =ancestors=, =impact=, =backlinks=, =agenda=, =tree=, =body-excerpt=, =projects=, =recall= |
 | =fold=                                                                    | Turn an inbox file's unstamped =* TODO= headings into issues             |
 | =whoami=                                                                  | The identity a claim would record                                        |
 | =ready=, =count=, =search=, =children=, =ancestors=, =impact=, =related=, =stale= | Query the corpus; bounded dependency and related traversal        |
@@ -78,6 +81,13 @@ Local =#+SETUPFILE:= keyword lines merge into TODO / TAGS / PRIORITIES;
 a URL is not fetched. =vissue normalize= rewrites a tracker onto that shape;
 =--dry-run= prints the files that would change.
 
+=:DEEDS:= holds the deed accessions this issue's work produced, in the order
+they were cited, and accepts commas, whitespace, or both like =:BLOCKED_BY:=.
+The tracker cites; it stores no product bytes. =deed --add= refuses a value
+that is not an accession (=deed-<kind>-<slug>=, or a =sha256:= of the deed or
+of one product path), because a citation nothing can resolve fails later and
+somewhere else.
+
 =:BLOCKED_BY:= accepts commas, whitespace, or both. =:PARENT:= may name
 another issue or any Org heading with an =:ID:= under the tracker prefix, so a
 design document can head a work hierarchy. Parent chains must terminate;
@@ -131,6 +141,10 @@ overriding the compiled defaults key by key.
 | =issues.default_priority=    | =C=        | Cookie when =create= gets none and the file has no =#+PRIORITIES:= |
 | =issues.id_length=           | =4=        | Base36 characters in a generated id suffix  |
 | =issues.stale_claim_days=    | =7=        | When =hygiene= calls a claim stale          |
+| =consensus.self_weight=      | =0.5=      | Weight an agent puts on its own opinion when its trust row does not name it |
+| =consensus.tolerance=        | =1e-9=     | Largest disagreement that still counts as settled |
+| =consensus.max_iterations=   | =500=      | Rounds before the shares are reported as an estimate |
+| =consensus.trust.<agent>=    | unset      | Weights that agent puts on the others; only the ratios matter |
 
 A short =id_length= is a small space: 2 characters is 1296 ids, and =create=
 reports an exhausted space rather than failing obscurely.
@@ -255,7 +269,11 @@ Read one issue or many: =vissue_list=, =vissue_ready=, =vissue_show=,
 
 Change one: =vissue_create=, =vissue_update=, =vissue_claim=, =vissue_note=,
 =vissue_append=, =vissue_refile=, =vissue_fold=, =vissue_reject=, =vissue_resolve=,
-=vissue_vote=.
+=vissue_vote=, =vissue_deed=.
+
+Work a node: =vissue_recall= before starting, to open what the plan says the
+work stands on; =vissue_deed= when it finishes, to name what it produced;
+=vissue_consensus= before acting on what a plurality looks like.
 
 * The operation set
 
@@ -605,6 +623,117 @@ agreement is worth nothing:
 
 A choice is one line and may contain a colon, so ="ship: after the audit"= is a
 vote and not a parse error.
+
+* Consensus
+
+=vote= counts. =consensus= weighs the same ballots by how much the group
+listens to the agent that cast each one, using DeGroot's model: every agent
+replaces its opinion with the weighted average of the opinions it trusts, and
+the iteration is run to where it settles.
+
+Nothing new is cast. An agent that voted =ship= starts with all of its opinion
+on =ship=, so the limit is how much of the group's weight ends up on each
+option that was already on the ballot.
+
+Trust lives in the configuration, so it is versioned with the tracker:
+
+#+begin_src toml
+[consensus]
+self_weight = 0.5
+
+[consensus.trust]
+reviewer = { maintainer = 3.0, worker = 1.0 }
+worker = { maintainer = 1.0 }
+#+end_src
+
+Only the ratios matter; each row is normalised. Weight on an agent that cast no
+ballot is dropped, because it has no opinion to average and keeping it would
+scale down everyone who did vote. An agent whose row does not name itself keeps
+=self_weight= on its own opinion; an agent with no row at all listens to itself
+with =self_weight= and splits the rest equally over the others.
+
+That default is why the verb is safe on a tracker nobody has configured: every
+agent listens to every other equally, the influence matrix is doubly
+stochastic, and the consensus is the tally as a fraction. Configuration only
+ever moves weight away from that.
+
+The report prints the count and the weighted position together, because the
+useful thing about the weighted answer is where it differs, and a reader shown
+one of them cannot tell whether the trust rows did anything. It also prints
+each agent's *social power*: the left Perron vector of the influence matrix,
+which is the weighting the consensus applies to the ballots. An agent nobody
+listens to has power zero, and its ballot moves the group by nothing.
+
+There are two ways there is no consensus to report, and they are different
+failures:
+
+- *split*, when the trust graph holds more than one closed group. Two review
+  teams that cite only each other never converge on anything, whatever the
+  arithmetic does, and the report names the groups.
+- *oscillating*, when the one closed group has a period. A pair who listen only
+  to each other and not at all to themselves swap opinions forever.
+
+Both are decided from which weights are positive rather than from whether the
+numbers stopped moving: DeGroot's iteration converges exactly when the graph
+has one closed group every agent can reach and that group is aperiodic. A
+group that mixes slowly stops moving long before its agents agree, so reading
+the arithmetic would report a division that is not there.
+
+=max_iterations= bounds the work. Reaching it does not change the verdict,
+which the structure already settled; the shares are then reported as an
+estimate and the line says so.
+
+* Working memory
+
+An agent about to work a node needs what the node stands on. The tracker
+already records that: =:PARENT:= is the plan it sits inside, =:BLOCKED_BY:= is
+what has to exist first, =:DISCOVERED_FROM:= is where a bounced issue came
+from. =recall= walks those three and prints the result.
+
+#+begin_src console
+$ vissue recall keys-tuih
+keys-tuih              BLOCKED   Terminal UI set_keymap and overlay on_key  (keys)
+
+Plan
+  keys-e0pl              TODO      Epic: Colemak leader sequence
+
+Inputs
+  keys-ovly              DONE      Overlay on_key  [blocked-by]
+    deed-patch-overlay
+  keys-toml              DONE      keys.toml schema and key names  [blocked-by]
+    (no deeds cited)
+
+Produced
+  (nothing cited yet)
+
+Body
+  The overlay's on_key has to reach set_keymap without the board
+  knowing which layout is loaded.
+#+end_src
+
+What an input *produced* is the point. =deed= cites the accessions
+[[https://github.com/indynull/deedar][deedar]] minted for the products of a
+unit of work, and =recall= hands them to the next unit, which opens them with
+=deedar get= instead of rereading a transcript:
+
+#+begin_src console
+$ deedar create patch --id deed-patch-overlay --name "overlay on_key" ...
+$ vissue deed keys-ovly --add deed-patch-overlay
+keys-ovly: deeds += deed-patch-overlay
+keys-ovly: 1 deed
+  deed-patch-overlay
+$ deedar get $(vissue recall keys-tuih --deeds-only)
+#+end_src
+
+The blocker walk is one hop by default. A deed records its own =sources= and
+=deedar trail= walks them, so a second hop here would re-derive, less well, a
+graph the deed store already holds. =--depth= widens it when the inputs cited
+nothing.
+
+Nothing is scored and nothing is embedded. =recall= answers what the plan says
+the work stands on; =related= answers which other issues resemble it, ranks
+them, and prints the evidence for each. Mixing the two would make the exact
+answer look like the ranked one.
 
 * Crates
 

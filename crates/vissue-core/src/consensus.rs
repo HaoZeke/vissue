@@ -6,7 +6,7 @@
 //! three equal opinions. `vote` already refuses to call a plurality agreement,
 //! but it has nothing to say about *whose* agreement it is.
 //!
-//! DeGroot's model [1] is the standard answer and is one line: each agent holds
+//! DeGroot's model (1974) is the standard answer and is one line: each agent holds
 //! an opinion, listens to the agents it trusts, and replaces its opinion with the
 //! weighted average of theirs. Written as a matrix, `x(t+1) = W x(t)` with `W`
 //! row-stochastic. Where that iteration settles is the group's position, and it
@@ -19,7 +19,7 @@
 //! - social power, the left Perron vector `π` of `W`, which says how much each
 //!   agent moved the result: the limit is `πᵀ x(0)`;
 //! - the failure to reach one. `W` converges to agreement only when the trust
-//!   graph has a single closed group every agent can reach [2]. Two review teams
+//!   graph has a single closed group every agent can reach (Berger, 1981). Two teams
 //!   that cite only each other never converge, and that is a fact about the team
 //!   worth reporting rather than a number worth averaging.
 //!
@@ -30,11 +30,14 @@
 //! `W` is doubly stochastic, `π` is uniform, and the consensus is the tally as a
 //! fraction. Configuration only ever moves weight away from that.
 //!
-//! [1] M. H. DeGroot, "Reaching a Consensus", J. Am. Stat. Assoc. 69(345), 1974.
-//! [2] R. A. Berger, "A necessary and sufficient condition for reaching a
-//!     consensus using DeGroot's method", J. Am. Stat. Assoc. 76(374), 1981.
+//! M. H. DeGroot, "Reaching a Consensus", J. Am. Stat. Assoc. 69(345), 1974.
+//!
+//! R. A. Berger, "A necessary and sufficient condition for reaching a consensus
+//! using DeGroot's method", J. Am. Stat. Assoc. 76(374), 1981.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+
+use serde::{Deserialize, Serialize};
 
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -44,7 +47,8 @@ use crate::ops::Ballot;
 
 /// Where the influence matrix came from, for a reader wondering why a result
 /// looks the way it does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TrustSource {
     /// No row in the configuration named any agent that voted.
     Default,
@@ -53,7 +57,8 @@ pub enum TrustSource {
 }
 
 /// Whether the iteration settled, and on what.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Settling {
     /// Every agent holds the same opinion: a consensus.
     Agreed,
@@ -67,7 +72,7 @@ pub enum Settling {
 }
 
 /// One agent's row of the result.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentLimit {
     /// Identity that cast the ballot.
     pub agent: String,
@@ -83,7 +88,7 @@ pub struct AgentLimit {
 }
 
 /// The result of running DeGroot over one issue's ballots.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Outcome {
     /// Distinct choices, sorted, indexing every `limit` vector.
     pub choices: Vec<String>,
@@ -167,14 +172,15 @@ pub fn degroot(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
     let names: Vec<&str> = agents.iter().map(|b| b.agent.as_str()).collect();
     let (weights, trust) = influence(&names, cfg);
 
-    // One-hot: an agent that voted `ship` puts all of its opinion on `ship`.
+    // One-hot: an agent that voted `ship` puts all of its opinion on `ship`. The
+    // choice set was collected from these same ballots, so the position is
+    // always there; written as a match rather than an unwrap so the function
+    // has no panicking path at all.
     let mut opinion = vec![vec![0.0f64; m]; n];
     for (i, ballot) in agents.iter().enumerate() {
-        let at = choices
-            .iter()
-            .position(|c| *c == ballot.choice)
-            .expect("every ballot's choice is in the choice set");
-        opinion[i][at] = 1.0;
+        if let Some(at) = choices.iter().position(|c| *c == ballot.choice) {
+            opinion[i][at] = 1.0;
+        }
     }
 
     // The trust graph alone decides whether there is a consensus to reach; the
@@ -215,6 +221,18 @@ pub fn degroot(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
         budget_reached: settling != Settling::Oscillating && rounds >= cfg.max_iterations,
         trust,
     }
+}
+
+/// The consensus on one issue of a tracker, under that tracker's trust rows.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the corpus, the corpus cannot be read, or
+/// the configuration names a weight the iteration cannot use.
+pub fn of_issue(layout: &crate::config::Layout, id: &str) -> crate::error::Result<Outcome> {
+    let ballots = crate::ops::ballots(layout, id)?;
+    let cfg = crate::config::VissueConfig::load(layout)?.consensus;
+    Ok(degroot(&ballots, &cfg))
 }
 
 /// Build the row-stochastic influence matrix over `names`.

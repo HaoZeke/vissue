@@ -221,6 +221,26 @@ const operations :List(Operation) = [
       ( cli = "for", tool = "choice", socket = "choice", note = "the flag cannot be a Rust field of that name, which is a keyword", toolType = "Option<String>", socketType = "Option<String>" ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment", toolType = "", socketType = "Option<String>" )
     ] ),
+  ( cli = "deed", socket = "issue/deed", mcp = "vissue_deed", mutates = true, local = false,
+    note = "",
+    fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it as they spell every other id", toolType = "String", socketType = "String" ),
+      ( cli = "add", tool = "add", socket = "add", note = "repeatable on the command line; a list on the two remote surfaces, and absent on both lists is the read", toolType = "Option<Vec<String>>", socketType = "Vec<String>", omittable = true ),
+      ( cli = "remove", tool = "remove", socket = "remove", note = "repeatable on the command line; a list on the two remote surfaces, and absent on both lists is the read", toolType = "Option<Vec<String>>", socketType = "Vec<String>", omittable = true )
+    ] ),
+  ( cli = "recall", socket = "issue/recall", mcp = "vissue_recall", mutates = false, local = false,
+    note = "",
+    fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "no flag: the command line takes it as a positional argument", toolType = "String", socketType = "String" ),
+      ( cli = "depth", tool = "depth", socket = "depth", note = "", toolType = "Option<usize>", socketType = "Option<usize>" ),
+      ( cli = "json", tool = "", socket = "", note = "the remote surfaces answer in structure already, so they need no flag to ask for it", toolType = "", socketType = "" ),
+      ( cli = "deeds-only", tool = "", socket = "", note = "a shell-substitutable list of accessions, which the remote surfaces already carry as a field of the structure they answer with", toolType = "", socketType = "" )
+    ] ),
+  ( cli = "consensus", socket = "issue/consensus", mcp = "vissue_consensus", mutates = false, local = false,
+    note = "",
+    fields = [
+      ( cli = "", tool = "issue_id", socket = "id", note = "no flag: the command line takes it as a positional argument", toolType = "String", socketType = "String" )
+    ] ),
   ( cli = "fold", socket = "issue/fold", mcp = "vissue_fold", mutates = true, local = false,
     note = "",
     fields = [

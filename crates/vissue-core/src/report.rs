@@ -236,7 +236,10 @@ pub fn recall(layout: &Layout, id: &str, depth: usize) -> Result<String> {
 
     writeln!(out, "\nInputs")?;
     if set.inputs.is_empty() {
-        writeln!(out, "  (none declared: nothing blocks this and it was not bounced)")?;
+        writeln!(
+            out,
+            "  (none declared: nothing blocks this and it was not bounced)"
+        )?;
     }
     for input in &set.inputs {
         writeln!(
@@ -309,8 +312,7 @@ pub fn recall_deeds(layout: &Layout, id: &str, depth: usize) -> Result<String> {
 /// configuration names a weight the iteration cannot use.
 pub fn consensus(layout: &Layout, id: &str) -> Result<String> {
     let ballots = crate::ops::ballots(layout, id)?;
-    let cfg = crate::config::VissueConfig::load(layout)?.consensus;
-    let outcome = crate::consensus::degroot(&ballots, &cfg);
+    let outcome = crate::consensus::of_issue(layout, id)?;
     Ok(consensus_text(id, &ballots, &outcome))
 }
 

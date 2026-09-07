@@ -223,6 +223,45 @@ enum Command {
         #[arg(long = "for", value_name = "CHOICE")]
         choice: Option<String>,
     },
+    /// Cite, drop, or list the deeds this issue's work produced.
+    ///
+    /// A deed is deedar's record of a product: `deedar get <id>` returns it and
+    /// `deedar trail <id>` walks what it was built from. The tracker stores the
+    /// accession and nothing else, so the next unit opens the work instead of
+    /// rereading a transcript.
+    Deed {
+        id: String,
+        /// A deed accession this issue produced. Repeatable.
+        #[arg(long = "add", value_name = "DEED")]
+        add: Vec<String>,
+        /// A citation to drop. Repeatable.
+        #[arg(long = "remove", value_name = "DEED")]
+        remove: Vec<String>,
+    },
+    /// The working set for an issue: its plan, its inputs' deeds, and its own.
+    ///
+    /// What to open before working a node, derived from `:PARENT:`,
+    /// `:BLOCKED_BY:`, and `:DISCOVERED_FROM:` rather than retrieved by
+    /// resemblance. `related` answers the other question.
+    Recall {
+        id: String,
+        /// Hops of the blocker walk. One is enough when the deeds carry their
+        /// own sources, which `deedar trail` walks.
+        #[arg(short, long, default_value = "1")]
+        depth: usize,
+        /// Print only the deed accessions, one per line.
+        #[arg(long, conflicts_with = "json")]
+        deeds_only: bool,
+        /// Emit a JSON object instead of text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Weigh an issue's ballots by who the group listens to (DeGroot).
+    ///
+    /// `vote` counts. This averages over the trust graph in `[consensus.trust]`,
+    /// reports each agent's social power, and says when there is no consensus to
+    /// reach rather than reporting one that is not there.
+    Consensus { id: String },
     /// Add a dated note to the top of an issue's logbook; state and claim untouched.
     Note {
         id: String,
@@ -1145,6 +1184,31 @@ fn run() -> Result<()> {
         Command::Claim { id, force } => {
             let found = layout_for_id(&router, &id)?;
             emit!("{}", agent::claim(&found, &id, force)?)
+        }
+        Command::Deed { id, add, remove } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", ops::deed(&found, &id, &add, &remove)?)
+        }
+        Command::Recall {
+            id,
+            depth,
+            deeds_only,
+            json,
+        } => {
+            let found = layout_for_id(&router, &id)?;
+            if deeds_only {
+                emit!("{}", report::recall_deeds(&found, &id, depth)?);
+            } else {
+                emit_shape(
+                    json,
+                    || with_catalog(&found, |svc| svc.recall(&id, depth)),
+                    || report::recall(&found, &id, depth),
+                )?;
+            }
+        }
+        Command::Consensus { id } => {
+            let found = layout_for_id(&router, &id)?;
+            emit!("{}", report::consensus(&found, &id)?)
         }
         Command::Vote { id, choice } => {
             let found = layout_for_id(&router, &id)?;

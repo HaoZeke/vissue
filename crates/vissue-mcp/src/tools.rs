@@ -166,6 +166,31 @@ pub struct VoteArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct DeedArgs {
+    /// Issue id.
+    pub issue_id: String,
+    /// Deed accessions this issue's work produced (`deed-<kind>-<slug>`, or a
+    /// `sha256:` of the deed or of one product path). Omit both lists to read.
+    pub add: Option<Vec<String>>,
+    /// Citations to drop.
+    pub remove: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct RecallArgs {
+    /// Issue id.
+    pub issue_id: String,
+    /// Hops of the blocker walk (default 1).
+    pub depth: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ConsensusArgs {
+    /// Issue id.
+    pub issue_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct ClaimsArgs {
     /// Only claims held by this identity.
     pub holder: Option<String>,

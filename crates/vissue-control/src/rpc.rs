@@ -4,9 +4,11 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
 use crate::frame::FrameError;
+use vissue_core::consensus::Outcome as ConsensusOutcome;
 use vissue_core::error::Error as CoreError;
 use vissue_core::views::{
-    AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRow, RelatedHit, SearchHit, TreeNode, WalkHit,
+    AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRow, Recall, RelatedHit, SearchHit, TreeNode,
+    WalkHit,
 };
 
 /// One entry in the on-disk change log.
@@ -376,6 +378,12 @@ pub enum Method {
     /// Operation added after v1's first draft; see schema/vissue.capnp.
     IssueVote,
     /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueDeed,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueRecall,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
+    IssueConsensus,
+    /// Operation added after v1's first draft; see schema/vissue.capnp.
     IssueFold,
     /// Operation added after v1's first draft; see schema/vissue.capnp.
     IssueNormalize,
@@ -446,6 +454,9 @@ impl Method {
             Self::IssueReject => "issue/reject",
             Self::IssueResolve => "issue/resolve",
             Self::IssueVote => "issue/vote",
+            Self::IssueDeed => "issue/deed",
+            Self::IssueRecall => "issue/recall",
+            Self::IssueConsensus => "issue/consensus",
             Self::IssueFold => "issue/fold",
             Self::IssueNormalize => "issue/normalize",
             Self::IssueCheck => "issue/check",
@@ -500,6 +511,9 @@ impl Method {
             "issue/reject" => Ok(Self::IssueReject),
             "issue/resolve" => Ok(Self::IssueResolve),
             "issue/vote" => Ok(Self::IssueVote),
+            "issue/deed" => Ok(Self::IssueDeed),
+            "issue/recall" => Ok(Self::IssueRecall),
+            "issue/consensus" => Ok(Self::IssueConsensus),
             "issue/fold" => Ok(Self::IssueFold),
             "issue/normalize" => Ok(Self::IssueNormalize),
             "issue/check" => Ok(Self::IssueCheck),
@@ -554,6 +568,9 @@ pub const V1_CAPABILITIES: &[&str] = &[
     "issue/reject",
     "issue/resolve",
     "issue/vote",
+    "issue/deed",
+    "issue/recall",
+    "issue/consensus",
     "issue/fold",
     "issue/normalize",
     "issue/check",
@@ -926,6 +943,36 @@ pub struct VoteParams {
     /// Override the connection agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+}
+
+/// `issue/deed` params. Both lists absent reads the citations without writing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeedParams {
+    /// Issue id.
+    pub id: String,
+    /// Deed accessions this issue produced.
+    #[serde(default)]
+    pub add: Vec<String>,
+    /// Citations to drop.
+    #[serde(default)]
+    pub remove: Vec<String>,
+}
+
+/// `issue/recall` params. `depth` bounds the blocker walk and defaults to one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecallParams {
+    /// Issue id.
+    pub id: String,
+    /// Hops of the blocker walk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<usize>,
+}
+
+/// `issue/consensus` params.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConsensusParams {
+    /// Issue id.
+    pub id: String,
 }
 
 /// Params for the reads that take an optional project filter: `issue/export`,
@@ -1325,6 +1372,12 @@ pub enum Request {
     IssueResolve(ResolveParams),
     /// Cast a ballot, or read the tally.
     IssueVote(VoteParams),
+    /// Cite, drop, or read the deeds an issue produced.
+    IssueDeed(DeedParams),
+    /// The working set for an issue.
+    IssueRecall(RecallParams),
+    /// DeGroot consensus over an issue's ballots.
+    IssueConsensus(ConsensusParams),
     /// Inbox headings become issues.
     IssueFold(FoldParams),
     /// Rewrite onto the property split.
@@ -1393,6 +1446,9 @@ impl Request {
             Self::IssueReject(_) => Method::IssueReject,
             Self::IssueResolve(_) => Method::IssueResolve,
             Self::IssueVote(_) => Method::IssueVote,
+            Self::IssueDeed(_) => Method::IssueDeed,
+            Self::IssueRecall(_) => Method::IssueRecall,
+            Self::IssueConsensus(_) => Method::IssueConsensus,
             Self::IssueFold(_) => Method::IssueFold,
             Self::IssueNormalize(_) => Method::IssueNormalize,
             Self::IssueCheck(_) => Method::IssueCheck,
@@ -1455,6 +1511,9 @@ impl Request {
             Method::IssueReject => Ok(Self::IssueReject(decode_params(params)?)),
             Method::IssueResolve => Ok(Self::IssueResolve(decode_params(params)?)),
             Method::IssueVote => Ok(Self::IssueVote(decode_params(params)?)),
+            Method::IssueDeed => Ok(Self::IssueDeed(decode_params(params)?)),
+            Method::IssueRecall => Ok(Self::IssueRecall(decode_params(params)?)),
+            Method::IssueConsensus => Ok(Self::IssueConsensus(decode_params(params)?)),
             Method::IssueFold => Ok(Self::IssueFold(decode_params(params)?)),
             Method::IssueNormalize => Ok(Self::IssueNormalize(decode_params(params)?)),
             Method::IssueCheck => Ok(Self::IssueCheck(decode_params(params)?)),
@@ -1481,6 +1540,9 @@ impl Request {
             Self::IssueReject(p) => serde_json::to_value(p).unwrap_or(Value::Null),
             Self::IssueResolve(p) => serde_json::to_value(p).unwrap_or(Value::Null),
             Self::IssueVote(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueDeed(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueRecall(p) => serde_json::to_value(p).unwrap_or(Value::Null),
+            Self::IssueConsensus(p) => serde_json::to_value(p).unwrap_or(Value::Null),
             Self::IssueFold(p) => serde_json::to_value(p).unwrap_or(Value::Null),
             Self::IssueNormalize(p) => serde_json::to_value(p).unwrap_or(Value::Null),
             Self::IssueCheck(p) => serde_json::to_value(p).unwrap_or(Value::Null),
@@ -1577,6 +1639,12 @@ pub enum Response {
     IssueResolve(MutResult),
     /// Cast a ballot, or read the tally.
     IssueVote(MutResult),
+    /// Cite, drop, or read the deeds an issue produced.
+    IssueDeed(MutResult),
+    /// The working set for an issue.
+    IssueRecall(Recall),
+    /// DeGroot consensus over an issue's ballots.
+    IssueConsensus(ConsensusOutcome),
     /// Inbox headings become issues.
     IssueFold(MutResult),
     /// Rewrite onto the property split.
@@ -1629,6 +1697,9 @@ impl Response {
             Self::IssueReject(v) => serde_json::to_value(v),
             Self::IssueResolve(v) => serde_json::to_value(v),
             Self::IssueVote(v) => serde_json::to_value(v),
+            Self::IssueDeed(v) => serde_json::to_value(v),
+            Self::IssueRecall(v) => serde_json::to_value(v),
+            Self::IssueConsensus(v) => serde_json::to_value(v),
             Self::IssueFold(v) => serde_json::to_value(v),
             Self::IssueNormalize(v) => serde_json::to_value(v),
             Self::IssueCheck(v) => serde_json::to_value(v),

@@ -12,8 +12,8 @@ use crate::related::related_hits_from;
 use crate::report::parse_org_date;
 use crate::store::{IssueDoc, list_projects, project_selected};
 use crate::views::{
-    AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRec, IssueRow, ListQuery, SearchHit, TreeNode,
-    WalkHit,
+    AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRec, IssueRow, ListQuery, Recall, RecallInput,
+    SearchHit, TreeNode, WalkHit,
 };
 
 pub(crate) const BODY_EXCERPT_MAX_LINES: usize = 40;
@@ -183,6 +183,17 @@ impl<'a> CatalogService<'a> {
     /// cannot be built.
     pub fn impact(&self, id: &str, depth: usize) -> Result<Vec<WalkHit>> {
         walk_from(self.issues, id, depth, WalkKind::Impact)
+    }
+
+    /// The working set for `id`: plan, declared inputs and their deeds, and
+    /// what `id` has produced.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `id` is not in the catalog, or the blocker graph
+    /// cannot be built.
+    pub fn recall(&self, id: &str, depth: usize) -> Result<crate::views::Recall> {
+        recall_from(self.issues, id, depth)
     }
 
     /// Issues that refer to `id` through an edge, a parent, a discovered-from
@@ -826,6 +837,96 @@ fn walk_from(issues: &[IssueRec], id: &str, depth: usize, kind: WalkKind) -> Res
                 .map(|r| walk_hit(r, relation))
         })
         .collect())
+}
+
+/// The working set for `id`: its plan, its declared inputs and their products,
+/// and what it has produced so far.
+///
+/// Retrieval is the wrong shape for this question. An agent about to work a node
+/// does not need what a scorer thinks resembles it; it needs what the plan says
+/// the node stands on, which the corpus already states as `:PARENT:`,
+/// `:BLOCKED_BY:`, and `:DISCOVERED_FROM:`. Walking those edges answers exactly,
+/// with no index to build, no embedding to drift, and no threshold to tune.
+///
+/// `depth` bounds the blocker walk and defaults to one hop at every caller,
+/// because a deed carries its own `sources` and `deedar trail` walks them. Going
+/// deeper here would re-derive, less well, a graph the deed store already holds.
+///
+/// # Errors
+///
+/// Returns an error if `id` is not in the catalog, or the blocker graph cannot
+/// be built.
+pub fn recall_from(issues: &[IssueRec], id: &str, depth: usize) -> Result<Recall> {
+    let rec = issues
+        .iter()
+        .find(|r| r.heading.id == id)
+        .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
+
+    let mut plan: Vec<WalkHit> = Vec::new();
+    let mut seen: HashSet<&str> = HashSet::from([id]);
+    let mut at = rec.heading.parent();
+    // A hand-edited `:PARENT:` can point back down at a descendant, and `check`
+    // reports that rather than preventing it. Following it here would hang the
+    // command that was supposed to explain the issue.
+    while let Some(parent) = at {
+        if !seen.insert(parent) {
+            break;
+        }
+        let Some(prec) = issues.iter().find(|r| r.heading.id == parent) else {
+            break;
+        };
+        plan.push(walk_hit(prec, "plan"));
+        at = prec.heading.parent();
+    }
+    plan.reverse();
+
+    let graph = DependencyGraph::from_headings(issues.iter().map(|r| &r.heading))?;
+    let mut walked = graph.ancestors(id, depth)?;
+    // Furthest first: that is the order the work happened, so the products read
+    // in the order they were made.
+    walked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let mut inputs: Vec<RecallInput> = Vec::new();
+    for (distance, other) in walked {
+        let Some(orec) = issues.iter().find(|r| r.heading.id == other) else {
+            continue;
+        };
+        let relation = if distance == 1 {
+            "blocked-by".to_string()
+        } else {
+            format!("blocked-by:{distance}")
+        };
+        inputs.push(recall_input(orec, &relation));
+    }
+    // Where the work came from is an input a blocker edge does not carry: a
+    // bounce names its origin and nothing else points back at it.
+    if let Some(origin) = crate::props::get(&rec.heading.properties, crate::props::DISCOVERED_FROM)
+        && !inputs.iter().any(|i| i.id == origin)
+        && let Some(orec) = issues.iter().find(|r| r.heading.id == origin)
+    {
+        inputs.push(recall_input(orec, "discovered-from"));
+    }
+
+    Ok(Recall {
+        id: rec.heading.id.clone(),
+        project: rec.project.clone(),
+        state: rec.heading.state.clone(),
+        title: rec.heading.title.clone(),
+        plan,
+        inputs,
+        produced: rec.heading.deeds(),
+        body: rec.heading.body.trim_end().to_string(),
+    })
+}
+
+fn recall_input(rec: &IssueRec, relation: &str) -> RecallInput {
+    RecallInput {
+        id: rec.heading.id.clone(),
+        project: rec.project.clone(),
+        state: rec.heading.state.clone(),
+        title: rec.heading.title.clone(),
+        relation: relation.to_string(),
+        deeds: rec.heading.deeds(),
+    }
 }
 
 /// Issues that refer to `target_id` through an edge, a parent, a

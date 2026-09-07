@@ -205,6 +205,97 @@ pub fn show(layout: &Layout, id: &str) -> Result<String> {
     Ok(out)
 }
 
+/// The working set for one issue: the plan around it, the deeds its declared
+/// inputs produced, and what it has produced itself.
+///
+/// This is the layer between the task graph and the work: the tracker already
+/// records what a node waits on, so what an agent should open before starting is
+/// derivable rather than searchable. Nothing is ranked and nothing is embedded.
+/// A neighbourhood by resemblance is a different question and `related` answers
+/// it.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, `id` is not in it, or the
+/// blocker graph cannot be built.
+pub fn recall(layout: &Layout, id: &str, depth: usize) -> Result<String> {
+    let set = CatalogService::from_recs(&load_recs(layout)?).recall(id, depth)?;
+    let mut out = String::new();
+    writeln!(
+        out,
+        "{:<22} {:<9} {}  ({})",
+        set.id, set.state, set.title, set.project
+    )?;
+
+    if !set.plan.is_empty() {
+        writeln!(out, "\nPlan")?;
+        for step in &set.plan {
+            writeln!(out, "  {:<22} {:<9} {}", step.id, step.state, step.title)?;
+        }
+    }
+
+    writeln!(out, "\nInputs")?;
+    if set.inputs.is_empty() {
+        writeln!(out, "  (none declared: nothing blocks this and it was not bounced)")?;
+    }
+    for input in &set.inputs {
+        writeln!(
+            out,
+            "  {:<22} {:<9} {}  [{}]",
+            input.id, input.state, input.title, input.relation
+        )?;
+        if input.deeds.is_empty() {
+            // Said rather than left blank. An input that produced nothing is the
+            // case where this view has nothing to hand over, and a silent gap
+            // reads as though the walk missed it.
+            writeln!(out, "    (no deeds cited)")?;
+        }
+        for deed in &input.deeds {
+            writeln!(out, "    {deed}")?;
+        }
+    }
+
+    writeln!(out, "\nProduced")?;
+    if set.produced.is_empty() {
+        writeln!(out, "  (nothing cited yet)")?;
+    }
+    for deed in &set.produced {
+        writeln!(out, "  {deed}")?;
+    }
+
+    writeln!(out, "\nBody")?;
+    if set.body.is_empty() {
+        writeln!(out, "  (no body)")?;
+    } else {
+        for line in set.body.lines() {
+            writeln!(out, "  {line}")?;
+        }
+    }
+    Ok(out)
+}
+
+/// Just the deed accessions [`recall`] found, inputs first, one per line.
+///
+/// The form a shell substitutes: `deedar get $(vissue recall <id> --deeds-only)`
+/// opens the working set without a parser in between.
+///
+/// # Errors
+///
+/// Same as [`recall`].
+pub fn recall_deeds(layout: &Layout, id: &str, depth: usize) -> Result<String> {
+    let set = CatalogService::from_recs(&load_recs(layout)?).recall(id, depth)?;
+    let mut out = String::new();
+    for deed in set
+        .inputs
+        .iter()
+        .flat_map(|i| i.deeds.iter())
+        .chain(set.produced.iter())
+    {
+        writeln!(out, "{deed}")?;
+    }
+    Ok(out)
+}
+
 /// Case-insensitive substring scan over id, title, properties, and body. Linear
 /// in the corpus, which is the right cost until the issue count climbs.
 ///

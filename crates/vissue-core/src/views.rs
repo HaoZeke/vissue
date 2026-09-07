@@ -232,6 +232,50 @@ pub struct RelatedHit {
     pub evidence: Vec<String>,
 }
 
+/// The working set for one issue: the plan it sits in, the products of the work
+/// it waits on, and what it has produced so far.
+///
+/// Assembled from declared edges rather than from similarity, so the set is the
+/// answer and not a ranked guess at it. Nothing here is scored, and nothing is
+/// dropped for being far away: the partial order already said what this issue
+/// needs.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Recall {
+    /// Issue the working set is for.
+    pub id: String,
+    /// Project the heading lives in.
+    pub project: String,
+    /// TODO keyword on the heading.
+    pub state: String,
+    /// Heading title.
+    pub title: String,
+    /// Parent chain, outermost plan first, without this issue.
+    pub plan: Vec<WalkHit>,
+    /// What this issue waits on and where it came from, each with its products.
+    pub inputs: Vec<RecallInput>,
+    /// Deed accessions this issue has already cited.
+    pub produced: Vec<String>,
+    /// Heading body: the dispatch note the work is done from.
+    pub body: String,
+}
+
+/// One declared input to an issue, and the deeds that input produced.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RecallInput {
+    /// Issue id.
+    pub id: String,
+    /// Project the heading lives in.
+    pub project: String,
+    /// TODO keyword on the heading.
+    pub state: String,
+    /// Heading title.
+    pub title: String,
+    /// Which declared edge made this an input (`blocked-by`, `discovered-from`).
+    pub relation: String,
+    /// Deed accessions cited on that heading.
+    pub deeds: Vec<String>,
+}
+
 /// One related heading from a walk: children, ancestors, impact, or backlinks.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalkHit {

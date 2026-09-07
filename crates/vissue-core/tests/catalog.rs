@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use vissue_core::catalog::{
     CatalogService, agenda_rows_from, backlinks_from, children_from, claims_from, excerpt_from,
-    issues_rows_from, search_hits_from, tree_from, tree_text_from,
+    issues_rows_from, recall_from, search_hits_from, tree_from, tree_text_from,
 };
 use vissue_core::error::Error;
 use vissue_core::model::IssueHeading;
@@ -859,4 +859,177 @@ fn sharing_a_project_is_worth_a_little_and_not_nothing() {
         "the project is worth {}: {hits:?}",
         near - far
     );
+}
+
+/// The working set for a node is what the plan says it stands on: the parent
+/// chain above it and the products of what blocks it. Nothing is ranked, so the
+/// assertion is on membership rather than on an order a scorer chose.
+#[test]
+fn recall_gathers_the_plan_and_the_products_of_the_blockers() {
+    let issues = vec![
+        issue("keys", "keys-e0pl", "TODO", "Epic: Colemak leader sequence"),
+        with_property(
+            with_property(
+                issue("keys", "keys-cata", "DONE", "Catalog of bindable actions"),
+                "PARENT",
+                "keys-e0pl",
+            ),
+            "DEEDS",
+            "deed-file-catalog",
+        ),
+        with_property(
+            with_property(
+                issue("keys", "keys-toml", "TODO", "keys.toml schema"),
+                "PARENT",
+                "keys-e0pl",
+            ),
+            "BLOCKED_BY",
+            "keys-cata",
+        ),
+    ];
+
+    let set = recall_from(&issues, "keys-toml", 1).unwrap();
+    assert_eq!(set.id, "keys-toml");
+    assert_eq!(
+        set.plan.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+        vec!["keys-e0pl"],
+        "the parent chain is the plan the node sits in"
+    );
+    assert_eq!(set.inputs.len(), 1);
+    assert_eq!(set.inputs[0].id, "keys-cata");
+    assert_eq!(set.inputs[0].relation, "blocked-by");
+    assert_eq!(set.inputs[0].deeds, vec!["deed-file-catalog".to_string()]);
+    assert!(set.produced.is_empty());
+}
+
+/// The parent chain is reported outermost first, so a reader gets the plan
+/// before the node inside it rather than the other way up.
+#[test]
+fn the_plan_reads_from_the_outermost_parent_down() {
+    let issues = vec![
+        issue("keys", "keys-root", "TODO", "Programme"),
+        with_property(
+            issue("keys", "keys-mid", "TODO", "Epic"),
+            "PARENT",
+            "keys-root",
+        ),
+        with_property(
+            issue("keys", "keys-leaf", "TODO", "Task"),
+            "PARENT",
+            "keys-mid",
+        ),
+    ];
+
+    let set = recall_from(&issues, "keys-leaf", 1).unwrap();
+    assert_eq!(
+        set.plan.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+        vec!["keys-root", "keys-mid"]
+    );
+}
+
+/// A `:PARENT:` cycle is something `check` reports rather than prevents, so the
+/// walk has to stop on its own. Hanging the command that explains an issue is a
+/// worse failure than the bad edge it was asked about.
+#[test]
+fn a_parent_cycle_stops_the_plan_walk() {
+    let issues = vec![
+        with_property(issue("p", "p-a", "TODO", "a"), "PARENT", "p-b"),
+        with_property(issue("p", "p-b", "TODO", "b"), "PARENT", "p-a"),
+    ];
+
+    let set = recall_from(&issues, "p-a", 1).unwrap();
+    assert_eq!(
+        set.plan.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+        vec!["p-b"],
+        "the walk stops at the first id it has already seen"
+    );
+}
+
+/// A bounced issue's origin is an input no blocker edge carries: the work came
+/// from there and nothing else points back at it.
+#[test]
+fn the_origin_of_a_bounce_is_an_input() {
+    let issues = vec![
+        with_property(
+            issue("p", "p-src", "CANCELLED", "the original attempt"),
+            "DEEDS",
+            "deed-patch-attempt",
+        ),
+        with_property(
+            issue("p", "p-new", "TODO", "the second attempt"),
+            "DISCOVERED_FROM",
+            "p-src",
+        ),
+    ];
+
+    let set = recall_from(&issues, "p-new", 1).unwrap();
+    assert_eq!(set.inputs.len(), 1);
+    assert_eq!(set.inputs[0].relation, "discovered-from");
+    assert_eq!(set.inputs[0].deeds, vec!["deed-patch-attempt".to_string()]);
+}
+
+/// An origin that also blocks the issue is one input, not two. The blocker edge
+/// is the stronger statement and is reported.
+#[test]
+fn an_origin_that_also_blocks_is_reported_once() {
+    let issues = vec![
+        issue("p", "p-src", "DONE", "the original attempt"),
+        with_property(
+            with_property(
+                issue("p", "p-new", "TODO", "the second attempt"),
+                "DISCOVERED_FROM",
+                "p-src",
+            ),
+            "BLOCKED_BY",
+            "p-src",
+        ),
+    ];
+
+    let set = recall_from(&issues, "p-new", 1).unwrap();
+    assert_eq!(set.inputs.len(), 1, "{:?}", set.inputs);
+    assert_eq!(set.inputs[0].relation, "blocked-by");
+}
+
+/// One hop is the default because a deed carries its own sources and `deedar
+/// trail` walks them. Asking for more hops here has to actually widen the set,
+/// or the flag is a lie.
+#[test]
+fn depth_widens_the_blocker_walk() {
+    let issues = vec![
+        with_property(
+            issue("p", "p-first", "DONE", "first"),
+            "DEEDS",
+            "deed-file-first",
+        ),
+        with_property(
+            with_property(issue("p", "p-mid", "DONE", "middle"), "BLOCKED_BY", "p-first"),
+            "DEEDS",
+            "deed-file-middle",
+        ),
+        with_property(issue("p", "p-last", "TODO", "last"), "BLOCKED_BY", "p-mid"),
+    ];
+
+    let one = recall_from(&issues, "p-last", 1).unwrap();
+    assert_eq!(
+        one.inputs.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+        vec!["p-mid"]
+    );
+
+    let two = recall_from(&issues, "p-last", 2).unwrap();
+    assert_eq!(
+        two.inputs.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+        vec!["p-first", "p-mid"],
+        "furthest first: the order the work happened"
+    );
+    assert_eq!(two.inputs[0].relation, "blocked-by:2");
+}
+
+/// An id that is not in the corpus is an error rather than an empty working
+/// set, because an agent handed nothing would start work with no context and no
+/// reason to think anything was missing.
+#[test]
+fn recall_of_an_unknown_id_is_an_error() {
+    let issues = vec![issue("p", "p-a", "TODO", "a")];
+    let err = recall_from(&issues, "p-nope", 1).unwrap_err();
+    assert!(matches!(err, Error::IssueNotFound { .. }), "{err:?}");
 }

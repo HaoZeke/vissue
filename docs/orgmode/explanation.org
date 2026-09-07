@@ -234,6 +234,14 @@ The separation is the point. vissue owns the order of the work; the deed store
 owns the products and their provenance. Neither holds a copy of the other, so
 there is nothing to keep in sync.
 
+That leaves one join worth naming. A deed records the agent that produced it and,
+optionally, the live assignment it was produced under, which for
+[[https://github.com/HaoZeke/claimdag][claimdag]] is a =WorkId=. So a product
+can be traced three ways at once: the tracker node it was for, from the issue
+that cites it; the run that made it, from the deed's =producedBy=; and the
+inputs it was built on, from the deed's =sources=. Three tools, one id each, no
+shared store between them.
+
 * Why a tally is not a consensus
 
 =vote= counts ballots and refuses to call a plurality agreement. That is as far
@@ -267,6 +275,13 @@ With no trust configured every agent listens to every other equally, the matrix
 is doubly stochastic, and the consensus is the tally as a fraction.
 Configuration only moves weight away from that, so nothing surprising happens
 to a tracker nobody has set up.
+
+What is here is the one model, run to its fixed point on the ballots of one
+issue. Where the interesting question is the model itself -- what a family of
+update rules does to a population, how bounded confidence or activity driving
+changes the outcome --
+[[https://github.com/seldon-code/seldon][seldon]] simulates those, and this is
+not the place to reimplement it.
 
 * Why =related= does not write edges
 

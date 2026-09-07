@@ -1149,3 +1149,27 @@ fn a_shared_deed_is_evidence_of_a_relation() {
         first.evidence
     );
 }
+
+/// A `:PARENT:` may name any Org heading with an `:ID:` under the prefix, so a
+/// design document can head a work hierarchy. That document is not an issue and
+/// is exactly what a reader should open, so the plan names it instead of
+/// stopping silently one step short.
+#[test]
+fn a_plan_headed_by_a_document_is_named_not_dropped() {
+    let issues = vec![with_property(
+        issue("spec", "spec-9k2m", "TODO", "Implement the retry table"),
+        "PARENT",
+        "spec-design-20260615",
+    )];
+
+    let set = recall_from(&issues, "spec-9k2m", 1).unwrap();
+    assert_eq!(
+        set.plan.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+        vec!["spec-design-20260615"]
+    );
+    assert!(
+        set.plan[0].title.contains("outside the tracker"),
+        "the reader has to know why it has no state: {:?}",
+        set.plan[0]
+    );
+}

@@ -719,6 +719,10 @@ Body
   knowing which layout is loaded.
 #+end_src
 
+A =:PARENT:= that names a design document rather than an issue is named in the
+plan too, marked as a heading outside the tracker, because that document is
+what the reader should open.
+
 A claim is where an agent starts, so it says where the working set is:
 
 #+begin_src console

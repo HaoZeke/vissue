@@ -906,11 +906,27 @@ pub fn recall_from(issues: &[IssueRec], id: &str, depth: usize) -> Result<Recall
         if !seen.insert(parent) {
             break;
         }
-        let Some(prec) = issues.iter().find(|r| r.heading.id == parent) else {
-            break;
-        };
-        plan.push(walk_hit(prec, "plan"));
-        at = prec.heading.parent();
+        match issues.iter().find(|r| r.heading.id == parent) {
+            Some(prec) => {
+                plan.push(walk_hit(prec, "plan"));
+                at = prec.heading.parent();
+            }
+            None => {
+                // A `:PARENT:` may name any Org heading with an `:ID:` under
+                // the prefix, so a design document can head a work hierarchy.
+                // This catalog holds issues and not that document, and the
+                // document is exactly what a reader should open, so it is
+                // named rather than dropped.
+                plan.push(WalkHit {
+                    id: parent.to_string(),
+                    project: String::new(),
+                    state: String::new(),
+                    title: "(a heading outside the tracker)".to_string(),
+                    relation: "plan".to_string(),
+                });
+                break;
+            }
+        }
     }
     plan.reverse();
 

@@ -791,6 +791,101 @@ mod tests {
     use super::*;
     use vissue_core::config::DEFAULT_PREFIX;
 
+    /// The tools an agent uses to work a node: recall before, deed after.
+    ///
+    /// Over the tool surface rather than the library, because this is the one an
+    /// agent actually reaches for, and a working set it cannot ask for is a
+    /// working set it will not use.
+    #[tokio::test]
+    async fn the_working_set_reaches_the_tool_surface() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        std::fs::create_dir_all(layout.projects_dir()).unwrap();
+        ops::create(
+            &layout,
+            "keys",
+            "catalog the actions",
+            CreateOpts::default(),
+        )
+        .unwrap();
+        ops::create(&layout, "keys", "write the schema", CreateOpts::default()).unwrap();
+        let id_of = |title: &str| -> String {
+            vissue_core::store::load_all(&layout)
+                .unwrap()
+                .into_iter()
+                .find(|(_, h)| h.title == title)
+                .map(|(_, h)| h.id)
+                .expect("issue")
+        };
+        let first = id_of("catalog the actions");
+        let second = id_of("write the schema");
+        ops::update(&layout, &second, None, None, Some(&first), None).unwrap();
+
+        let server = VissueServer::with_layout(layout.clone());
+        let cited = server
+            .vissue_deed(Parameters(DeedArgs {
+                issue_id: first.clone(),
+                add: Some(vec!["deed-file-catalog".into()]),
+                remove: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(cited.is_error, Some(false));
+
+        let recalled = server
+            .vissue_recall(Parameters(RecallArgs {
+                issue_id: second.clone(),
+                depth: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(recalled.is_error, Some(false));
+        let rendered = format!("{:?}", recalled.content);
+        assert!(
+            rendered.contains("deed-file-catalog"),
+            "the input's product is what the next unit opens: {rendered}"
+        );
+
+        // A citation nothing can resolve is an error the agent sees, not a
+        // value the heading quietly keeps.
+        let refused = server
+            .vissue_deed(Parameters(DeedArgs {
+                issue_id: first,
+                add: Some(vec!["/tmp/note.md".into()]),
+                remove: None,
+            }))
+            .await;
+        let message = refused.expect_err("a path is not an accession").message;
+        assert!(message.contains("not a deed accession"), "{message}");
+    }
+
+    /// The consensus tool answers on an unconfigured tracker, where it is the
+    /// tally as shares, and says so.
+    #[tokio::test]
+    async fn the_consensus_tool_answers_without_trust_configured() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        std::fs::create_dir_all(layout.projects_dir()).unwrap();
+        ops::create(&layout, "api", "ship it?", CreateOpts::default()).unwrap();
+        let id = vissue_core::store::load_all(&layout).unwrap()[0]
+            .1
+            .id
+            .clone();
+        for (agent, choice) in [("a", "ship"), ("b", "ship"), ("c", "hold")] {
+            ops::vote(&layout, &id, Some(choice), agent).unwrap();
+        }
+
+        let server = VissueServer::with_layout(layout);
+        let weighed = server
+            .vissue_consensus(Parameters(ConsensusArgs { issue_id: id }))
+            .await
+            .unwrap();
+        assert_eq!(weighed.is_error, Some(false));
+        let rendered = format!("{:?}", weighed.content);
+        assert!(rendered.contains("trust default"), "{rendered}");
+        assert!(rendered.contains("holds: ship"), "{rendered}");
+    }
+
     #[tokio::test]
     async fn tools_answer_against_a_temporary_layout() {
         let dir = tempfile::tempdir().unwrap();

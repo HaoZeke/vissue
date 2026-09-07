@@ -993,3 +993,107 @@ fn capabilities_match_the_schema() {
         "initialize advertises these and no schema row mentions them: {unknown:?}"
     );
 }
+
+/// The three-layer loop over the socket: a node names its product, and the next
+/// node's working set carries that accession to whoever picks it up.
+///
+/// Structure rather than text on this surface, because the caller is a program.
+#[test]
+fn the_socket_hands_a_finished_node_product_to_the_next_one() {
+    let h = Harness::new();
+    let mut client = h.connect();
+    let make = |client: &mut Client, title: &str| -> String {
+        client
+            .request("issue/create", json!({"project": "atlas", "title": title}))
+            .unwrap()["issue"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    let first = make(&mut client, "catalog the actions");
+    let second = make(&mut client, "write the schema");
+    client
+        .request("issue/update", json!({"id": second, "block": first}))
+        .unwrap();
+
+    let cited = client
+        .request(
+            "issue/deed",
+            json!({"id": first, "add": ["deed-file-catalog"]}),
+        )
+        .unwrap();
+    assert_eq!(cited["ok"], true, "{cited}");
+
+    // Both lists absent is the read, and it must not rewrite anything.
+    let read_back = client.request("issue/deed", json!({"id": first})).unwrap();
+    let report = read_back["report"].as_str().unwrap_or_default();
+    assert!(report.contains("deed-file-catalog"), "{report}");
+
+    let recalled = client
+        .request("issue/recall", json!({"id": second}))
+        .unwrap();
+    assert_eq!(recalled["inputs"][0]["id"], json!(first));
+    assert_eq!(recalled["inputs"][0]["relation"], "blocked-by");
+    assert_eq!(recalled["inputs"][0]["deeds"][0], "deed-file-catalog");
+}
+
+/// A citation nothing can resolve is refused on the wire too, rather than
+/// stored for whatever opens it later to fail on.
+#[test]
+fn the_socket_refuses_a_citation_that_is_not_an_accession() {
+    let h = Harness::new();
+    let mut client = h.connect();
+    let id = client
+        .request(
+            "issue/create",
+            json!({"project": "atlas", "title": "bad citation"}),
+        )
+        .unwrap()["issue"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let refused = client.request("issue/deed", json!({"id": id, "add": ["/tmp/note.md"]}));
+    assert!(refused.is_err(), "{refused:?}");
+}
+
+/// The consensus reaches the socket as structure: the limit, the settling, and
+/// the social power a caller would otherwise have to parse out of a report.
+#[test]
+fn the_socket_answers_the_consensus_as_structure() {
+    let h = Harness::new();
+    let mut client = h.connect();
+    let id = client
+        .request(
+            "issue/create",
+            json!({"project": "atlas", "title": "ship?"}),
+        )
+        .unwrap()["issue"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for (agent, choice) in [("a", "ship"), ("b", "ship"), ("c", "hold")] {
+        client
+            .request(
+                "issue/vote",
+                json!({"id": id, "choice": choice, "agent": agent}),
+            )
+            .unwrap();
+    }
+
+    let outcome = client
+        .request("issue/consensus", json!({"id": id}))
+        .unwrap();
+    assert_eq!(outcome["settling"], "agreed", "{outcome}");
+    assert_eq!(outcome["trust"], "default", "{outcome}");
+    assert_eq!(outcome["agents"].as_array().unwrap().len(), 3);
+    let ship = outcome["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c == "ship")
+        .unwrap();
+    let share = outcome["consensus"][ship].as_f64().unwrap();
+    assert!((share - 2.0 / 3.0).abs() < 1e-6, "{outcome}");
+}

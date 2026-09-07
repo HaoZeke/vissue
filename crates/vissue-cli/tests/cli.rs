@@ -1959,3 +1959,152 @@ fn every_flag_a_verb_takes_is_in_the_schema() {
         "these flags exist and no schema field mentions them: {unknown:?}"
     );
 }
+
+/// The loop the three layers exist for, end to end: a plan is split, the first
+/// node is worked and names what it made, and the second node's working set
+/// hands that product to whoever picks it up.
+///
+/// Through the built binary rather than the library, because the handoff is
+/// between two processes that share nothing but the file, which is the whole
+/// claim.
+#[test]
+fn a_finished_node_hands_its_product_to_the_next_one() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let own = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        vissue_cmd().args(argv).output().unwrap()
+    };
+    let id = |args: &[&str]| -> String { stdout(&own(args)).trim().to_string() };
+
+    let epic = id(&["create", "-p", "keys", "--type", "plan", "Epic", "-q"]);
+    let first = id(&[
+        "create",
+        "-p",
+        "keys",
+        "--parent",
+        &epic,
+        "Catalog the actions",
+        "-q",
+    ]);
+    let second = id(&[
+        "create",
+        "-p",
+        "keys",
+        "--parent",
+        &epic,
+        "Write the schema",
+        "-q",
+    ]);
+    own(&["update", &second, "--block", &first]);
+
+    // The first node finishes and names its product.
+    let cited = own(&["deed", &first, "--add", "deed-file-catalog"]);
+    assert!(cited.status.success(), "{}", stdout(&cited));
+    own(&["update", &first, "--state", "DONE"]);
+
+    let recalled = stdout(&own(&["recall", &second]));
+    assert!(recalled.contains(&epic), "the plan is missing: {recalled}");
+    assert!(
+        recalled.contains(&first) && recalled.contains("blocked-by"),
+        "the input is missing: {recalled}"
+    );
+    assert!(
+        recalled.contains("deed-file-catalog"),
+        "the input's product is the point: {recalled}"
+    );
+
+    // The form a shell substitutes into `deedar get`.
+    assert_eq!(
+        stdout(&own(&["recall", &second, "--deeds-only"])),
+        "deed-file-catalog\n"
+    );
+
+    // And the structure a remote surface answers with.
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout(&own(&["recall", &second, "--json"]))).expect("json");
+    assert_eq!(json["inputs"][0]["deeds"][0], "deed-file-catalog");
+    assert_eq!(json["inputs"][0]["relation"], "blocked-by");
+}
+
+/// A plurality that the group's own weighting reverses, over the command line.
+/// `vote` reports the count and `consensus` reports where the weight actually
+/// sits, so an agent acting on either can see the other.
+#[test]
+fn the_consensus_weighs_the_ballots_the_tally_counts() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    fs::write(
+        dir.path().join("vissue.toml"),
+        "[consensus.trust]\nalice = { carol = 1.0 }\nbob = { carol = 1.0 }\n\
+         carol = { carol = 4.0, alice = 1.0 }\n",
+    )
+    .unwrap();
+    let own = |agent: &str, args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        vissue_cmd()
+            .env("VISSUE_AGENT", agent)
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+
+    let id = stdout(&own("alice", &["create", "-p", "api", "Ship it?", "-q"]))
+        .trim()
+        .to_string();
+    own("alice", &["vote", &id, "--for", "ship"]);
+    own("bob", &["vote", &id, "--for", "ship"]);
+    own("carol", &["vote", &id, "--for", "hold"]);
+
+    let tally = stdout(&own("alice", &["vote", &id]));
+    assert!(tally.contains("consensus: ship (2 of 3)"), "{tally}");
+
+    let weighed = stdout(&own("alice", &["consensus", &id]));
+    assert!(weighed.contains("holds: hold"), "{weighed}");
+    assert!(
+        weighed.contains("the count leads with ship"),
+        "the difference is the reason to run it: {weighed}"
+    );
+    assert!(weighed.contains("social power"), "{weighed}");
+}
+
+/// With no trust configured the weighted answer is the count as a fraction, so
+/// the verb is safe on a tracker nobody has set up.
+#[test]
+fn an_unconfigured_tracker_gets_the_tally_back_as_shares() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let own = |agent: &str, args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        vissue_cmd()
+            .env("VISSUE_AGENT", agent)
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+
+    let id = stdout(&own("alice", &["create", "-p", "api", "Ship it?", "-q"]))
+        .trim()
+        .to_string();
+    own("alice", &["vote", &id, "--for", "ship"]);
+    own("bob", &["vote", &id, "--for", "ship"]);
+    own("carol", &["vote", &id, "--for", "hold"]);
+
+    let weighed = stdout(&own("alice", &["consensus", &id]));
+    assert!(weighed.contains("trust default"), "{weighed}");
+    assert!(
+        weighed.contains("ship                     0.667"),
+        "{weighed}"
+    );
+    assert!(
+        weighed.contains("hold                     0.333"),
+        "{weighed}"
+    );
+    assert!(
+        !weighed.contains("the count leads with"),
+        "nothing was reweighted, so there is nothing to point out: {weighed}"
+    );
+}

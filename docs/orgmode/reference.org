@@ -431,12 +431,13 @@ need no Cap'n Proto toolchain; regenerating after a schema edit does, and
 
 Every verb that changes a file has a method: =issue/create=, =issue/update=,
 =issue/claim=, =issue/note=, =issue/append=, =issue/refile=, =issue/reject=,
-=issue/resolve=, =issue/vote=, =issue/fold=, =issue/normalize=.
+=issue/resolve=, =issue/vote=, =issue/deed=, =issue/fold=, =issue/normalize=.
 
 The reads have methods too: =issue/list=, =issue/show=, =issue/get=,
 =issue/search=, =issue/tree=, =issue/ready=, =issue/agenda=, =issue/claims=,
 =issue/children=, =issue/ancestors=, =issue/impact=, =issue/backlinks=,
-=issue/related=, =issue/excerpt=, =issue/open=, =issue/check=, =issue/count=,
+=issue/related=, =issue/recall=, =issue/consensus=, =issue/excerpt=, =issue/open=,
+=issue/check=, =issue/count=,
 =issue/cycles=, =issue/digest=, =issue/export=, =issue/graph=, =issue/roadmap=,
 =issue/stale=, =issue/hygiene=, =issue/waiting_on=, =issue/mirror=,
 =project/list=, =identity/get=, =events/gen=, =events/since=, =events/ping=,

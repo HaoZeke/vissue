@@ -138,6 +138,9 @@ Capabilities returned by =initialize= (v1):
 | =issue/reject=     | Cancel and point at a successor                            |
 | =issue/resolve=    | Settle on a sibling terminal state                         |
 | =issue/vote=       | One ballot per identity; no params reads the tally         |
+| =issue/deed=       | Cite, drop, or read the deeds an issue produced            |
+| =issue/recall=     | The working set: plan, inputs and their deeds              |
+| =issue/consensus=  | DeGroot over the ballots; limits, power, settling          |
 | =issue/fold=       | Inbox headings become issues                               |
 | =issue/normalize=  | Rewrite onto the property split; =dry_run=                 |
 | =issue/check=      | Validation; =report= plus =errors= and =warnings=          |

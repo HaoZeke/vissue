@@ -297,13 +297,19 @@ pub fn recall(layout: &Layout, id: &str, depth: usize) -> Result<String> {
 pub fn recall_deeds(layout: &Layout, id: &str, depth: usize) -> Result<String> {
     let set = CatalogService::from_recs(&load_recs(layout)?).recall(id, depth)?;
     let mut out = String::new();
+    // One line per deed even when two nodes cite the same one, which happens
+    // whenever work continues on the product it was handed. The consumer is a
+    // shell substitution, so a repeat would fetch or check the same deed twice.
+    let mut seen: HashSet<&str> = HashSet::new();
     for deed in set
         .inputs
         .iter()
         .flat_map(|i| i.deeds.iter())
         .chain(set.produced.iter())
     {
-        writeln!(out, "{deed}")?;
+        if seen.insert(deed.as_str()) {
+            writeln!(out, "{deed}")?;
+        }
     }
     Ok(out)
 }

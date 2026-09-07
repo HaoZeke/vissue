@@ -2108,3 +2108,29 @@ fn an_unconfigured_tracker_gets_the_tally_back_as_shares() {
         "nothing was reweighted, so there is nothing to point out: {weighed}"
     );
 }
+
+/// Work that continues on the product it was handed cites the same deed as its
+/// input. The accession list is a shell substitution, so a repeat would fetch
+/// or check the same deed twice.
+#[test]
+fn the_accession_list_names_each_deed_once() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let own = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        vissue_cmd().args(argv).output().unwrap()
+    };
+    let id = |args: &[&str]| -> String { stdout(&own(args)).trim().to_string() };
+
+    let first = id(&["create", "-p", "keys", "The groundwork", "-q"]);
+    let second = id(&["create", "-p", "keys", "More of the same", "-q"]);
+    own(&["update", &second, "--block", &first]);
+    own(&["deed", &first, "--add", "deed-file-shared"]);
+    own(&["deed", &second, "--add", "deed-file-shared"]);
+
+    assert_eq!(
+        stdout(&own(&["recall", &second, "--deeds-only"])),
+        "deed-file-shared\n"
+    );
+}

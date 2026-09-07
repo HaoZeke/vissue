@@ -339,6 +339,8 @@ fn score_direct_relations(
 ) {
     let target = all[target_idx].1;
     let target_id = target.id.as_str();
+    // Read off the drawer once rather than per candidate.
+    let target_deeds = target.deeds();
     for (index, (_, issue)) in all.iter().enumerate() {
         if index == target_idx {
             continue;
@@ -350,8 +352,9 @@ fn score_direct_relations(
         // declared fact rather than a resemblance, so it scores with the edges
         // and not with the tags: the deed is the thing they have in common, and
         // it is named.
-        for cited in target.deeds() {
-            if issue.deeds().iter().any(|other| *other == cited) {
+        let theirs = issue.deeds();
+        for cited in &target_deeds {
+            if theirs.contains(cited) {
                 bump(candidates, index, 1_000.0, &format!("deed:{cited}"));
             }
         }

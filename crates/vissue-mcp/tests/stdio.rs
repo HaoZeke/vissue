@@ -245,6 +245,65 @@ fn a_write_tool_changes_the_tracker_over_the_pipe() {
     assert!(check.contains("0 error(s)"), "{check}");
 }
 
+/// The whole handoff over the pipe an agent actually speaks: one unit of work
+/// names what it produced, and the next one's working set carries the
+/// accession to whoever picks it up.
+#[test]
+fn the_working_set_reaches_an_agent_over_the_pipe() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join("Software")).expect("projects dir");
+    let mut server = Server::start(dir.path());
+    server.handshake();
+
+    let id_of = |made: String| made.split_whitespace().next().expect("an id").to_string();
+    let first = id_of(
+        server
+            .call_text(
+                "vissue_create",
+                json!({"project": "keys", "title": "Catalog the actions"}),
+            )
+            .expect("create"),
+    );
+    let second = id_of(
+        server
+            .call_text(
+                "vissue_create",
+                json!({"project": "keys", "title": "Write the schema"}),
+            )
+            .expect("create"),
+    );
+    server
+        .call_text("vissue_update", json!({"issue_id": second, "block": first}))
+        .expect("block");
+
+    server
+        .call_text(
+            "vissue_deed",
+            json!({"issue_id": first, "add": ["deed-file-catalog"]}),
+        )
+        .expect("deed");
+
+    let recalled = server
+        .call_text("vissue_recall", json!({"issue_id": second}))
+        .expect("recall");
+    assert!(
+        recalled.contains(&first),
+        "the input is missing: {recalled}"
+    );
+    assert!(
+        recalled.contains("deed-file-catalog"),
+        "the input's product is the point: {recalled}"
+    );
+
+    // And the refusal an agent needs to see rather than a citation that
+    // resolves to nothing.
+    let refused = server.call_text(
+        "vissue_deed",
+        json!({"issue_id": second, "add": ["/tmp/note.md"]}),
+    );
+    assert!(refused.is_err(), "{refused:?}");
+}
+
 #[test]
 fn failures_come_back_as_errors_rather_than_a_dropped_pipe() {
     let mut server = Server::start(&fixture_root());

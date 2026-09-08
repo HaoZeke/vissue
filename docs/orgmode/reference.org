@@ -13,7 +13,7 @@
 | =body-excerpt=                                                            | A capped preview of an issue's file range; =show --org= for the whole heading |
 | =claims=                                                                  | Every live claim, oldest first: who holds what, for how long             |
 | =vote=                                                                    | Cast this agent's ballot (=--for=), or read the tally; one ballot per identity |
-| =consensus=                                                               | Weigh the same ballots by who the group listens to; social power and the two ways there is none |
+| =consensus=                                                               | Weigh the same ballots by who the group listens to; social power and the two ways there is none; =--children= rolls up over a plan |
 | =deed=                                                                    | Cite (=--add=), drop (=--remove=), or list the deeds this issue's work produced |
 | =recall=                                                                  | The working set for an issue: plan, inputs and their deeds, and its own |
 | =--json= on a read                                                        | =list=, =show=, =ready=, =claims=, =digest=, =search=, =children=, =ancestors=, =impact=, =backlinks=, =agenda=, =tree=, =body-excerpt=, =projects=, =recall=, =consensus= |
@@ -714,6 +714,19 @@ the arithmetic would report a division that is not there.
 =consensus --json= gives the same result as structure: the choice set, each
 agent's limit and social power, the settling (=agreed=, =split=, =oscillating=),
 whether the iteration ran out of rounds, and the factions when there are any.
+
+=consensus <plan> --children= answers the other question, whether an epic can
+close. It is a report over the children and not an average of them, and the
+reasons are worth stating because the average is the obvious implementation:
+no weighting over children can be picked without a judgement the tracker has no
+basis for, and an equal-weight one lets an epic split finely outvote one split
+coarsely; a child that settled split has no single position to fold in; and a
+child nobody voted on is absent rather than neutral, which matters because
+unvoted is the common case.
+
+So the rows stay rows. It says how many children carry ballots, what each holds,
+whether the ones that were voted on point the same way, which settled split, and
+how many carry no ballots at all.
 
 =max_iterations= bounds the work. Reaching it does not change the verdict,
 which the structure already settled; the shares are then reported as an

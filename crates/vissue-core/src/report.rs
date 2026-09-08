@@ -205,6 +205,87 @@ pub fn show(layout: &Layout, id: &str) -> Result<String> {
     Ok(out)
 }
 
+/// What a plan's children hold, child by child.
+///
+/// Deliberately not a number. The design note that settled this is in the
+/// vault; the short version is that no weighting over children can be picked
+/// without a judgement the tracker has no basis for, a child that settled split
+/// has no single position to fold in, and a child nobody voted on is absent
+/// rather than neutral. Rolling those into one figure would hide exactly the
+/// rows a person has to go read.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read, `id` is not in it, or the
+/// configuration names a weight the iteration cannot use.
+pub fn plan_consensus(layout: &Layout, id: &str) -> Result<String> {
+    let roll = crate::consensus::of_plan(layout, id)?;
+    let mut out = String::new();
+    writeln!(out, "{}  {}", roll.plan, roll.title)?;
+    if roll.children.is_empty() {
+        writeln!(out, "  no children: nothing to roll up")?;
+        return Ok(out);
+    }
+
+    let voted = roll.children.iter().filter(|c| c.ballots > 0).count();
+    writeln!(
+        out,
+        "  {} child{}, {voted} with ballots",
+        roll.children.len(),
+        if roll.children.len() == 1 { "" } else { "ren" }
+    )?;
+    for child in &roll.children {
+        let held = match (&child.holds, child.settling) {
+            (Some((choice, share)), _) => format!("{choice} {share:.3}"),
+            (None, Some(crate::consensus::Settling::Split)) => "split".to_string(),
+            (None, Some(crate::consensus::Settling::Oscillating)) => "never settles".to_string(),
+            (None, Some(_)) => "no lead".to_string(),
+            (None, None) => "no ballots".to_string(),
+        };
+        writeln!(
+            out,
+            "    {:<22} {:<9} {:<16} {}",
+            child.id, child.state, held, child.title
+        )?;
+    }
+
+    let positions = roll.positions();
+    match positions.len() {
+        0 => writeln!(out, "  nothing holds a position yet")?,
+        1 => writeln!(
+            out,
+            "  the children that were voted on all hold {}",
+            positions[0]
+        )?,
+        n => writeln!(
+            out,
+            "  the children disagree with each other: {n} positions ({})",
+            positions.join(", ")
+        )?,
+    }
+    let split = roll.split();
+    if !split.is_empty() {
+        writeln!(
+            out,
+            "  {} child(ren) settled split and need a person: {}",
+            split.len(),
+            split
+                .iter()
+                .map(|c| c.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )?;
+    }
+    let unvoted = roll.unvoted();
+    if !unvoted.is_empty() {
+        // Named rather than counted into an average. Most work is done rather
+        // than argued over, so this is the common row and folding it in as a
+        // neutral vote would make the plan's position mostly fiction.
+        writeln!(out, "  {} child(ren) carry no ballots", unvoted.len())?;
+    }
+    Ok(out)
+}
+
 /// The working set for one issue: the plan around it, the deeds its declared
 /// inputs produced, and what it has produced itself.
 ///

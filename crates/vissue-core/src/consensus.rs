@@ -275,6 +275,52 @@ pub fn of_issue(layout: &crate::config::Layout, id: &str) -> crate::error::Resul
     Ok(settle(&ballots, &cfg))
 }
 
+/// What each child of `plan` settled on.
+///
+/// Every child is read on its own, and the rows are left as rows. See the
+/// design note: no weighting over children can be picked without a judgement
+/// the tracker has no basis for, a split child has no position to fold in, and
+/// an unvoted child is absent rather than neutral.
+///
+/// # Errors
+///
+/// Returns an error if `plan` is not in the corpus, the corpus cannot be read,
+/// or the configuration names a weight the iteration cannot use.
+pub fn of_plan(
+    layout: &crate::config::Layout,
+    plan: &str,
+) -> crate::error::Result<crate::views::PlanConsensus> {
+    use crate::views::{ChildConsensus, PlanConsensus};
+
+    let recs = crate::catalog::load_recs(layout)?;
+    let service = crate::catalog::CatalogService::from_recs(&recs);
+    let parent = service.detail(plan)?;
+    let cfg = crate::config::VissueConfig::load(layout)?.consensus;
+
+    let mut children = Vec::new();
+    for hit in service.children(plan)? {
+        let ballots = crate::ops::ballots(layout, &hit.id)?;
+        let outcome = (!ballots.is_empty()).then(|| settle(&ballots, &cfg));
+        children.push(ChildConsensus {
+            id: hit.id,
+            state: hit.state,
+            title: hit.title,
+            ballots: ballots.len(),
+            settling: outcome.as_ref().map(|o| o.settling),
+            holds: outcome.as_ref().and_then(|o| {
+                o.leader()
+                    .map(|(choice, share)| (choice.to_string(), share))
+            }),
+        });
+    }
+
+    Ok(PlanConsensus {
+        plan: parent.id,
+        title: parent.title,
+        children,
+    })
+}
+
 /// Build the row-stochastic influence matrix over `names`.
 ///
 /// A configured row names the agents this one listens to, in whatever units the

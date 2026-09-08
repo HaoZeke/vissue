@@ -266,6 +266,75 @@ pub struct Recall {
     pub body: String,
 }
 
+/// What a plan's children hold, child by child.
+///
+/// A report rather than an average. Weighting children is a judgement the
+/// tracker has no basis for, a child that settled split has no single position
+/// to fold in, and a child nobody voted on is absent rather than neutral, so
+/// there is no honest number to reduce these rows to.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlanConsensus {
+    /// The plan the children hang under.
+    pub plan: String,
+    /// Heading title of the plan.
+    pub title: String,
+    /// One row per child, in the order `children` walks them.
+    pub children: Vec<ChildConsensus>,
+}
+
+/// One child of a plan, and what its own ballots settled on.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChildConsensus {
+    /// Issue id.
+    pub id: String,
+    /// TODO keyword on the heading.
+    pub state: String,
+    /// Heading title.
+    pub title: String,
+    /// Ballots cast on this child.
+    pub ballots: usize,
+    /// How the child settled, when anyone voted on it.
+    pub settling: Option<crate::consensus::Settling>,
+    /// The choice the child holds and its share, when one leads.
+    pub holds: Option<(String, f64)>,
+}
+
+impl PlanConsensus {
+    /// Children nobody has voted on.
+    #[must_use]
+    pub fn unvoted(&self) -> Vec<&ChildConsensus> {
+        self.children.iter().filter(|c| c.ballots == 0).collect()
+    }
+
+    /// Children whose own reviewers split into groups that do not listen to
+    /// each other.
+    #[must_use]
+    pub fn split(&self) -> Vec<&ChildConsensus> {
+        self.children
+            .iter()
+            .filter(|c| c.settling == Some(crate::consensus::Settling::Split))
+            .collect()
+    }
+
+    /// The distinct choices the settled children hold.
+    ///
+    /// One entry means the children that were voted on point the same way.
+    /// More than one means they disagree with each other, which is the case a
+    /// per-child report exists to make visible and an average would hide.
+    #[must_use]
+    pub fn positions(&self) -> Vec<&str> {
+        let mut seen: Vec<&str> = Vec::new();
+        for child in &self.children {
+            if let Some((choice, _)) = &child.holds
+                && !seen.contains(&choice.as_str())
+            {
+                seen.push(choice.as_str());
+            }
+        }
+        seen
+    }
+}
+
 /// One declared input to an issue, and the deeds that input produced.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RecallInput {

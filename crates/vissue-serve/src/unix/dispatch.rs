@@ -405,6 +405,10 @@ fn dispatch_recall(state: &OwnerState, params: Option<&Value>) -> Result<Value, 
 /// a fresh one.
 fn dispatch_consensus(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
     let params: ConsensusParams = decode(params)?;
+    if params.children {
+        let roll = vissue_core::consensus::of_plan(&state.layout, &params.id).map_err(map_core)?;
+        return serde_json::to_value(roll).map_err(map_json);
+    }
     let outcome = vissue_core::consensus::of_issue(&state.layout, &params.id).map_err(map_core)?;
     serde_json::to_value(outcome).map_err(map_json)
 }

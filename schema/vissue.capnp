@@ -240,6 +240,7 @@ const operations :List(Operation) = [
     note = "",
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "no flag: the command line takes it as a positional argument", toolType = "String", socketType = "String" ),
+      ( cli = "children", tool = "children", socket = "children", note = "roll up over the issue's children instead of its own ballots", toolType = "Option<bool>", socketType = "bool", omittable = true ),
       ( cli = "json", tool = "", socket = "", note = "the socket answers in structure already and the tool answers the prose a reader needs, so neither takes a flag to ask", toolType = "", socketType = "" )
     ] ),
   ( cli = "fold", socket = "issue/fold", mcp = "vissue_fold", mutates = true, local = false,

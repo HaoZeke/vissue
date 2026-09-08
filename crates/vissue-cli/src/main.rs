@@ -263,6 +263,9 @@ enum Command {
     /// reach rather than reporting one that is not there.
     Consensus {
         id: String,
+        /// Roll up over this issue's children instead of reading its own ballots.
+        #[arg(long)]
+        children: bool,
         /// Emit a JSON object instead of text
         #[arg(long)]
         json: bool,
@@ -1211,13 +1214,21 @@ fn run() -> Result<()> {
                 )?;
             }
         }
-        Command::Consensus { id, json } => {
+        Command::Consensus { id, children, json } => {
             let found = layout_for_id(&router, &id)?;
-            emit_shape(
-                json,
-                || vissue_core::consensus::of_issue(&found, &id),
-                || report::consensus(&found, &id),
-            )?;
+            if children {
+                emit_shape(
+                    json,
+                    || vissue_core::consensus::of_plan(&found, &id),
+                    || report::plan_consensus(&found, &id),
+                )?;
+            } else {
+                emit_shape(
+                    json,
+                    || vissue_core::consensus::of_issue(&found, &id),
+                    || report::consensus(&found, &id),
+                )?;
+            }
         }
         Command::Vote { id, choice } => {
             let found = layout_for_id(&router, &id)?;

@@ -188,6 +188,8 @@ pub struct RecallArgs {
 pub struct ConsensusArgs {
     /// Issue id.
     pub issue_id: String,
+    /// Roll up over the issue's children instead of reading its own ballots.
+    pub children: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]

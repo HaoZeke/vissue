@@ -2180,3 +2180,109 @@ fn a_split_report_says_what_each_group_holds() {
         "each group has to say what it settled on: {split}"
     );
 }
+
+/// A plan whose children each reached agreement, and disagree with each other.
+/// That is the case the roll-up exists for, and the case an average would hide
+/// by reporting a number in between two positions nobody holds.
+#[test]
+fn a_plan_roll_up_reports_the_children_rather_than_averaging_them() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let own = |agent: &str, args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        vissue_cmd()
+            .env("VISSUE_AGENT", agent)
+            .args(argv)
+            .output()
+            .unwrap()
+    };
+    let id =
+        |agent: &str, args: &[&str]| -> String { stdout(&own(agent, args)).trim().to_string() };
+
+    let plan = id(
+        "a",
+        &[
+            "create",
+            "-p",
+            "api",
+            "--type",
+            "plan",
+            "Ship the release",
+            "-q",
+        ],
+    );
+    let one = id(
+        "a",
+        &[
+            "create",
+            "-p",
+            "api",
+            "--parent",
+            &plan,
+            "The exporter",
+            "-q",
+        ],
+    );
+    let two = id(
+        "a",
+        &[
+            "create",
+            "-p",
+            "api",
+            "--parent",
+            &plan,
+            "The importer",
+            "-q",
+        ],
+    );
+    let three = id(
+        "a",
+        &["create", "-p", "api", "--parent", &plan, "The docs", "-q"],
+    );
+
+    // Each child is internally agreed, and they point different ways.
+    for agent in ["a", "b"] {
+        own(agent, &["vote", &one, "--for", "ship"]);
+        own(agent, &["vote", &two, "--for", "hold"]);
+    }
+
+    let rolled = stdout(&own("a", &["consensus", &plan, "--children"]));
+    assert!(rolled.contains("3 children, 2 with ballots"), "{rolled}");
+    assert!(
+        rolled.contains("the children disagree with each other: 2 positions"),
+        "the whole point of the row-by-row report: {rolled}"
+    );
+    assert!(
+        rolled.contains("1 child(ren) carry no ballots") && rolled.contains(&three),
+        "an unvoted child is named, not folded in as a neutral vote: {rolled}"
+    );
+    assert!(rolled.contains("no ballots"), "{rolled}");
+
+    // And the structured form carries the same rows.
+    let json: serde_json::Value = serde_json::from_str(&stdout(&own(
+        "a",
+        &["consensus", &plan, "--children", "--json"],
+    )))
+    .expect("json");
+    assert_eq!(json["plan"], serde_json::json!(plan));
+    assert_eq!(json["children"].as_array().unwrap().len(), 3);
+}
+
+/// The roll-up over an issue with no children says so rather than reporting an
+/// agreement over an empty set.
+#[test]
+fn a_plan_with_no_children_has_nothing_to_roll_up() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let own = |args: &[&str]| -> std::process::Output {
+        let mut argv = vec!["--root", dir.path().to_str().unwrap()];
+        argv.extend_from_slice(args);
+        vissue_cmd().args(argv).output().unwrap()
+    };
+    let alone = stdout(&own(&["create", "-p", "api", "On its own", "-q"]))
+        .trim()
+        .to_string();
+    let rolled = stdout(&own(&["consensus", &alone, "--children"]));
+    assert!(rolled.contains("no children"), "{rolled}");
+}

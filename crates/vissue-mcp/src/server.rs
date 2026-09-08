@@ -314,16 +314,20 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Weigh an issue's ballots by who the group listens to (DeGroot averaging over the configured trust graph). Reports the count and the weighted position side by side, each agent's social power, and the two ways there is no consensus to report: a trust graph with more than one closed group, or one that never settles. Use it before acting on what a plurality looks like."
+        description = "Weigh an issue's ballots by who the group listens to (DeGroot averaging over the configured trust graph). Reports the count and the weighted position side by side, each agent's social power, and the two ways there is no consensus to report: a trust graph with more than one closed group, or one that never settles. Use it before acting on what a plurality looks like. Set `children` to roll up over a plan's children instead: that answers whether an epic can close, and it reports the children row by row rather than averaging them, because a split child has no position to fold in and an unvoted child is absent rather than neutral."
     )]
     async fn vissue_consensus(
         &self,
         Parameters(args): Parameters<ConsensusArgs>,
     ) -> Result<CallToolResult, McpError> {
-        text(
-            self.layout_for_id(&args.issue_id)
-                .and_then(|layout| report::consensus(&layout, &args.issue_id)),
-        )
+        let children = args.children.unwrap_or(false);
+        text(self.layout_for_id(&args.issue_id).and_then(|layout| {
+            if children {
+                report::plan_consensus(&layout, &args.issue_id)
+            } else {
+                report::consensus(&layout, &args.issue_id)
+            }
+        }))
     }
 
     #[tool(description = "Every live claim, oldest first: who holds what issue, and for how long.")]
@@ -877,7 +881,10 @@ mod tests {
 
         let server = VissueServer::with_layout(layout);
         let weighed = server
-            .vissue_consensus(Parameters(ConsensusArgs { issue_id: id }))
+            .vissue_consensus(Parameters(ConsensusArgs {
+                issue_id: id,
+                children: None,
+            }))
             .await
             .unwrap();
         assert_eq!(weighed.is_error, Some(false));

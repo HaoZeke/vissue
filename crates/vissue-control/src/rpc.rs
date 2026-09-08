@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
 use crate::frame::FrameError;
-use vissue_core::consensus::Outcome as ConsensusOutcome;
 use vissue_core::error::Error as CoreError;
 use vissue_core::views::{
     AgendaRow, ClaimRow, Excerpt, IssueDetail, IssueRow, Recall, RelatedHit, SearchHit, TreeNode,
@@ -973,6 +972,9 @@ pub struct RecallParams {
 pub struct ConsensusParams {
     /// Issue id.
     pub id: String,
+    /// Roll up over the issue's children instead of its own ballots.
+    #[serde(default)]
+    pub children: bool,
 }
 
 /// Params for the reads that take an optional project filter: `issue/export`,
@@ -1643,8 +1645,8 @@ pub enum Response {
     IssueDeed(MutResult),
     /// The working set for an issue.
     IssueRecall(Recall),
-    /// DeGroot consensus over an issue's ballots.
-    IssueConsensus(ConsensusOutcome),
+    /// Consensus over an issue's ballots, or over its children.
+    IssueConsensus(Value),
     /// Inbox headings become issues.
     IssueFold(MutResult),
     /// Rewrite onto the property split.

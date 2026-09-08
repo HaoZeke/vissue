@@ -8,6 +8,9 @@ settles.
 `--json` gives the same result as structure: the choice set, each agent's limit
 and social power, the settling, and the factions when there are any.
 
+See `consensus.susceptibility` for the anchored variant, where the group settles
+while still disagreeing.
+
 Nothing new has to be cast, and nothing changes on a tracker that configures no
 trust: every agent then listens to every other equally and the consensus is the
 tally as a fraction.

@@ -1173,3 +1173,39 @@ fn a_plan_headed_by_a_document_is_named_not_dropped() {
         set.plan[0]
     );
 }
+
+/// The export carries the citations typed as well as in the drawer. A consumer
+/// reading the JSONL should not have to split a drawer string on whichever
+/// separator the author used, when the socket hands the same field over typed.
+#[test]
+fn the_export_row_types_the_deed_citations() {
+    let dir = tempfile::tempdir().unwrap();
+    let layout = vissue_core::config::Layout::new(dir.path(), vissue_core::DEFAULT_PREFIX);
+    std::fs::create_dir_all(layout.projects_dir()).unwrap();
+    vissue_core::ops::create(
+        &layout,
+        "api",
+        "made two things",
+        vissue_core::CreateOpts::default(),
+    )
+    .unwrap();
+    let id = vissue_core::store::load_all(&layout).unwrap()[0]
+        .1
+        .id
+        .clone();
+    for accession in ["deed-file-one", "deed-patch-two"] {
+        vissue_core::ops::deed(&layout, &id, &[accession.to_string()], &[]).unwrap();
+    }
+
+    let line = vissue_core::report::export(&layout, None).unwrap();
+    let row: serde_json::Value = serde_json::from_str(line.trim()).expect("one json object");
+    assert_eq!(
+        row["deeds"],
+        serde_json::json!(["deed-file-one", "deed-patch-two"]),
+        "typed, in the order they were cited"
+    );
+    assert_eq!(
+        row["properties"]["DEEDS"], "deed-file-one deed-patch-two",
+        "and the drawer is still there verbatim"
+    );
+}

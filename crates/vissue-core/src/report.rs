@@ -807,6 +807,12 @@ fn export_row(
         "state": h.state,
         "priority": h.priority.to_string(),
         "properties": h.properties,
+        // Typed beside the drawer rather than only inside it, so a consumer of
+        // the export reads the field the socket already hands over typed
+        // instead of splitting a drawer string on whichever separator the
+        // author happened to use. `properties` keeps `:DEEDS:` as well: a
+        // reader that wants the drawer verbatim should still get it.
+        "deeds": h.deeds(),
         "org_tags": h.org_tags,
         "tags": h.tags(),
         "all_tags": settings.all_tags(&h.tags()),

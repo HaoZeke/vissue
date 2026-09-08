@@ -186,10 +186,14 @@ impl IssuesOverride {
 /// ```toml
 /// [consensus]
 /// self_weight = 0.5
+/// susceptibility = 0.8
 ///
 /// [consensus.trust]
 /// reviewer = { maintainer = 3.0, worker = 1.0 }
 /// worker = { maintainer = 1.0 }
+///
+/// [consensus.susceptibility_of]
+/// maintainer = 0.2
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsensusSection {
@@ -212,6 +216,14 @@ pub struct ConsensusSection {
     pub tolerance: f64,
     /// Rounds to try before calling the trust graph periodic.
     pub max_iterations: usize,
+    /// Susceptibility for one named agent, where it differs from the default.
+    ///
+    /// Friedkin and Johnsen's susceptibility is a diagonal rather than one
+    /// number: a maintainer who has read the code for years and a reviewer
+    /// seeing it for the first time are not equally movable, and saying so is
+    /// the difference between the model and an average. An agent named here
+    /// uses this value; every other agent uses [`Self::susceptibility`].
+    pub susceptibility_of: BTreeMap<String, f64>,
     /// Trust rows, keyed by the identity that holds the opinion.
     pub trust: BTreeMap<String, BTreeMap<String, f64>>,
 }
@@ -223,6 +235,7 @@ impl Default for ConsensusSection {
             // periodic, and a tracker nobody has configured should converge.
             self_weight: 0.5,
             susceptibility: 1.0,
+            susceptibility_of: BTreeMap::new(),
             tolerance: 1e-9,
             max_iterations: 500,
             trust: BTreeMap::new(),
@@ -236,6 +249,8 @@ impl Default for ConsensusSection {
 struct ConsensusOverride {
     self_weight: Option<f64>,
     susceptibility: Option<f64>,
+    #[serde(default)]
+    susceptibility_of: BTreeMap<String, f64>,
     tolerance: Option<f64>,
     max_iterations: Option<usize>,
     trust: BTreeMap<String, BTreeMap<String, f64>>,
@@ -267,6 +282,19 @@ impl ConsensusOverride {
                 .into());
             }
             base.susceptibility = value;
+        }
+        for (agent, value) in &self.susceptibility_of {
+            if !(0.0..=1.0).contains(value) {
+                return Err(anyhow::anyhow!(
+                    "{}: consensus.susceptibility_of.{agent} is {value}, \
+                     which is not a share between 0 and 1",
+                    whence.display()
+                )
+                .into());
+            }
+            // Agent by agent, like the trust rows: a file that pins one
+            // reviewer does not drop the others.
+            base.susceptibility_of.insert(agent.clone(), *value);
         }
         if let Some(value) = self.tolerance {
             if !(value > 0.0 && value.is_finite()) {
@@ -528,6 +556,50 @@ mod tests {
                 "the message has to name the file: {err}"
             );
         }
+    }
+
+    /// A per-agent susceptibility outside the range is refused the same way the
+    /// default is, and the message names the agent as well as the file, because
+    /// a table of reviewers needs to say which row is wrong.
+    #[test]
+    fn a_per_agent_susceptibility_is_checked_and_names_the_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("vissue.toml"),
+            "[consensus.susceptibility_of]\nmaintainer = 1.5\n",
+        )
+        .unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        let err = VissueConfig::load(&layout).unwrap_err().to_string();
+        assert!(err.contains("maintainer"), "{err}");
+        assert!(err.contains("vissue.toml"), "{err}");
+    }
+
+    /// Susceptibility merges agent by agent, like the trust rows: a file that
+    /// pins one reviewer must not drop the others.
+    #[test]
+    fn a_susceptibility_row_overrides_only_the_agent_it_names() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("vissue.toml"),
+            "[consensus.susceptibility_of]\nmaintainer = 0.2\nreviewer = 0.6\n",
+        )
+        .unwrap();
+        let layout = Layout::new(dir.path(), DEFAULT_PREFIX);
+        fs::create_dir_all(layout.projects_dir()).unwrap();
+        fs::write(
+            layout.projects_dir().join("issues.config.toml"),
+            "[consensus.susceptibility_of]\nmaintainer = 0.4\n",
+        )
+        .unwrap();
+
+        let cfg = VissueConfig::load(&layout).unwrap().consensus;
+        assert_eq!(cfg.susceptibility_of.get("maintainer"), Some(&0.4));
+        assert_eq!(
+            cfg.susceptibility_of.get("reviewer"),
+            Some(&0.6),
+            "a row the second file says nothing about survives"
+        );
     }
 
     /// The whole range is usable, ends included: zero self-weight is the

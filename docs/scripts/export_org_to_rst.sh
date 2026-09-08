@@ -20,6 +20,10 @@ if [[ "$exporter" == "auto" ]]; then
   fi
 fi
 
+# Before the export, because both classes this catches produce valid output
+# that renders wrong, so nothing downstream will complain about them.
+python3 docs/scripts/check_org.py
+
 echo "export_org_to_rst: using $exporter"
 if [[ "$exporter" == "emacs" ]]; then
   emacs --batch -l docs/export.el

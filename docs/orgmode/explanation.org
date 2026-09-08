@@ -120,10 +120,10 @@ $$
 
 The constants are a lexicographic ordering wearing the clothes of a sum. A
 single declared relation is worth 1000; a rare term is worth at most about
-$(\ln \lvert I \rvert)^2$, which for a corpus of ten thousand issues is under
-100. So no amount of shared vocabulary promotes a candidate above something
-you actually wrote down, which is the property that matters: the ranking may
-reorder guesses among themselves, but it may not outvote a fact.
+$(\ln \lvert I \rvert)^2$, which for a corpus of ten thousand issues stays
+under 100. So no amount of shared vocabulary promotes a candidate above
+something you actually wrote down, which is the property that matters: the
+ranking may reorder guesses among themselves, but it may not outvote a fact.
 
 Squaring the idf rather than summing it serves that end. It widens the gap
 between a term that appears twice and one that appears everywhere, so

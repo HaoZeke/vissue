@@ -336,7 +336,46 @@ up: retrieving over a plan gives a ranked guess at an answer the plan states
 exactly, and walking edges for standing knowledge finds nothing, because nobody
 declared an edge to a preference.
 
-The property the two share is the one that matters for [[*Why there is nothing
+Forgetting falls out of the same split, and it is the sharper half of it.
+
+A pack accumulates. Something written a year ago is still in it, so a pack has to
+decide what fades, and packset decides it as a voter rather than as a deletion:
+an exponential half-life on an atom's age, multiplied into the merge, with the
+standing sources exempt and the whole thing off unless a half-life is configured.
+Nothing is removed. An atom that stops winning is still there to be found by a
+narrower query, which is the right call for a store whose writes were deliberate
+enough to be worth keeping.
+
+A working set has nothing to forget. It is not a store: it is recomputed from the
+current edges on every call, so an edge somebody removed is gone from the next
+answer without a policy, and one they added is present without an ingest. There
+is no half-life to tune because there is no accumulation to tune it against.
+
+That is the trade in one line. A pack buys recall across sessions and pays for it
+with a forgetting policy. A walk buys exactness and pays for it by answering only
+about the work somebody drew edges around.
+
+One identifier crosses all three, and it is the deed accession. This tracker
+holds them in =:DEEDS:= and refuses a value that is not one; a deed holds the
+node's id back in =producedBy.activityId=; and a pack atom can carry one in the
+=entities= field its own similarity already runs over. Nothing else crosses. A
+workspace name belongs to the pack and an issue id to the tracker, so the
+accession is the one string all three can hold without any of them reading
+another's store.
+
+That is what makes two commands enough to check a citation wherever it is kept:
+
+#+begin_src console
+$ vissue recall <id> --deeds-only | deedar evidence -   # the bytes are intact
+$ vissue recall <id> --deeds-only | deedar current -    # and still the tip
+#+end_src
+
+Both take a list on standard input, so neither knows which store handed it one,
+and both exit non-zero on a bad set so either can gate a hook. The second is the
+one worth having: a citation is written once and the deed it names can be
+superseded afterwards, which nothing holding a citation can notice on its own.
+
+The property the three share is the one that matters for [[*Why there is nothing
 to poison][poisoning]]. Neither extracts. A packset atom is written by somebody
 saying *Remember:*, an edge here is written by a tracker mutation, and a deed is
 minted by the unit that made the product. Across the whole seat, memory is

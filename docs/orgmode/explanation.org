@@ -198,8 +198,24 @@ idea.
 | Harness-owned working set     | A view derived from the turn's own event log, compacted to fit  | What reaches the model is chosen by a compaction policy rather than by what the task needs |
 | A walk of declared edges      | =:PARENT:=, =:BLOCKED_BY:=, =:DISCOVERED_FROM:=, and the deeds those nodes cited | The plan is wrong, or nobody declared the edge        |
 
-The first two answer for anything that was ever said: one by searching an index
-built over it, the other by carrying a compacted view of it forward. This one answers only for
+Walking a dependency graph for context is not a new idea and this is not the
+first system to do it. ContextWeaver [38] organises an agent's interaction trace
+into a graph of reasoning steps and selects the ancestors a step relies on;
+LEDGER [39] does dependency-aware retrieval over the structure of a document.
+Both report the same finding from the other direction, that embeddings do not
+reliably carry a structural relation, which is the reason to walk edges at all.
+
+The difference here is where the graph comes from. In those systems it is
+derived: something reads the trace, or the document, and infers what depends on
+what. Here it was written down by whoever split the work, before any of it ran,
+and it is the same graph the scheduler reads. =ready= and =recall= consult one
+set of edges. An edge that is wrong is not a bad retrieval, it is a node that
+should never have been startable, and it surfaces as a planning error rather
+than a context one. That coupling is available only because the tracker is the
+plan: a memory layer bolted beside an agent has no scheduler to agree with.
+
+The first two rows answer for anything that was ever said: one by searching an
+index built over it, the other by carrying a compacted view of it forward. This one answers only for
 what somebody wrote down as a dependency, which is a much smaller claim and the
 reason it can be exact. A tracker whose edges are careless gets a working set to
 match, and no retrieval quality would have rescued it: the failure has moved
@@ -422,6 +438,7 @@ resolved there before it was pasted.
 | The anchor is the ballot, not a belief         | =susceptibility= anchors what was cast            | Pokharel and Dantu [35]                                                                 | refuses    |
 | Nothing an agent reads becomes memory          | =recall= walks declared edges; =fold= writes none | Sunil et al. [37]                                                                       | refuses    |
 | No extraction, no consolidation, no forgetting | a deed is frozen when it is made                  | Hu et al. [36]                                                                          | refuses    |
+| An ancestor walk is prior art                  | =recall=, and where its graph comes from          | Wu et al. [38]; Wang et al. [39]                                                        | analogizes |
 
 # vale off
 * References
@@ -544,6 +561,12 @@ a relation in the audit table above.
 37. B. R. Sunil, I. Sinha, P. Maheshwari, S. Todmal, S. Malik, and S. M. Mishra,
     "Memory Poisoning Attack and Defense on Memory Based LLM-Agents," 2026, doi:
     [[https://doi.org/10.48550/arXiv.2601.05504][10.48550/arXiv.2601.05504]].
+38. Y. Wu et al., "ContextWeaver: Selective and Dependency-Structured Memory
+    Construction for LLM Agents," 2026, doi:
+    [[https://doi.org/10.48550/arXiv.2604.23069][10.48550/arXiv.2604.23069]].
+39. M. H. Wang et al., "LEDGER: Scaling Agentic Document Editing with
+    Dependency-aware Graph Retrieval," 2026, doi:
+    [[https://doi.org/10.48550/arXiv.2606.28379][10.48550/arXiv.2606.28379]].
 
 See also the [[https://orgmode.org/manual/][Org mode manual]], the
 [[https://modelcontextprotocol.io/][Model Context Protocol]],

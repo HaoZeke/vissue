@@ -182,6 +182,11 @@ plan the node belongs to, `:DISCOVERED_FROM:` is where a bounce came from.
 threshold, and nothing to keep in sync: the set is what the plan says, and
 every member of it is there for an edge a reader can point at in the file.
 
+Walking a dependency graph for context is not a new idea. What is unusual here
+is where the graph comes from: it was written down by whoever split the work,
+before any of it ran, and `ready` and `recall` read the same edges. A wrong edge
+is not a bad retrieval, it is a node that should never have been startable.
+
 ```console
 $ vissue recall keys-tuih
 keys-tuih              BLOCKED   Terminal UI set_keymap and overlay on_key  (keys)

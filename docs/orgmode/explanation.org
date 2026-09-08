@@ -206,6 +206,24 @@ match, and no retrieval quality would have rescued it: the failure has moved
 from the memory system into the plan, where a person can see it and =check=
 can complain about it.
 
+CoALA [32] is the taxonomy this field argues in, and naming which part of it
+this is keeps the comparison honest. A language agent has a working memory for
+the turn it is in, and optional long-term stores that are episodic, semantic, or
+procedural. =recall= builds the *working* memory, and builds it from the plan
+rather than by retrieving over the others. The deeds are episodic and live in the
+deed store, which keeps the bytes and the provenance rather than a summary. There
+is no semantic store here and no procedural one: nothing distils facts out of what
+happened or learns a routine from it, and a tracker that started doing so would be
+extracting the second graph =related= exists to refuse [24], [25], [26].
+
+That also settles what the published numbers do and do not say. The memory
+systems report recall over long chat histories: LongMemEval [33] scores five
+abilities across sessions, LoCoMo [34] scores conversations of hundreds of turns.
+Those are the right measure for a store that answers from a transcript, and the
+wrong one here, because there is no transcript to answer from and no ranking that
+could score better or worse at any k. What is measurable about this design is
+what it costs, which is the table further down.
+
 The price is real and worth stating. A node whose plan is wrong gets a working
 set that is wrong in the same way, and no amount of retrieval quality would
 have saved it. Something relevant that nobody declared an edge to will not
@@ -277,6 +295,24 @@ is doubly stochastic, and the consensus is the tally as a fraction.
 Configuration only moves weight away from that, so nothing surprising happens
 to a tracker nobody has set up.
 
+DeGroot is the first model of a family rather than the last word on it. Friedkin
+and Johnsen [31] generalise it with a susceptibility: an agent moves part of the
+way toward what it hears and keeps the rest of the ballot it actually cast. At
+full susceptibility it is DeGroot again, which is what makes the knob safe to
+have. Below it, two things change and both suit a tracker of reviewed work. The
+step becomes a contraction, so the periodic case cannot arise: any anchor at all
+settles. And the group settles while still disagreeing, which for reviewers is
+the truthful outcome, since nobody expects one to abandon their own reading
+because the room leaned the other way. What is reported is then each agent's
+position and the spread between them, because a single number would name a
+position none of them holds.
+
+Work on LLM deliberation [35] argues that both models capture only the pull of
+the group and not an agent's own internal conviction, and recovers a hidden
+anchor from the deliberation itself. That is a step past what a tracker can do.
+This has the ballot an agent cast, not the belief behind it, and the
+susceptibility anchors on the ballot, which is the part that was written down.
+
 What is here is the one model, run to its fixed point on the ballots of one
 issue. Where the interesting question is the model itself -- what a family of
 update rules does to a population, how bounded confidence or activity driving
@@ -330,21 +366,29 @@ still belong, under analogizes and refuses. The working bibliography
 lives in the OokCite collection =vissue-dag=; every DOI below was
 resolved there before it was pasted.
 
-| Claim in the tracker                    | Site in the code                          | Paper                                                                                   | Relation   |
-|-----------------------------------------+-------------------------------------------+-----------------------------------------------------------------------------------------+------------|
-| The file is the store                   | =issues.org=, Org drawers                 | Schulte et al. [1]                                                                      | implements |
-| A plan splits into tagged children      | =--parent=, =--type=, =--tags=            | Erol et al. [3]; Nau et al. [4]                                                         | stores     |
-| Order is a partial order, not a list    | =:BLOCKED_BY:=                            | Weld [2]                                                                                | stores     |
-| The graph stays acyclic                 | =DependencyGraph=, =cycles=               | Kahn [5]; Tarjan [6]                                                                    | implements |
-| Several nodes can run at once           | =ready=                                   | Coffman and Graham [7]; Mokhov et al. [8]                                               | analogizes |
-| Two workers do not take the same node   | =claim=, =VISSUE_AGENT=                   | Blumofe and Leiserson [9]; Anvik et al. [11]                                            | analogizes |
-| Logbook order is happened-before        | =:LOGBOOK:=                               | Lamport [10]                                                                            | analogizes |
-| Edges are declared influence            | =:BLOCKED_BY:=, =:PARENT:=                | Garfield [12]; Pinski and Narin [13]                                                    | analogizes |
-| Neighborhood walks declared edges first | =related=, =ancestors=, =impact=          | Brin and Page [14]; Kleinberg [15]; Haveliwala [16]; Gleich [17]                        | analogizes |
-| Cite-edge as a positive neighbor        | OokCite encoder research, not this binary | Cohan et al. [18]; Ostendorff et al. [19]; Singh et al. [20]; Reimers and Gurevych [21] | analogizes |
-| Leftover term overlap                   | =related= idf                             | Sparck Jones [22]                                                                       | implements |
-| Issues are the entities                 | headings with =:ID:=                      | Hogan et al. [23]                                                                       | analogizes |
-| Do not extract a second graph           | =related= writes nothing                  | Rasmussen et al. [24]; Edge et al. [25]; Gutierrez et al. [26]                          | refuses    |
+| Claim in the tracker                      | Site in the code                          | Paper                                                                                   | Relation   |
+|-------------------------------------------+-------------------------------------------+-----------------------------------------------------------------------------------------+------------|
+| The file is the store                     | =issues.org=, Org drawers                 | Schulte et al. [1]                                                                      | implements |
+| A plan splits into tagged children        | =--parent=, =--type=, =--tags=            | Erol et al. [3]; Nau et al. [4]                                                         | stores     |
+| Order is a partial order, not a list      | =:BLOCKED_BY:=                            | Weld [2]                                                                                | stores     |
+| The graph stays acyclic                   | =DependencyGraph=, =cycles=               | Kahn [5]; Tarjan [6]                                                                    | implements |
+| Several nodes can run at once             | =ready=                                   | Coffman and Graham [7]; Mokhov et al. [8]                                               | analogizes |
+| Two workers do not take the same node     | =claim=, =VISSUE_AGENT=                   | Blumofe and Leiserson [9]; Anvik et al. [11]                                            | analogizes |
+| Logbook order is happened-before          | =:LOGBOOK:=                               | Lamport [10]                                                                            | analogizes |
+| Edges are declared influence              | =:BLOCKED_BY:=, =:PARENT:=                | Garfield [12]; Pinski and Narin [13]                                                    | analogizes |
+| Neighborhood walks declared edges first   | =related=, =ancestors=, =impact=          | Brin and Page [14]; Kleinberg [15]; Haveliwala [16]; Gleich [17]                        | analogizes |
+| Cite-edge as a positive neighbor          | OokCite encoder research, not this binary | Cohan et al. [18]; Ostendorff et al. [19]; Singh et al. [20]; Reimers and Gurevych [21] | analogizes |
+| Leftover term overlap                     | =related= idf                             | Sparck Jones [22]                                                                       | implements |
+| Issues are the entities                   | headings with =:ID:=                      | Hogan et al. [23]                                                                       | analogizes |
+| Do not extract a second graph             | =related= writes nothing                  | Rasmussen et al. [24]; Edge et al. [25]; Gutierrez et al. [26]                          | refuses    |
+| Opinions average over declared trust      | =consensus=, =[consensus.trust]=          | DeGroot [27]                                                                            | implements |
+| When there is a consensus to reach        | closed components and their period        | Berger [28]                                                                             | implements |
+| Social power is measured, not declared    | the left Perron vector in =consensus=     | Golub and Jackson [29]                                                                  | implements |
+| A product is named, not described         | =:DEEDS:=, =deed=, =recall=               | Simmhan et al. [30]                                                                     | analogizes |
+| Opinion stays anchored to the ballot      | =consensus.susceptibility=                | Friedkin and Johnsen [31]                                                               | implements |
+| Working memory is one kind of four        | =recall=, and the three it does not build | Sumers et al. [32]                                                                      | analogizes |
+| Conversational recall is another question | not measured here; the section says why   | Wu et al. [33]; Maharana et al. [34]                                                    | refuses    |
+| The anchor is the ballot, not a belief    | =susceptibility= anchors what was cast    | Pokharel and Dantu [35]                                                                 | refuses    |
 
 # vale off
 * References
@@ -447,9 +491,29 @@ a relation in the audit table above.
 30. Y. L. Simmhan, B. Plale, and D. Gannon, "A survey of data provenance in
     e-science," /ACM SIGMOD Record/, 2005, doi:
     [[https://doi.org/10.1145/1084805.1084812][10.1145/1084805.1084812]].
+31. N. E. Friedkin and E. C. Johnsen, "Social influence and opinions," /The
+    Journal of Mathematical Sociology/, 1990, doi:
+    [[https://doi.org/10.1080/0022250X.1990.9990069][10.1080/0022250X.1990.9990069]].
+32. T. R. Sumers, S. Yao, K. Narasimhan, and T. L. Griffiths, "Cognitive
+    Architectures for Language Agents," 2023, doi:
+    [[https://doi.org/10.48550/arXiv.2309.02427][10.48550/arXiv.2309.02427]].
+33. D. Wu et al., "LongMemEval: Benchmarking Chat Assistants on Long-Term
+    Interactive Memory," 2024, doi:
+    [[https://doi.org/10.48550/arXiv.2410.10813][10.48550/arXiv.2410.10813]].
+34. A. Maharana, D.-H. Lee, S. Tulyakov, M. Bansal, F. Barbieri, and Y. Fang,
+    "Evaluating Very Long-Term Conversational Memory of LLM Agents," 2024, doi:
+    [[https://doi.org/10.48550/arXiv.2402.17753][10.48550/arXiv.2402.17753]].
+35. A. Pokharel and R. Dantu, "Hidden Anchors in Multi-Agent LLM Deliberation,"
+    2026, doi:
+    [[https://doi.org/10.48550/arXiv.2606.19494][10.48550/arXiv.2606.19494]].
 
 See also the [[https://orgmode.org/manual/][Org mode manual]], the
 [[https://modelcontextprotocol.io/][Model Context Protocol]],
-[[https://github.com/petgraph/petgraph][petgraph]], and
-[[https://github.com/mitchmindtree/daggy][daggy]].
+[[https://github.com/petgraph/petgraph][petgraph]],
+[[https://github.com/mitchmindtree/daggy][daggy]], and the
+[[https://github.com/in-toto/attestation][in-toto attestation framework]], whose
+functionaries, links, and layout are the vocabulary a deed is built on. That last
+one is a link rather than a numbered entry because its paper is in USENIX
+Security proceedings, which mint no DOI, and every numbered entry above resolved
+through OokCite before it was pasted.
 # vale on

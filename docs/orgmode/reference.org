@@ -144,6 +144,7 @@ overriding the compiled defaults key by key.
 | =issues.stale_claim_days=    | =7=        | When =hygiene= calls a claim stale          |
 | =issues.expect_deeds=        | =false=    | Whether =hygiene= reports work that closed naming no deed |
 | =consensus.self_weight=      | =0.5=      | Weight an agent puts on its own opinion when its trust row does not name it |
+| =consensus.susceptibility=   | =1.0=      | How far an agent moves off the ballot it cast; below 1 anchors it |
 | =consensus.tolerance=        | =1e-9=     | Largest disagreement that still counts as settled |
 | =consensus.max_iterations=   | =500=      | Rounds before the shares are reported as an estimate |
 | =consensus.trust.<agent>=    | unset      | Weights that agent puts on the others; only the ratios matter |
@@ -667,8 +668,30 @@ each agent's *social power*: the left Perron vector of the influence matrix,
 which is the weighting the consensus applies to the ballots. An agent nobody
 listens to has power zero, and its ballot moves the group by nothing.
 
-There are two ways there is no consensus to report, and they are different
-failures:
+=susceptibility= chooses the model. At =1.0=, the default, an agent gives up its
+own starting position entirely and the group converges on one number: that is
+DeGroot. Below it, an agent moves that fraction of the way toward what it hears
+and keeps the rest of its own ballot, which is Friedkin and Johnsen's
+generalisation. Two things follow, and both suit a tracker of reviewed work:
+
+#+begin_src console
+$ vissue consensus api-3xq7
+  anchored after 13 round(s), susceptibility 0.60
+    alice                    ship 0.634
+    bob                      ship 0.634
+    carol                    hold 0.854
+  spread 0.488: what the group keeps disagreeing about after listening
+  mean of those positions
+    hold                     0.528
+    ship                     0.472
+#+end_src
+
+The group settles while still disagreeing, and the report says where each agent
+landed rather than naming one position none of them holds. And any anchor at all
+makes the step a contraction, so the periodic case below cannot arise.
+
+There are two ways there is no consensus to report under a full susceptibility,
+and they are different failures:
 
 - *split*, when the trust graph holds more than one closed group. Two review
   teams that cite only each other never converge on anything, whatever the

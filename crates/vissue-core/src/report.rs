@@ -447,6 +447,47 @@ fn consensus_text(
                 let _ = writeln!(out, "    {:<32} {held}", faction.join(", "));
             }
         }
+        Settling::Anchored => {
+            // Under an anchor there is no single position to report, and saying
+            // one would name a position none of them holds. What each agent
+            // landed on, and how far apart they stayed, is the result.
+            let _ = writeln!(
+                out,
+                "  anchored after {} round(s), susceptibility {:.2}",
+                outcome.rounds, outcome.susceptibility
+            );
+            for row in &outcome.agents {
+                let held = row
+                    .limit
+                    .iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.total_cmp(b.1))
+                    .map(|(at, share)| format!("{} {share:.3}", outcome.choices[at]))
+                    .unwrap_or_default();
+                let _ = writeln!(out, "    {:<24} {held}", row.agent);
+            }
+            let _ = writeln!(
+                out,
+                "  spread {:.3}: what the group keeps disagreeing about after listening",
+                outcome.spread
+            );
+            // The unweighted mean across agents. Named as what it is: an
+            // average of positions, not a position anybody argued for.
+            let mut mean: Vec<(&str, f64)> = outcome
+                .choices
+                .iter()
+                .enumerate()
+                .map(|(at, choice)| {
+                    let total: f64 = outcome.agents.iter().map(|a| a.limit[at]).sum();
+                    (choice.as_str(), total / outcome.agents.len() as f64)
+                })
+                .collect();
+            mean.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
+            let _ = writeln!(out, "  mean of those positions");
+            for (choice, share) in &mean {
+                let _ = writeln!(out, "    {choice:<24} {share:.3}");
+            }
+        }
         Settling::Oscillating => {
             let _ = writeln!(
                 out,

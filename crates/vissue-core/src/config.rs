@@ -195,6 +195,19 @@ impl IssuesOverride {
 pub struct ConsensusSection {
     /// Weight an agent puts on its own opinion when its row does not name it.
     pub self_weight: f64,
+    /// How far an agent moves off the ballot it cast, in `[0, 1]`.
+    ///
+    /// One is DeGroot: an agent keeps nothing of its own starting position and
+    /// the group converges on a single number. Below one is Friedkin and
+    /// Johnsen's generalisation, where each agent stays partly anchored to the
+    /// ballot it actually cast, and what the iteration settles on is a profile
+    /// of persistent disagreement rather than one shared position.
+    ///
+    /// One by default, so a tracker that configures nothing keeps the reduction
+    /// to the tally. Below one is the honest setting where reviewers are not
+    /// expected to abandon their own reading, and it also removes the periodic
+    /// case: any anchor at all makes the iteration a contraction.
+    pub susceptibility: f64,
     /// Largest disagreement that still counts as settled.
     pub tolerance: f64,
     /// Rounds to try before calling the trust graph periodic.
@@ -209,6 +222,7 @@ impl Default for ConsensusSection {
             // Positive on purpose. A zero diagonal is what makes a trust graph
             // periodic, and a tracker nobody has configured should converge.
             self_weight: 0.5,
+            susceptibility: 1.0,
             tolerance: 1e-9,
             max_iterations: 500,
             trust: BTreeMap::new(),
@@ -221,6 +235,7 @@ impl Default for ConsensusSection {
 #[serde(default)]
 struct ConsensusOverride {
     self_weight: Option<f64>,
+    susceptibility: Option<f64>,
     tolerance: Option<f64>,
     max_iterations: Option<usize>,
     trust: BTreeMap<String, BTreeMap<String, f64>>,
@@ -242,6 +257,16 @@ impl ConsensusOverride {
                 .into());
             }
             base.self_weight = value;
+        }
+        if let Some(value) = self.susceptibility {
+            if !(0.0..=1.0).contains(&value) {
+                return Err(anyhow::anyhow!(
+                    "{}: consensus.susceptibility is {value}, which is not a share between 0 and 1",
+                    whence.display()
+                )
+                .into());
+            }
+            base.susceptibility = value;
         }
         if let Some(value) = self.tolerance {
             if !(value > 0.0 && value.is_finite()) {

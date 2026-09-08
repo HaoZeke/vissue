@@ -121,8 +121,12 @@ parse the same; the next rewrite settles on the Org shape. =:TAGS:=,
 * JSONL export schema
 
 Each line is an object with =id=, =project=, =title=, =state=, =priority=,
-=properties=, =org_tags=, =tags=, =all_tags=, =logbook=, =body=, =line_start=,
-and =line_end=. =:DEEDS:= rides in =properties= like every other drawer key.
+=properties=, =deeds=, =org_tags=, =tags=, =all_tags=, =logbook=, =body=,
+=line_start=, and =line_end=.
+
+=deeds= is the citation list typed, in the order it was cited, so a reader does
+not split a drawer string on whichever separator the author used. =:DEEDS:=
+stays in =properties= as well, verbatim, for a reader that wants the drawer.
 
 =org_tags= is the heading's Org tag run; =tags= is the union with
 =:VISSUE_TAGS:=, and is the field to filter on. Logbook entries carry

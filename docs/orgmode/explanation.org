@@ -232,6 +232,37 @@ the evidence for each hit, and writes nothing back [24], [25], [26]. Keeping
 the two verbs apart is what stops the exact answer from being reported in the
 same shape as the guess.
 
+* Why there is nothing to poison
+
+The attack a memory system has to answer is poisoning: content an agent reads
+becomes a memory that steers it later. It works well. Reported injection rates
+run above 90% from a handful of crafted documents in a corpus of millions, and
+the defenses that were tried -- guard models, embedding sanitisation,
+prompt-based detection -- did not stop it [37]. The uncomfortable part is the
+general shape of it: the write and retrieval policies that make a memory system
+good at long-horizon work are the same ones that widen the surface [36].
+
+This design has no such surface, and the reason is structural rather than a
+defense bolted on. Nothing an agent reads becomes part of a working set. A member
+of one is there because some issue carries =:BLOCKED_BY:=, =:PARENT:=, or
+=:DISCOVERED_FROM:= naming it, and those are written only by a tracker mutation:
+under the file lock, by a named identity, with a logbook line. =fold=, the one
+verb that ingests a file, creates issues carrying a title and a body and no edges
+at all, so a folded heading reaches nobody's working set until somebody
+separately declares one.
+
+That is not a claim that a tracker cannot be attacked. An agent with write access
+can add an edge, and the issue it names is then in the working set exactly as
+designed. The difference is that adding it is an act with an author, a timestamp,
+and a diff, rather than a consequence of having read something. The failure mode
+moves from invisible to reviewable, which is the trade the rest of this page keeps
+making.
+
+The products keep a guarantee of their own. A deed's bytes are frozen under a
+keyed hash over the canonical record, and =deedar evidence= checks the deed, its
+bytes, and every deed in its =sources= before a working set is worth trusting; a
+citation that resolves to nothing fails loudly rather than quietly [30].
+
 * Why a deed rather than a summary
 
 An input to a node is only useful if the next unit can open what it produced.
@@ -366,29 +397,31 @@ still belong, under analogizes and refuses. The working bibliography
 lives in the OokCite collection =vissue-dag=; every DOI below was
 resolved there before it was pasted.
 
-| Claim in the tracker                      | Site in the code                          | Paper                                                                                   | Relation   |
-|-------------------------------------------+-------------------------------------------+-----------------------------------------------------------------------------------------+------------|
-| The file is the store                     | =issues.org=, Org drawers                 | Schulte et al. [1]                                                                      | implements |
-| A plan splits into tagged children        | =--parent=, =--type=, =--tags=            | Erol et al. [3]; Nau et al. [4]                                                         | stores     |
-| Order is a partial order, not a list      | =:BLOCKED_BY:=                            | Weld [2]                                                                                | stores     |
-| The graph stays acyclic                   | =DependencyGraph=, =cycles=               | Kahn [5]; Tarjan [6]                                                                    | implements |
-| Several nodes can run at once             | =ready=                                   | Coffman and Graham [7]; Mokhov et al. [8]                                               | analogizes |
-| Two workers do not take the same node     | =claim=, =VISSUE_AGENT=                   | Blumofe and Leiserson [9]; Anvik et al. [11]                                            | analogizes |
-| Logbook order is happened-before          | =:LOGBOOK:=                               | Lamport [10]                                                                            | analogizes |
-| Edges are declared influence              | =:BLOCKED_BY:=, =:PARENT:=                | Garfield [12]; Pinski and Narin [13]                                                    | analogizes |
-| Neighborhood walks declared edges first   | =related=, =ancestors=, =impact=          | Brin and Page [14]; Kleinberg [15]; Haveliwala [16]; Gleich [17]                        | analogizes |
-| Cite-edge as a positive neighbor          | OokCite encoder research, not this binary | Cohan et al. [18]; Ostendorff et al. [19]; Singh et al. [20]; Reimers and Gurevych [21] | analogizes |
-| Leftover term overlap                     | =related= idf                             | Sparck Jones [22]                                                                       | implements |
-| Issues are the entities                   | headings with =:ID:=                      | Hogan et al. [23]                                                                       | analogizes |
-| Do not extract a second graph             | =related= writes nothing                  | Rasmussen et al. [24]; Edge et al. [25]; Gutierrez et al. [26]                          | refuses    |
-| Opinions average over declared trust      | =consensus=, =[consensus.trust]=          | DeGroot [27]                                                                            | implements |
-| When there is a consensus to reach        | closed components and their period        | Berger [28]                                                                             | implements |
-| Social power is measured, not declared    | the left Perron vector in =consensus=     | Golub and Jackson [29]                                                                  | implements |
-| A product is named, not described         | =:DEEDS:=, =deed=, =recall=               | Simmhan et al. [30]                                                                     | analogizes |
-| Opinion stays anchored to the ballot      | =consensus.susceptibility=                | Friedkin and Johnsen [31]                                                               | implements |
-| Working memory is one kind of four        | =recall=, and the three it does not build | Sumers et al. [32]                                                                      | analogizes |
-| Conversational recall is another question | not measured here; the section says why   | Wu et al. [33]; Maharana et al. [34]                                                    | refuses    |
-| The anchor is the ballot, not a belief    | =susceptibility= anchors what was cast    | Pokharel and Dantu [35]                                                                 | refuses    |
+| Claim in the tracker                           | Site in the code                                  | Paper                                                                                   | Relation   |
+|------------------------------------------------+---------------------------------------------------+-----------------------------------------------------------------------------------------+------------|
+| The file is the store                          | =issues.org=, Org drawers                         | Schulte et al. [1]                                                                      | implements |
+| A plan splits into tagged children             | =--parent=, =--type=, =--tags=                    | Erol et al. [3]; Nau et al. [4]                                                         | stores     |
+| Order is a partial order, not a list           | =:BLOCKED_BY:=                                    | Weld [2]                                                                                | stores     |
+| The graph stays acyclic                        | =DependencyGraph=, =cycles=                       | Kahn [5]; Tarjan [6]                                                                    | implements |
+| Several nodes can run at once                  | =ready=                                           | Coffman and Graham [7]; Mokhov et al. [8]                                               | analogizes |
+| Two workers do not take the same node          | =claim=, =VISSUE_AGENT=                           | Blumofe and Leiserson [9]; Anvik et al. [11]                                            | analogizes |
+| Logbook order is happened-before               | =:LOGBOOK:=                                       | Lamport [10]                                                                            | analogizes |
+| Edges are declared influence                   | =:BLOCKED_BY:=, =:PARENT:=                        | Garfield [12]; Pinski and Narin [13]                                                    | analogizes |
+| Neighborhood walks declared edges first        | =related=, =ancestors=, =impact=                  | Brin and Page [14]; Kleinberg [15]; Haveliwala [16]; Gleich [17]                        | analogizes |
+| Cite-edge as a positive neighbor               | OokCite encoder research, not this binary         | Cohan et al. [18]; Ostendorff et al. [19]; Singh et al. [20]; Reimers and Gurevych [21] | analogizes |
+| Leftover term overlap                          | =related= idf                                     | Sparck Jones [22]                                                                       | implements |
+| Issues are the entities                        | headings with =:ID:=                              | Hogan et al. [23]                                                                       | analogizes |
+| Do not extract a second graph                  | =related= writes nothing                          | Rasmussen et al. [24]; Edge et al. [25]; Gutierrez et al. [26]                          | refuses    |
+| Opinions average over declared trust           | =consensus=, =[consensus.trust]=                  | DeGroot [27]                                                                            | implements |
+| When there is a consensus to reach             | closed components and their period                | Berger [28]                                                                             | implements |
+| Social power is measured, not declared         | the left Perron vector in =consensus=             | Golub and Jackson [29]                                                                  | implements |
+| A product is named, not described              | =:DEEDS:=, =deed=, =recall=                       | Simmhan et al. [30]                                                                     | analogizes |
+| Opinion stays anchored to the ballot           | =consensus.susceptibility=                        | Friedkin and Johnsen [31]                                                               | implements |
+| Working memory is one kind of four             | =recall=, and the three it does not build         | Sumers et al. [32]                                                                      | analogizes |
+| Conversational recall is another question      | not measured here; the section says why           | Wu et al. [33]; Maharana et al. [34]                                                    | refuses    |
+| The anchor is the ballot, not a belief         | =susceptibility= anchors what was cast            | Pokharel and Dantu [35]                                                                 | refuses    |
+| Nothing an agent reads becomes memory          | =recall= walks declared edges; =fold= writes none | Sunil et al. [37]                                                                       | refuses    |
+| No extraction, no consolidation, no forgetting | a deed is frozen when it is made                  | Hu et al. [36]                                                                          | refuses    |
 
 # vale off
 * References
@@ -506,6 +539,11 @@ a relation in the audit table above.
 35. A. Pokharel and R. Dantu, "Hidden Anchors in Multi-Agent LLM Deliberation,"
     2026, doi:
     [[https://doi.org/10.48550/arXiv.2606.19494][10.48550/arXiv.2606.19494]].
+36. Y. Hu et al., "Memory in the Age of AI Agents," 2025, doi:
+    [[https://doi.org/10.48550/arXiv.2512.13564][10.48550/arXiv.2512.13564]].
+37. B. R. Sunil, I. Sinha, P. Maheshwari, S. Todmal, S. Malik, and S. M. Mishra,
+    "Memory Poisoning Attack and Defense on Memory Based LLM-Agents," 2026, doi:
+    [[https://doi.org/10.48550/arXiv.2601.05504][10.48550/arXiv.2601.05504]].
 
 See also the [[https://orgmode.org/manual/][Org mode manual]], the
 [[https://modelcontextprotocol.io/][Model Context Protocol]],

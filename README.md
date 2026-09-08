@@ -228,6 +228,15 @@ cost of this design is equally plain: work nobody declared an edge to does not
 appear. `related` is the verb for that gap, and it ranks and writes nothing
 back [24], [25], [26].
 
+It also means nothing an agent *reads* becomes part of a working set. An entry is
+there because an issue declares `:BLOCKED_BY:`, `:PARENT:`, or
+`:DISCOVERED_FROM:` naming it, and those are written only by a tracker mutation:
+under the lock, by a named identity, with a logbook line. `fold`, the one verb
+that ingests a file, writes a title and a body and no edges at all. That does not
+make a tracker unattackable, since an agent with write access can declare an
+edge, but it makes doing so an act with an author and a diff rather than a side effect
+of having read something [36], [37].
+
 ## Consensus: whose agreement it is
 
 `vote` counts, and it already refuses to call a plurality agreement. Counting

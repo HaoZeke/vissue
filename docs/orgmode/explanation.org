@@ -344,7 +344,11 @@ to a tracker nobody has set up.
 
 DeGroot is the first model of a family rather than the last word on it. Friedkin
 and Johnsen [31] generalise it with a susceptibility: an agent moves part of the
-way toward what it hears and keeps the rest of the ballot it actually cast. At
+way toward what it hears and keeps the rest of the ballot it actually cast. It is
+a diagonal and not a scalar, which is the part that carries the meaning: a
+maintainer and a first-time reviewer are not equally movable, and a model that
+gave them one number would be averaging exactly what it was brought in to
+separate. At
 full susceptibility it is DeGroot again, which is what makes the knob safe to
 have. Below it, two things change and both suit a tracker of reviewed work. The
 step becomes a contraction, so the periodic case cannot arise: any anchor at all

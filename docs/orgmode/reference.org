@@ -145,6 +145,7 @@ overriding the compiled defaults key by key.
 | =issues.expect_deeds=        | =false=    | Whether =hygiene= reports work that closed naming no deed |
 | =consensus.self_weight=      | =0.5=      | Weight an agent puts on its own opinion when its trust row does not name it |
 | =consensus.susceptibility=   | =1.0=      | How far an agent moves off the ballot it cast; below 1 anchors it |
+| =consensus.susceptibility_of.<agent>= | unset | That agent's susceptibility, where it differs from the default |
 | =consensus.tolerance=        | =1e-9=     | Largest disagreement that still counts as settled |
 | =consensus.max_iterations=   | =500=      | Rounds before the shares are reported as an estimate |
 | =consensus.trust.<agent>=    | unset      | Weights that agent puts on the others; only the ratios matter |
@@ -689,6 +690,23 @@ $ vissue consensus api-3xq7
 The group settles while still disagreeing, and the report says where each agent
 landed rather than naming one position none of them holds. And any anchor at all
 makes the step a contraction, so the periodic case below cannot arise.
+
+Susceptibility is a diagonal rather than one number, because a maintainer who
+has read the code for years and a reviewer seeing it for the first time are not
+equally movable. =consensus.susceptibility= is what an agent gets when nothing
+names it; =[consensus.susceptibility_of]= names one:
+
+#+begin_src toml
+[consensus]
+susceptibility = 0.9
+
+[consensus.susceptibility_of]
+maintainer = 0.1
+#+end_src
+
+Rows merge agent by agent, like the trust rows. Where the agents differ the
+report puts the value on each row instead of on the header, since one number
+over rows that used several would be the wrong number for all but one of them.
 
 There are two ways there is no consensus to report under a full susceptibility,
 and they are different failures:

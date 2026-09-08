@@ -451,11 +451,27 @@ fn consensus_text(
             // Under an anchor there is no single position to report, and saying
             // one would name a position none of them holds. What each agent
             // landed on, and how far apart they stayed, is the result.
-            let _ = writeln!(
-                out,
-                "  anchored after {} round(s), susceptibility {:.2}",
-                outcome.rounds, outcome.susceptibility
-            );
+            // The susceptibility is a diagonal, so it goes on the row when the
+            // agents differ and on the header when they do not. Printing one
+            // number over rows that used several would be the wrong number for
+            // all but one of them.
+            let uniform = outcome
+                .agents
+                .windows(2)
+                .all(|pair| (pair[0].susceptibility - pair[1].susceptibility).abs() < f64::EPSILON);
+            if uniform {
+                let _ = writeln!(
+                    out,
+                    "  anchored after {} round(s), susceptibility {:.2}",
+                    outcome.rounds,
+                    outcome
+                        .agents
+                        .first()
+                        .map_or(outcome.susceptibility, |a| a.susceptibility)
+                );
+            } else {
+                let _ = writeln!(out, "  anchored after {} round(s)", outcome.rounds);
+            }
             for row in &outcome.agents {
                 let held = row
                     .limit
@@ -464,7 +480,15 @@ fn consensus_text(
                     .max_by(|a, b| a.1.total_cmp(b.1))
                     .map(|(at, share)| format!("{} {share:.3}", outcome.choices[at]))
                     .unwrap_or_default();
-                let _ = writeln!(out, "    {:<24} {held}", row.agent);
+                if uniform {
+                    let _ = writeln!(out, "    {:<24} {held}", row.agent);
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "    {:<24} {held:<16} susceptibility {:.2}",
+                        row.agent, row.susceptibility
+                    );
+                }
             }
             let _ = writeln!(
                 out,

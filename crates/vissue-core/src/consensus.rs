@@ -92,6 +92,12 @@ pub struct AgentLimit {
     /// group agreed. `None` when it did not, because a split group has no single
     /// weighting to report.
     pub power: Option<f64>,
+    /// How far this agent was allowed to move off its own ballot.
+    ///
+    /// Per agent rather than on the outcome, because Friedkin and Johnsen's
+    /// susceptibility is a diagonal: two agents in one run can hold different
+    /// values, and the row is where a reader looks to see which.
+    pub susceptibility: f64,
 }
 
 /// The result of running DeGroot over one issue's ballots.
@@ -114,8 +120,9 @@ pub struct Outcome {
     pub budget_reached: bool,
     /// Whether any voting agent had a configured trust row.
     pub trust: TrustSource,
-    /// How far agents were allowed to move off their own ballot. One is
-    /// DeGroot; below one is Friedkin and Johnsen.
+    /// The susceptibility an agent gets when nothing names it. One is DeGroot;
+    /// below one is Friedkin and Johnsen. A named agent carries its own on
+    /// [`AgentLimit::susceptibility`].
     pub susceptibility: f64,
     /// The largest gap left between any two agents on any one choice.
     ///
@@ -194,6 +201,15 @@ pub fn settle(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
 
     let names: Vec<&str> = agents.iter().map(|b| b.agent.as_str()).collect();
     let (weights, trust) = influence(&names, cfg);
+    let pull: Vec<f64> = names
+        .iter()
+        .map(|name| {
+            cfg.susceptibility_of
+                .get(*name)
+                .copied()
+                .unwrap_or(cfg.susceptibility)
+        })
+        .collect();
 
     // One-hot: an agent that voted `ship` puts all of its opinion on `ship`. The
     // choice set was collected from these same ballots, so the position is
@@ -216,7 +232,10 @@ pub fn settle(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
     // it from the iteration instead means asking whether a number stopped
     // moving, and a chain that mixes slowly stops moving long before its agents
     // agree, which reads as a split that is not there.
-    let anchored = cfg.susceptibility < 1.0;
+    // One agent keeping part of its own ballot is enough to make the whole run
+    // a contraction, so the structural question below belongs to the case where
+    // nobody does.
+    let anchored = pull.iter().any(|value| *value < 1.0);
     let settling = if anchored {
         Settling::Anchored
     } else {
@@ -227,7 +246,7 @@ pub fn settle(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
         }
     };
     let start = opinion.clone();
-    let rounds = iterate(&mut opinion, &weights, &start, cfg, settling);
+    let rounds = iterate(&mut opinion, &weights, &start, &pull, cfg, settling);
     let consensus = (settling == Settling::Agreed).then(|| opinion[0].clone());
     // Social power is the left Perron vector of the trust matrix, which weighs
     // the ballots into the one position the group reached. Under an anchor
@@ -250,6 +269,7 @@ pub fn settle(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
                 voted: ballot.choice.clone(),
                 limit: opinion[i].clone(),
                 power: power.as_ref().map(|p| p[i]),
+                susceptibility: pull[i],
             })
             .collect(),
         settling,
@@ -463,10 +483,11 @@ fn gcd(a: i64, b: i64) -> i64 {
 
 /// Iterate the opinions and return the rounds it took.
 ///
-/// The step is `x(t+1) = λ W x(t) + (1 - λ) x(0)`. At `λ = 1` the anchor term
-/// vanishes and this is DeGroot; below one each agent keeps pulling back toward
-/// the ballot it cast, which is what makes the step a contraction and the
-/// settling certain.
+/// The step is `x_i(t+1) = λ_i (W x(t))_i + (1 - λ_i) x_i(0)`, with `λ` a
+/// diagonal rather than a scalar so two agents in one run can be differently
+/// movable. At `λ_i = 1` the anchor term vanishes for that agent and its row is
+/// DeGroot; below one it keeps pulling back toward the ballot it cast, which is
+/// what makes the step a contraction and the settling certain.
 ///
 /// What counts as done depends on what the run can do. An unanchored convergent
 /// graph is run until the agents agree, because that is the quantity being
@@ -478,6 +499,7 @@ fn iterate(
     opinion: &mut Vec<Vec<f64>>,
     weights: &[Vec<f64>],
     start: &[Vec<f64>],
+    pull: &[f64],
     cfg: &ConsensusSection,
     settling: Settling,
 ) -> usize {
@@ -486,8 +508,6 @@ fn iterate(
     }
     let n = opinion.len();
     let m = opinion.first().map_or(0, Vec::len);
-    let pull = cfg.susceptibility;
-    let anchor = 1.0 - pull;
     for round in 0..cfg.max_iterations {
         if settling == Settling::Agreed && spread(opinion, m) < cfg.tolerance {
             return round;
@@ -500,7 +520,7 @@ fn iterate(
                 for (j, row) in opinion.iter().enumerate() {
                     acc += weights[i][j] * row[c];
                 }
-                let value = pull * acc + anchor * start[i][c];
+                let value = pull[i] * acc + (1.0 - pull[i]) * start[i][c];
                 next[i][c] = value;
                 step = step.max((value - opinion[i][c]).abs());
             }
@@ -881,6 +901,9 @@ mod tests {
             susceptibility: 0.7,
             ..ConsensusSection::default()
         };
+        // A diagonal rather than one number, since that is what the model says
+        // and a scalar would let the wrong arithmetic pass this.
+        cfg.susceptibility_of.insert("carol".to_string(), 0.25);
         cfg.trust.insert(
             "alice".to_string(),
             BTreeMap::from([("carol".to_string(), 2.0), ("bob".to_string(), 1.0)]),
@@ -904,7 +927,8 @@ mod tests {
                     .map(|(j, other)| weights[i][j] * other.limit[c])
                     .sum();
                 let own = f64::from(u8::from(row.voted == *choice));
-                let want = cfg.susceptibility * neighbours + (1.0 - cfg.susceptibility) * own;
+                let pull = row.susceptibility;
+                let want = pull * neighbours + (1.0 - pull) * own;
                 assert!(
                     (want - row.limit[c]).abs() < 1e-6,
                     "{} on {choice}: {want} vs {}",
@@ -913,6 +937,98 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The susceptibility is a diagonal. An agent named in the configuration
+    /// uses its own value and every other agent uses the default, which is the
+    /// case the model exists to express: a maintainer and a first-time reviewer
+    /// are not equally movable.
+    #[test]
+    fn a_named_agent_carries_its_own_susceptibility() {
+        let mut cfg = ConsensusSection {
+            susceptibility: 0.9,
+            ..ConsensusSection::default()
+        };
+        cfg.susceptibility_of.insert("maintainer".to_string(), 0.1);
+        let ballots = [
+            ballot("maintainer", "hold"),
+            ballot("newcomer", "ship"),
+            ballot("other", "ship"),
+        ];
+        let outcome = settle(&ballots, &cfg);
+        assert_eq!(outcome.settling, Settling::Anchored);
+
+        let of = |who: &str| {
+            outcome
+                .agents
+                .iter()
+                .find(|a| a.agent == who)
+                .expect("agent")
+        };
+        assert!((of("maintainer").susceptibility - 0.1).abs() < f64::EPSILON);
+        assert!((of("newcomer").susceptibility - 0.9).abs() < f64::EPSILON);
+
+        // The one that barely moves ends up nearest what it voted for.
+        let hold = outcome
+            .choices
+            .iter()
+            .position(|c| c == "hold")
+            .expect("hold");
+        assert!(
+            of("maintainer").limit[hold] > of("newcomer").limit[hold],
+            "{outcome:?}"
+        );
+    }
+
+    /// Susceptibility zero is the stubborn end of the model: the agent listens,
+    /// and does not move at all. Worth pinning because it is the one value where
+    /// the anchor term is the whole update.
+    #[test]
+    fn an_agent_at_zero_never_leaves_its_ballot() {
+        let mut cfg = ConsensusSection::default();
+        cfg.susceptibility_of.insert("rock".to_string(), 0.0);
+        let ballots = [
+            ballot("rock", "hold"),
+            ballot("a", "ship"),
+            ballot("b", "ship"),
+        ];
+        let outcome = settle(&ballots, &cfg);
+        let hold = outcome
+            .choices
+            .iter()
+            .position(|c| c == "hold")
+            .expect("hold");
+        let rock = outcome
+            .agents
+            .iter()
+            .find(|a| a.agent == "rock")
+            .expect("rock");
+        assert!(
+            (rock.limit[hold] - 1.0).abs() < 1e-9,
+            "it voted hold and never moved: {outcome:?}"
+        );
+        // And the others still moved toward it, so this is not a frozen run.
+        let a = outcome.agents.iter().find(|x| x.agent == "a").expect("a");
+        assert!(a.limit[hold] > 0.0, "{outcome:?}");
+    }
+
+    /// A configuration that names nobody is the scalar case, and it has to stay
+    /// exactly the scalar case: the diagonal is a generalisation, not a change.
+    #[test]
+    fn naming_nobody_is_the_scalar_case() {
+        let ballots = [ballot("a", "ship"), ballot("b", "hold")];
+        let scalar = ConsensusSection {
+            susceptibility: 0.5,
+            ..ConsensusSection::default()
+        };
+        let mut spelled_out = scalar.clone();
+        for who in ["a", "b"] {
+            spelled_out.susceptibility_of.insert(who.to_string(), 0.5);
+        }
+        assert_eq!(
+            settle(&ballots, &scalar).agents,
+            settle(&ballots, &spelled_out).agents
+        );
     }
 
     /// Any anchor at all makes the step a contraction, so the pair that swap

@@ -8,6 +8,15 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Recoverable catalog and mutation failures with a stable shape.
 #[derive(Debug)]
 pub enum Error {
+    /// The working directory was taken as the tracker root and holds no
+    /// tracker, so an empty answer would be a wrong answer rather than a
+    /// small one.
+    NotATracker {
+        /// The directory that was taken as the root.
+        root: std::path::PathBuf,
+        /// The project directory that was looked for inside it.
+        prefix: String,
+    },
     /// No heading in the corpus carries this id.
     IssueNotFound {
         /// The id that was looked up.
@@ -72,6 +81,12 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::NotATracker { root, prefix } => write!(
+                f,
+                "{} is not a tracker: it holds neither vissue.toml nor {prefix}/. \
+                 Name one with --root, or set VISSUE_ROOT",
+                root.display()
+            ),
             Error::IssueNotFound { id } => write!(f, "issue {id} not found"),
             Error::DuplicateId { id, paths } => {
                 let listed = paths

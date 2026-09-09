@@ -256,6 +256,18 @@ pub fn internal_error(message: impl Into<String>) -> JsonRpcError {
 /// Map a typed core error onto the control-plane codes.
 pub fn error_from_core(err: &CoreError) -> JsonRpcError {
     match err {
+        // The socket is started on a layout somebody named, so this cannot
+        // reach a client over it. It is mapped anyway: an unmapped variant is
+        // how the next one added becomes a compile error somewhere else.
+        CoreError::NotATracker { root, prefix } => JsonRpcError {
+            code: NOT_FOUND,
+            message: err.to_string(),
+            data: Some(json!({
+                "code": "not_a_tracker",
+                "root": root,
+                "prefix": prefix,
+            })),
+        },
         CoreError::IssueNotFound { id } => JsonRpcError {
             code: NOT_FOUND,
             message: err.to_string(),

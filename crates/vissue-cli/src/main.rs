@@ -684,10 +684,12 @@ fn main() {
 
 fn build_router(cli: &Cli) -> Result<Router> {
     let default = Layout::resolve(cli.root.as_deref(), cli.prefix.as_deref())?;
-    if cli.no_route {
-        return Ok(Router::unrouted(default));
-    }
-    Ok(Router::load(default)?)
+    let routed = if cli.no_route {
+        Router::unrouted(default.clone())
+    } else {
+        Router::load(default.clone())?
+    };
+    Ok(routed)
 }
 
 fn create_routed(
@@ -1043,9 +1045,25 @@ fn run_keys(check: bool, occupancy: bool) -> Result<()> {
     Ok(())
 }
 
+/// Whether a verb reads or writes the tracker.
+///
+/// The two that do not are the ones that describe the program rather than any
+/// corpus, and they have to keep working from anywhere: a shell sourcing
+/// completions is not standing in a tracker and should not have to.
+fn reads_the_corpus(command: &Command) -> bool {
+    !matches!(command, Command::Completions { .. } | Command::Man)
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let router = build_router(&cli)?;
+    // A configuration naming other layouts has said where the trackers are, so
+    // the guessed default is no longer the only thing a verb can read. When it
+    // is the only one, it has to be a tracker: answering "none" out of a
+    // directory that holds none is a wrong answer, not a small one.
+    if reads_the_corpus(&cli.command) && router.unique_layouts().len() == 1 {
+        router.default_layout().require_tracker()?;
+    }
     let layout = router.default_layout().clone();
 
     match cli.command {

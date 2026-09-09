@@ -2530,6 +2530,95 @@ fn backlinks_answers_for_a_deed_as_well_as_an_issue() {
     assert!(!own(&["backlinks", "keys-zzzz"]).status.success());
 }
 
+/// Answering "none" out of a directory that holds no tracker is a wrong
+/// answer, not a small one. A caller cannot tell it from a tracker with
+/// nothing in it, and the two mean opposite things.
+#[test]
+fn a_directory_that_is_not_a_tracker_says_so_rather_than_answering_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str], cwd: &std::path::Path| {
+        Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .env("VISSUE_NO_ROUTE", "1")
+            .env_remove("VISSUE_ROOT")
+            .env_remove("ISSUE_ROOT")
+            .current_dir(cwd)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    let out = run(&["count"], dir.path());
+    assert!(!out.status.success(), "counted anyway: {}", stdout(&out));
+    let complaint = String::from_utf8(out.stderr).unwrap();
+    assert!(complaint.contains("is not a tracker"), "{complaint}");
+
+    // The prefix directory alone makes it one, empty or not: a tracker with
+    // nothing in it is a real answer and has to stay countable.
+    fs::create_dir_all(dir.path().join("Software")).unwrap();
+    let out = run(&["count"], dir.path());
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(stdout(&out).trim(), "0");
+}
+
+/// A root somebody named is trusted whether or not it holds anything, because
+/// they said which one they meant.
+#[test]
+fn a_named_root_is_not_second_guessed() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .env("VISSUE_NO_ROUTE", "1")
+        .env_remove("VISSUE_ROOT")
+        .args(["--root", dir.path().to_str().unwrap(), "count"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(stdout(&out).trim(), "0");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .env("VISSUE_NO_ROUTE", "1")
+        .env("VISSUE_ROOT", dir.path())
+        .current_dir(dir.path())
+        .args(["count"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Describing the program is not reading a corpus, and a shell sourcing
+/// completions is not standing in a tracker.
+#[test]
+fn man_and_completions_work_from_anywhere() {
+    let dir = tempfile::tempdir().unwrap();
+    for args in [vec!["man"], vec!["completions", "bash"]] {
+        let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+            .env("VISSUE_NO_ROUTE", "1")
+            .env_remove("VISSUE_ROOT")
+            .env_remove("ISSUE_ROOT")
+            .current_dir(dir.path())
+            .args(&args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(!out.stdout.is_empty(), "{args:?} wrote nothing");
+    }
+}
+
 /// A corpus fault must not be answered as a citation list.
 ///
 /// The accession walk exists because an accession has no heading of its own.

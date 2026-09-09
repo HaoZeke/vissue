@@ -21,6 +21,10 @@ pub const DEFAULT_PREFIX: &str = "Software";
 pub struct Layout {
     root: PathBuf,
     prefix: String,
+    /// Whether the root was the working directory rather than something the
+    /// caller named. A guessed root that turns out to hold no tracker is the
+    /// one case where an empty answer is a wrong answer.
+    guessed: bool,
 }
 
 impl Layout {
@@ -36,6 +40,7 @@ impl Layout {
             } else {
                 prefix
             },
+            guessed: false,
         }
     }
 
@@ -47,12 +52,16 @@ impl Layout {
     /// Returns an error if the current directory cannot be resolved, or if
     /// `<root>/vissue.toml` exists but cannot be read or parsed.
     pub fn resolve(root: Option<&Path>, prefix: Option<&str>) -> Result<Self> {
+        let mut guessed = false;
         let root = match root {
             Some(p) => p.to_path_buf(),
             None => {
                 match std::env::var_os("ISSUE_ROOT").or_else(|| std::env::var_os("VISSUE_ROOT")) {
                     Some(v) => PathBuf::from(v),
-                    None => std::env::current_dir().context("resolve current directory as root")?,
+                    None => {
+                        guessed = true;
+                        std::env::current_dir().context("resolve current directory as root")?
+                    }
                 }
             }
         };
@@ -65,7 +74,31 @@ impl Layout {
                     .unwrap_or_else(|| DEFAULT_PREFIX.to_string()),
             },
         };
-        Ok(Self::new(root, prefix))
+        let mut layout = Self::new(root, prefix);
+        layout.guessed = guessed;
+        Ok(layout)
+    }
+
+    /// Refuse a guessed root that holds no tracker.
+    ///
+    /// A reading verb answering "none" is indistinguishable from a tracker with
+    /// nothing in it, and the two mean opposite things: one is an answer and
+    /// the other is a caller standing in the wrong directory. A root somebody
+    /// named is trusted, empty or not, because they said which one they meant.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotATracker`] when the root was the working directory and
+    /// carries neither `vissue.toml` nor the prefix directory.
+    pub fn require_tracker(&self) -> Result<()> {
+        if !self.guessed || self.root.join("vissue.toml").is_file() || self.projects_dir().is_dir()
+        {
+            return Ok(());
+        }
+        Err(crate::error::Error::NotATracker {
+            root: self.root.clone(),
+            prefix: self.prefix.clone(),
+        })
     }
 
     /// Tracker root: the directory that holds `vissue.toml` and `prefix`.

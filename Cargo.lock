@@ -5939,6 +5939,7 @@ dependencies = [
  "daggy",
  "fs2",
  "petgraph",
+ "rayon",
  "serde",
  "serde_json",
  "tempfile",

@@ -256,10 +256,10 @@ impl IssueDoc {
             lines[..preamble_end].join("\n").trim_end().to_string()
         };
         let settings = crate::org::merge_setupfile_settings(&raw_preamble, path.parent());
-        let mut keyword_src = settings.clone();
-        keyword_src.push('\n');
-        keyword_src.push_str(content);
-        let keyword_lines: Vec<&str> = keyword_src.lines().collect();
+        // Chained, not concatenated. Building one string out of the settings
+        // and the whole file copied every byte of the tracker to look for the
+        // handful of `#+TODO:` lines in it, and the content is already split.
+        let keyword_lines: Vec<&str> = settings.lines().chain(lines.iter().copied()).collect();
         let keywords = todo_keywords_from_lines(&keyword_lines);
         // Once for the file, then indexed. The test walks a heading's whole
         // property drawer looking for an id, and it used to run in four
@@ -816,15 +816,23 @@ pub fn find_by_id(layout: &Layout, id: &str) -> Result<Option<(IssueHeading, Pat
 ///
 /// Returns an error if a project file cannot be read or parsed.
 pub fn load_all(layout: &Layout) -> Result<Vec<(String, IssueHeading)>> {
-    let mut all = Vec::new();
-    for project in list_projects(layout)? {
-        let path = layout.project_issues_path(&project);
-        let doc = IssueDoc::parse_file(&project, &path)?;
-        for h in doc.headings {
-            all.push((project.clone(), h));
-        }
-    }
-    Ok(all)
+    // One file per project and no shared state between them, so the parse is
+    // the one part of a read that splits cleanly. Collecting keeps project
+    // order, which several callers depend on for stable output.
+    use rayon::prelude::*;
+    let per_project: Vec<Vec<(String, IssueHeading)>> = list_projects(layout)?
+        .into_par_iter()
+        .map(|project| {
+            let path = layout.project_issues_path(&project);
+            let doc = IssueDoc::parse_file(&project, &path)?;
+            Ok(doc
+                .headings
+                .into_iter()
+                .map(|h| (project.clone(), h))
+                .collect())
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(per_project.into_iter().flatten().collect())
 }
 
 /// `<project>-<base36 suffix>`, retried until it does not collide.

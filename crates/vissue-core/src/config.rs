@@ -2,8 +2,16 @@
 //!
 //! A tracker lives under `<root>/<prefix>`, one directory per project, each
 //! holding an `issues.org`. `root` comes from the caller, `ISSUE_ROOT`,
-//! `VISSUE_ROOT`, or the current directory. `prefix` comes from the caller,
-//! `VISSUE_PREFIX`, `<root>/vissue.toml`, or the `Software` default.
+//! `VISSUE_ROOT`, the working directory when that is itself a tracker, the
+//! seat's own `vissue/config.toml`, and otherwise the working directory.
+//! `prefix` comes from the caller, `VISSUE_PREFIX`, `<root>/vissue.toml`, or
+//! the `Software` default.
+//!
+//! The seat file is what lets the bare command answer from anywhere. Without
+//! it the only way to reach one tracker from outside its directory is an
+//! environment variable, which every shell and every launcher has to be told
+//! about separately, and a seat that misses one of them has a command that
+//! works in a terminal and not under an agent.
 
 use anyhow::Context;
 
@@ -45,26 +53,24 @@ impl Layout {
     }
 
     /// Resolve from explicit arguments, falling back to the environment, the
-    /// on-disk `vissue.toml`, and finally the compiled defaults.
+    /// directory the caller stands in, the seat's own file, and finally the
+    /// compiled defaults. See [`choose_root`] for the order and why.
     ///
     /// # Errors
     ///
     /// Returns an error if the current directory cannot be resolved, or if
     /// `<root>/vissue.toml` exists but cannot be read or parsed.
     pub fn resolve(root: Option<&Path>, prefix: Option<&str>) -> Result<Self> {
-        let mut guessed = false;
-        let root = match root {
-            Some(p) => p.to_path_buf(),
-            None => {
-                match std::env::var_os("ISSUE_ROOT").or_else(|| std::env::var_os("VISSUE_ROOT")) {
-                    Some(v) => PathBuf::from(v),
-                    None => {
-                        guessed = true;
-                        std::env::current_dir().context("resolve current directory as root")?
-                    }
-                }
-            }
-        };
+        let here = std::env::current_dir().context("resolve current directory as root")?;
+        let (root, guessed) = choose_root(
+            root,
+            std::env::var_os("ISSUE_ROOT")
+                .or_else(|| std::env::var_os("VISSUE_ROOT"))
+                .map(PathBuf::from),
+            &here,
+            here.join("vissue.toml").is_file(),
+            SeatConfig::path().as_deref().and_then(SeatConfig::read),
+        );
         let prefix = match prefix {
             Some(p) if !p.is_empty() => p.to_string(),
             _ => match std::env::var("VISSUE_PREFIX") {
@@ -120,6 +126,84 @@ impl Layout {
     pub fn project_issues_path(&self, project: &str) -> PathBuf {
         self.projects_dir().join(project).join("issues.org")
     }
+}
+
+/// Which root the tracker is, and whether it was a guess.
+///
+/// A guess is the working directory taken for want of anything better, and it
+/// is the one case where an empty answer might be a wrong answer, so
+/// [`Layout::require_tracker`] refuses it when it holds no tracker. Everything
+/// else here was named by somebody: the caller, the environment, the directory
+/// they are standing in, or the seat's own file.
+fn choose_root(
+    named: Option<&Path>,
+    from_env: Option<PathBuf>,
+    here: &Path,
+    here_is_a_tracker: bool,
+    seat: Option<PathBuf>,
+) -> (PathBuf, bool) {
+    if let Some(root) = named {
+        return (root.to_path_buf(), false);
+    }
+    if let Some(root) = from_env {
+        return (root, false);
+    }
+    // Standing in a tracker means that tracker, whatever the seat file says:
+    // the caller is the more specific of the two.
+    if here_is_a_tracker {
+        return (here.to_path_buf(), false);
+    }
+    match seat {
+        Some(root) => (root, false),
+        None => (here.to_path_buf(), true),
+    }
+}
+
+/// `vissue/config.toml` under the seat's configuration directory: which
+/// tracker this seat means when nobody says.
+///
+/// Separate from `<root>/vissue.toml`, which configures a tracker somebody has
+/// already found. This one is how they find it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct SeatConfig {
+    root: Option<String>,
+}
+
+impl SeatConfig {
+    /// The configured root, or nothing when the seat has not named one.
+    ///
+    /// A file that cannot be read or parsed is no answer rather than an error:
+    /// this is the fallback path, and the working directory below it still
+    /// gives the caller the tracker-or-not message they can act on.
+    fn read(path: &Path) -> Option<PathBuf> {
+        let raw = fs::read_to_string(path).ok()?;
+        let parsed: Self = toml::from_str(&raw).ok()?;
+        let named = parsed.root?;
+        let named = named.trim();
+        if named.is_empty() {
+            return None;
+        }
+        let expanded = match named.strip_prefix("~/") {
+            Some(rest) => home()?.join(rest),
+            None => PathBuf::from(named),
+        };
+        expanded.is_dir().then_some(expanded)
+    }
+
+    fn path() -> Option<PathBuf> {
+        let base = match std::env::var_os("XDG_CONFIG_HOME") {
+            Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+            _ => home()?.join(".config"),
+        };
+        Some(base.join("vissue").join("config.toml"))
+    }
+}
+
+fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 /// `<root>/vissue.toml`, the product-level configuration file.
@@ -768,5 +852,87 @@ mod tests {
             "an unnamed key keeps the root value"
         );
         assert_eq!(cfg.issues.stale_claim_days, 3);
+    }
+
+    /// A seat file names the tracker the bare command means.
+    #[test]
+    fn a_seat_file_names_a_tracker() {
+        let dir = tempfile::tempdir().unwrap();
+        let tracker = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            format!("root = {:?}\n", tracker.path().display().to_string()),
+        )
+        .unwrap();
+        assert_eq!(
+            SeatConfig::read(&path).unwrap().canonicalize().unwrap(),
+            tracker.path().canonicalize().unwrap()
+        );
+    }
+
+    /// A file that is absent, unparseable, empty, or names a directory that is
+    /// not there says nothing rather than failing: this is the fallback path,
+    /// and the working directory below it still gives the caller a message.
+    #[test]
+    fn a_seat_file_that_says_nothing_usable_says_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(SeatConfig::read(&dir.path().join("absent.toml")).is_none());
+        for text in [
+            "",
+            "root = \"\"\n",
+            "root = \"/nonexistent/tracker\"\n",
+            "root =",
+        ] {
+            let path = dir.path().join("config.toml");
+            fs::write(&path, text).unwrap();
+            assert!(SeatConfig::read(&path).is_none(), "{text:?}");
+        }
+    }
+
+    /// The order the root is decided in, with nothing global touched.
+    #[test]
+    fn the_caller_beats_the_environment_beats_where_you_stand() {
+        let named = PathBuf::from("/named");
+        let from_env = PathBuf::from("/env");
+        let seat = PathBuf::from("/seat");
+        let here = PathBuf::from("/here");
+
+        // Something the caller named wins, and is never a guess.
+        assert_eq!(
+            choose_root(
+                Some(&named),
+                Some(from_env.clone()),
+                &here,
+                false,
+                Some(seat.clone())
+            ),
+            (named.clone(), false)
+        );
+        // Then the environment.
+        assert_eq!(
+            choose_root(
+                None,
+                Some(from_env.clone()),
+                &here,
+                true,
+                Some(seat.clone())
+            ),
+            (from_env, false)
+        );
+        // Standing in a tracker means that tracker, over the seat's default:
+        // the caller is the more specific of the two.
+        assert_eq!(
+            choose_root(None, None, &here, true, Some(seat.clone())),
+            (here.clone(), false)
+        );
+        // Standing nowhere in particular, the seat's own tracker.
+        assert_eq!(
+            choose_root(None, None, &here, false, Some(seat.clone())),
+            (seat, false)
+        );
+        // And with no seat file, the working directory as a guess, which is
+        // what `require_tracker` refuses when it holds no tracker.
+        assert_eq!(choose_root(None, None, &here, false, None), (here, true));
     }
 }

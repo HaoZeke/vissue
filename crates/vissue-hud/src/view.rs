@@ -113,7 +113,7 @@ fn actions(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
 }
 
 fn find_control(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
-    widget::search_input_clear(
+    widget::search_input(
         palette.query(),
         Message::QueryChanged,
         Some(Message::QueryChanged(String::new())),
@@ -121,6 +121,7 @@ fn find_control(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
         tea,
         A11y::new("Search title, id, tags", Role::TextBox),
         None,
+        &[],
     )
 }
 
@@ -211,17 +212,22 @@ fn project_browser(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
         palette.project_selection(),
         |click| Message::PickProject(click.id),
         tea,
-        palette.project_window(),
-        56.0,
-        2,
-        Message::ProjectScroll,
-        "No projects under this prefix.",
-        move |_| muted,
-        None,
-        icedtea::collection::RowFace::Card {
-            meter: None::<fn(usize) -> f32>,
+        widget::ListOpts {
+            window: palette.project_window(),
+            row_h: 56.0,
+            overscan: 2,
+            on_scroll: Message::ProjectScroll,
+            empty: "No projects under this prefix.",
+            meta_color: move |_| muted,
+            scroll_id: None,
+            face: icedtea::collection::RowFace::Card {
+                meter: None::<fn(usize) -> f32>,
+            },
+            on_check: |_| Message::Noop,
+            // New in this version, and there was no context action before, so
+            // the row keeps doing nothing on a right click.
+            on_context: |_| Message::Noop,
         },
-        |_| Message::Noop,
         A11y::new("projects", Role::List),
     )
 }
@@ -235,6 +241,10 @@ fn task_board<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         2,
         None,
         Message::TaskScroll,
+        // A click handler is a parameter now. The list had none before, and a
+        // row that suddenly answered a click would be a change nobody asked
+        // for, so it stays inert.
+        |_| Message::Noop,
         None,
         tea,
         move |i| match rows.get(i) {
@@ -259,7 +269,7 @@ fn task_board<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
 
 fn add_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     if palette.focus() == Focus::Add {
-        widget::themed_text_input(
+        widget::text_input(
             "Add a task in the current project",
             palette.add_draft(),
             Message::AddChanged,
@@ -270,12 +280,13 @@ fn add_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
             None,
         )
     } else {
-        widget::themed_button(
+        widget::button(
             "+ Add a task",
             Some(Message::FocusAdd),
             tea,
             Variant::Quiet,
             Icons::NONE,
+            widget::ButtonOpts::SHRINK,
             A11y::button("Add a task"),
         )
     }
@@ -427,7 +438,7 @@ fn task_row(item: &HudItem, selected: bool, tea: Tokens) -> Element<'_, Message>
     let indent: Element<'_, Message> = Space::new()
         .width(item.depth as f32 * tea.density.gap() * 4.0)
         .into();
-    let box_el = widget::themed_checkbox(
+    let box_el = widget::checkbox(
         "",
         done,
         move |_| Message::ToggleDone(id_toggle.clone()),
@@ -659,7 +670,7 @@ fn list_detail<'a>(
 
 fn note_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     let draft = palette.note_draft().unwrap_or("");
-    widget::themed_text_input(
+    widget::text_input(
         "Add a note to the logbook",
         draft,
         Message::NoteChanged,
@@ -673,7 +684,7 @@ fn note_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
 
 fn deed_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     let draft = palette.deed_draft().unwrap_or("");
-    widget::themed_text_input(
+    widget::text_input(
         "Cite a deed: deed-<kind>-<slug>, or sha256:...",
         draft,
         Message::DeedChanged,
@@ -690,7 +701,7 @@ fn help_overlay(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     container(
         column![
             widget::label("vissue", tea, A11y::new("help", Role::Header)),
-            widget::themed_scroll(
+            widget::scroll(
                 widget::markdown_view(
                     &doc.items,
                     None,
@@ -1116,7 +1127,7 @@ fn tab_empty_copy(tab: DetailTab) -> &'static str {
 }
 
 fn pane_scroll<'a>(child: Element<'a, Message>, tea: Tokens, a11y: A11y) -> Element<'a, Message> {
-    widget::themed_scroll(child, tea, a11y, false, None, None::<fn(f32) -> Message>)
+    widget::scroll(child, tea, a11y, false, None, None::<fn(f32) -> Message>)
 }
 
 fn empty_copy(palette: &Palette) -> &'static str {

@@ -418,7 +418,10 @@ fn overlay_path() -> Option<PathBuf> {
 
 fn load_overlay(path: &Path) -> Result<KeyMap, String> {
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let value: toml::Value = text.parse().map_err(|e| format!("keys.toml: {e}"))?;
+    // A document, not a value. `str::parse` into a `Value` reads one TOML
+    // value, so an overlay opening with a table header parses as far as the
+    // bracket and then reports the rest as unexpected.
+    let value: toml::Value = toml::from_str(&text).map_err(|e| format!("keys.toml: {e}"))?;
     let mut map = KeyMap::from_defaults();
     if let Some(leader) = value.get("leader").and_then(|v| v.as_str()) {
         let mut chars = leader.chars();

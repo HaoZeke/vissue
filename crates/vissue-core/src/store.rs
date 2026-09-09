@@ -934,7 +934,10 @@ pub fn detect_project_from_ctx(start: &Path) -> Option<String> {
         let candidate = dir.join(".project-ctx.toml");
         if candidate.exists()
             && let Ok(text) = fs::read_to_string(&candidate)
-            && let Ok(value) = text.parse::<toml::Value>()
+            // A document, not a value: `str::parse` into a `Value` reads one
+            // TOML value, so a file opening with a table header stops at the
+            // bracket.
+            && let Ok(value) = toml::from_str::<toml::Value>(&text)
             && let Some(name) = value
                 .get("project")
                 .and_then(|p| p.get("name"))

@@ -11,6 +11,17 @@ members = [
 [dist]
 cargo-dist-version = "0.30.3"
 ci = "github"
+# The release workflow is generated, and dependabot keeps the action versions
+# in it current. dist re-generates on every pull request and fails when the
+# checked-in file differs from what it would write, so each of those bumps
+# turned every pull request red on a job that has nothing to do with the
+# change under review.
+#
+# Keeping the newer actions and dropping the equality check is the trade: what
+# is lost is dist noticing that the workflow drifted from its template, and
+# what is gained is a red job meaning something again. Regenerate deliberately
+# with `dist init` when the version above moves.
+allow-dirty = ["ci"]
 installers = ["shell", "powershell"]
 targets = [
   "aarch64-apple-darwin",

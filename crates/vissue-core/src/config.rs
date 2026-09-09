@@ -88,8 +88,8 @@ impl Layout {
     ///
     /// # Errors
     ///
-    /// [`Error::NotATracker`] when the root was the working directory and
-    /// carries neither `vissue.toml` nor the prefix directory.
+    /// [`crate::error::Error::NotATracker`] when the root was the working
+    /// directory and carries neither `vissue.toml` nor the prefix directory.
     pub fn require_tracker(&self) -> Result<()> {
         if !self.guessed || self.root.join("vissue.toml").is_file() || self.projects_dir().is_dir()
         {

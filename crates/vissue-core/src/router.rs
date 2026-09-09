@@ -57,6 +57,10 @@ pub struct Router {
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields, default)]
 struct UserConfig {
+    /// Which tracker the seat means when nobody names one. Read by
+    /// `Layout::resolve` rather than here, and declared so that naming it does
+    /// not make the file unreadable to the router.
+    root: Option<String>,
     layouts: BTreeMap<String, LayoutSpec>,
     routes: BTreeMap<String, RouteSpec>,
 }

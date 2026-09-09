@@ -159,8 +159,14 @@ fn choose_root(
     }
 }
 
-/// `vissue/config.toml` under the seat's configuration directory: which
-/// tracker this seat means when nobody says.
+/// The seat's own configuration file: which tracker it means when nobody says.
+///
+/// The same file the router reads, because a seat has one configuration file
+/// and not one per feature. Only `root` is read here and every other key is
+/// ignored, which is the opposite of the router's own strictness on purpose:
+/// this runs on the path where a caller has named nothing, and a file it
+/// cannot understand has to leave them with the working-directory message
+/// rather than an error about a key they did not ask about.
 ///
 /// Separate from `<root>/vissue.toml`, which configures a tracker somebody has
 /// already found. This one is how they find it.
@@ -191,7 +197,12 @@ impl SeatConfig {
         expanded.is_dir().then_some(expanded)
     }
 
+    /// `$VISSUE_CONFIG`, else the file under the seat's configuration
+    /// directory. The same two the router looks at, in the same order.
     fn path() -> Option<PathBuf> {
+        if let Some(named) = std::env::var_os("VISSUE_CONFIG").filter(|raw| !raw.is_empty()) {
+            return Some(PathBuf::from(named));
+        }
         let base = match std::env::var_os("XDG_CONFIG_HOME") {
             Some(dir) if !dir.is_empty() => PathBuf::from(dir),
             _ => home()?.join(".config"),
@@ -888,6 +899,32 @@ mod tests {
             fs::write(&path, text).unwrap();
             assert!(SeatConfig::read(&path).is_none(), "{text:?}");
         }
+    }
+
+    /// The router owns this file too, and the two read it for different keys.
+    /// A seat that has routes still gets a root out of it, and the router
+    /// still parses a file that names one.
+    #[test]
+    fn the_seat_root_shares_the_file_the_router_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let tracker = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            format!(
+                "root = {:?}\n\n[layouts.other]\nroot = \"/somewhere\"\nprefix = \"Issues\"\n\n[routes]\nthing = \"other\"\n",
+                tracker.path().display().to_string()
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            SeatConfig::read(&path).unwrap().canonicalize().unwrap(),
+            tracker.path().canonicalize().unwrap()
+        );
+        // The router's own parse is strict about unknown keys, so the same
+        // bytes have to be readable by it: one file, two readers.
+        crate::router::Router::from_file(Layout::new(dir.path(), DEFAULT_PREFIX), &path)
+            .expect("the router reads the same file");
     }
 
     /// The order the root is decided in, with nothing global touched.

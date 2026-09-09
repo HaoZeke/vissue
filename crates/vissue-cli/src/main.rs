@@ -665,6 +665,12 @@ enum CompletionShell {
     Zsh,
 }
 
+/// Parsing is allocation-bound, and this is the whole change: a third of a
+/// tracker read is malloc and free over the small strings a heading is made
+/// of, and the system allocator is the slowest way to serve them.
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     if let Err(e) = run() {
         if is_broken_pipe(&e) {

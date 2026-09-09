@@ -27,20 +27,28 @@ pub(crate) const BODY_EXCERPT_MAX_CHARS: usize = 4000;
 /// Returns an error if a project directory cannot be listed or an
 /// `issues.org` cannot be read or parsed.
 pub fn load_recs(layout: &Layout) -> Result<Vec<IssueRec>> {
-    let mut recs = Vec::new();
-    for project in list_projects(layout)? {
-        let path = layout.project_issues_path(&project);
-        let doc = IssueDoc::parse_file(&project, &path)?;
-        for heading in doc.headings {
-            recs.push(IssueRec {
-                project: project.clone(),
-                heading,
-                path: path.clone(),
-                tag_settings: doc.tag_settings.clone(),
-            });
-        }
-    }
-    Ok(recs)
+    // See `store::load_all`: one file per project, nothing shared, and the
+    // collect keeps project order.
+    use rayon::prelude::*;
+    let per_project: Vec<Vec<IssueRec>> = list_projects(layout)?
+        .into_par_iter()
+        .map(|project| {
+            let path = layout.project_issues_path(&project);
+            let doc = IssueDoc::parse_file(&project, &path)?;
+            let tag_settings = doc.tag_settings;
+            Ok(doc
+                .headings
+                .into_iter()
+                .map(|heading| IssueRec {
+                    project: project.clone(),
+                    heading,
+                    path: path.clone(),
+                    tag_settings: tag_settings.clone(),
+                })
+                .collect())
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(per_project.into_iter().flatten().collect())
 }
 
 /// Read-only queries over a cached `&[IssueRec]`.

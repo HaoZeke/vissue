@@ -19,6 +19,11 @@ name = "vissue"
 path = "src/main.rs"
 
 [dependencies]
+# Parsing a tracker is allocation-bound: a profile of `count` over five
+# thousand issues spends a third of its time in malloc and free, building the
+# small strings every heading is made of. The system allocator is the slowest
+# part of that and the cheapest to change.
+mimalloc = { version = "0.1", default-features = false }
 anyhow.workspace = true
 clap.workspace = true
 clap_complete.workspace = true

@@ -4,12 +4,12 @@ Every crate in the workspace shares one version and is published in
 dependency order. Git tags use `vX.Y.Z` and must match the workspace version
 in `Cargo.toml`.
 
-The order is not written down anywhere by hand: `scripts/publish-order.py`
+The order is not written down anywhere by hand: `xtask publish-order`
 reads it from `cargo metadata`, so adding a crate is enough. Run it to see
 what a release will do.
 
 ```console
-$ ./scripts/publish-order.py
+$ cargo run -q -p xtask -- publish-order
 ```
 
 ## Cutting a version
@@ -86,7 +86,7 @@ path and is not that signal.
 ```console
 $ git switch --detach vX.Y.Z
 $ version=$(sed -n '0,/^version = /s/^version = "\([^"]*\)"/\1/p' Cargo.toml)
-$ for crate in $(./scripts/publish-order.py); do
+$ for crate in $(cargo run -q -p xtask -- publish-order); do
     cargo publish --locked -p "$crate"
     until curl -fsS -A 'vissue-publish' \
       "https://crates.io/api/v1/crates/${crate}/${version}" >/dev/null

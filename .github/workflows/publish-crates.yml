@@ -64,7 +64,7 @@ jobs:
       - name: Package
         run: |
           set -euo pipefail
-          mapfile -t crates < <(scripts/publish-order.py)
+          mapfile -t crates < <(cargo run -q -p xtask -- publish-order)
           echo "publishing order: ${crates[*]}"
           for target in "${crates[@]}"; do
             args=()
@@ -127,7 +127,7 @@ jobs:
           set -euo pipefail
           version=$(sed -n '0,/^version = /s/^version = "\([^"]*\)"/\1/p' Cargo.toml)
           test -n "$version"
-          mapfile -t crates < <(scripts/publish-order.py)
+          mapfile -t crates < <(cargo run -q -p xtask -- publish-order)
           echo "publishing order: ${crates[*]}"
           UA='vissue-publish (rgoswami@ieee.org)'
           crate_visible() {

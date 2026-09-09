@@ -42,7 +42,10 @@ iced = { version = "0.14", default-features = true, features = [
     "lazy",
     "svg",
 ] }
-icedtea = "0.16.0"
+# 0.16.2, not 0.16.0: virtual_column gained its click handler in the patch
+# release, so the board does not build against the older one and a caret
+# requirement on .0 lets cargo pick it.
+icedtea = "0.16.2"
 serde.workspace = true
 serde_json.workspace = true
 vissue-control.workspace = true

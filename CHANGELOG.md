@@ -6,6 +6,160 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.9.0](https://github.com/HaoZeke/vissue/releases/tag/v0.9.0) - 2026-09-09
+
+### Added
+
+- Each `export` row carries a typed `deeds` array beside `properties`, in the order
+  the citations were made. The socket already handed that field over typed and the
+  JSONL did not, so a consumer had to split a drawer string on whichever separator
+  the author used. `:DEEDS:` stays in `properties` verbatim for a reader that wants
+  the drawer.
+- The explanation page now names the prior art for `recall`: walking a dependency
+  graph to assemble context is not a new idea, and two 2026 systems do it from a
+  derived graph. What is unusual here is where the graph comes from, since it was
+  written down by whoever split the work and `ready` reads the same edges, so a
+  wrong edge is a planning error rather than a bad retrieval.
+- The explanation page now says why a working set has no poisoning surface: nothing
+  an agent reads becomes part of one. An entry is there because an issue declares
+  `:BLOCKED_BY:`, `:PARENT:`, or `:DISCOVERED_FROM:` naming it, and those are
+  written only by a tracker mutation under the lock, by a named identity, with a
+  logbook line. `fold` ingests a file into issues carrying a title and a body and
+  no edges at all.
+- The terminal board and the HUD both grew a **recall** detail tab: the plan above
+  the selected issue, each declared input with the deeds it produced, and the last
+  thing said about it. In `vissue tui` it joins show / excerpt / tree / related; in
+  `vissue hud` it joins tree / related / notes. A 360-pixel HUD overlay has room
+  for three tab labels, so recall sits past the edge of the strip and Enter cycles
+  to it.
+- `[consensus.susceptibility_of]` sets one agent's susceptibility where it differs
+  from the `consensus.susceptibility` default. Friedkin and Johnsen's
+  susceptibility is a diagonal rather than one number, which is the part that
+  carries the meaning: a maintainer who has read the code for years and a reviewer
+  seeing it for the first time are not equally movable. Rows merge agent by agent
+  like the trust rows, and where the agents differ the report puts the value on
+  each row rather than on the header.
+- `backlinks` takes a deed accession as well as an issue id, and answers with the
+  issues standing on that product: `(cites)` for a `:DEEDS:` citation, and
+  `(body mention)` for prose naming it with nothing declared. The join across the
+  tracker and the deed store ran in one direction, so the question you have when a
+  product turns out to be wrong had no command.
+
+  The corpus decides which namespace the argument belongs to. A known issue id
+  stays an issue whatever it looks like, so a project literally named `deed` keeps
+  working. An accession nobody cited answers empty rather than failing, since the
+  product may be real and simply unused. Under routing, the command line and the
+  tool scan every tracker in reach: a product has no project of its own.
+- `consensus.susceptibility` chooses the opinion model. At `1.0`, the default, an
+  agent gives up its own starting position entirely and the group converges on one
+  number: DeGroot, exactly as before. Below it, an agent moves that fraction of the
+  way toward what it hears and keeps the rest of the ballot it cast, which is
+  Friedkin and Johnsen's generalisation.
+
+  Two things follow. The group settles while still disagreeing, and `consensus`
+  reports where each agent landed plus the spread between them instead of naming a
+  position none of them holds. And any anchor makes the step a contraction, so the
+  periodic trust graph that never settles under DeGroot cannot arise.
+- `d` on either board cites a deed on the selected issue. The terminal board opens
+  a field like the note field; the HUD switches to the recall tab first, so the
+  citation lands where you are looking. A value that is not an accession is refused
+  with the message the command line gives, on the board rather than in a log, and
+  the HUD keeps what was typed in the field, since a refused accession is usually a
+  typo in a long hash.
+
+  The action is `issue.deed` in the key catalog and remappable like the rest.
+- `issues.expect_deeds = true` makes `hygiene` report every issue that closed
+  without citing a deed. On a tracker where the next unit is expected to open the
+  last one's product, work that named nothing is a hole in the handoff, and this
+  makes it visible instead of leaving it to be found by whoever needed it. Off by
+  default, because plenty of issues produce nothing a deed store would hold.
+- `vissue consensus <id> --gate` adds an exit status a shell hook can act on, and
+  prints the report either way so a failing hook leaves the reason on screen.
+
+  On one issue it exits non-zero unless the group agreed and one choice leads: a
+  plurality, a tie, a split and an oscillation are all cases where acting on the
+  number would be acting on agreement that is not there. Over `--children` it exits
+  non-zero when any child settled split or carries no ballots, which are the two
+  rows a parent cannot decide on a child's behalf.
+- `vissue consensus <id>` weighs an issue's existing ballots by how much the
+  group listens to each agent, using DeGroot averaging over a trust graph in
+  `[consensus.trust]`. It prints the plain count and the weighted position
+  together, each agent's social power, and the two ways there is no consensus to
+  report: a trust graph with more than one closed group, or one that never
+  settles.
+
+  `--json` gives the same result as structure: the choice set, each agent's limit
+  and social power, the settling, and the factions when there are any.
+
+  See `consensus.susceptibility` for the anchored variant, where the group settles
+  while still disagreeing.
+
+  Nothing new has to be cast, and nothing changes on a tracker that configures no
+  trust: every agent then listens to every other equally and the consensus is the
+  tally as a fraction.
+- `vissue consensus <plan> --children` rolls up over a plan's children, which is
+  the "can this epic close" question rather than the "what does this issue hold"
+  one.
+
+  It reports the children row by row and does not average them. No weighting over
+  children can be picked without a judgement the tracker has no basis for, and an
+  equal-weight one lets an epic split finely outvote one split coarsely; a child
+  that settled split has no single position to fold in; and a child nobody voted on
+  is absent rather than neutral, which matters because unvoted is the common case.
+  So the report says how many children carry ballots, what each holds, whether the
+  voted ones point the same way, which settled split, and how many carry none.
+- `vissue deed <id> --add <accession>` cites the deeds a unit of work produced,
+  in a `:DEEDS:` property on the heading. A deed is
+  [deedar](https://github.com/indynull/deedar)'s frozen record of a product, and
+  the accession is the whole handoff: the next unit runs `deedar get` on it
+  instead of rereading a transcript. The tracker cites and stores no product
+  bytes, so a value that is not an accession (`deed-<kind>-<slug>`, or a
+  `sha256:` of the deed or of one product path) is refused rather than stored as
+  a citation that resolves to nothing.
+- `vissue recall <id> --excerpts` splices a capped excerpt of each input's heading
+  into the working set. What an input concluded lives in its body, since `append`
+  writes the report there and the deed names the product rather than the reasoning.
+
+  Off unless asked: the common case wants the accessions, and a working set
+  carrying four screens of prose is one nobody reads. The excerpt goes through the
+  same path `body-excerpt` uses, so it is capped and an input whose body looks like
+  credential material is suppressed rather than spliced into a model's context.
+- `vissue recall <id>` prints the working set for an issue: the plan it sits in,
+  the deeds produced by what blocks it, the issue it was bounced from, and what
+  it has produced itself. Read it before starting work on a node.
+
+  It walks `:PARENT:`, `:BLOCKED_BY:`, and `:DISCOVERED_FROM:` rather than
+  ranking the corpus by resemblance, so it is what the plan says the work stands
+  on. `related` still answers the resemblance question. `--deeds-only` prints the
+  accessions one per line, for `deedar get $(vissue recall <id> --deeds-only)`.
+  A `:PARENT:` that names a design document rather than an issue is named in the
+  plan too, marked as a heading outside the tracker, because that document is what
+  the reader should open.
+
+  The blocker walk is one hop by default, because a deed records its own sources
+  and `deedar trail` walks them; `--depth` widens it.
+
+### Fixed
+
+- A sentence in the explanation page had wrapped so that a number landed in column
+  zero, which Org reads as an ordered list item: the paragraph rendered split in
+  two around a stray list. `docs/scripts/check_org.py` now runs before the export
+  and refuses that shape, along with a citation whose reference has no entry, an
+  entry nobody cites, and a gap or a duplicate in the numbering. Neither class
+  produces invalid output, so nothing downstream was ever going to complain.
+- `ready` no longer rescans the corpus once per issue to find that issue's parent
+  and siblings. It was quadratic in the corpus on any tracker whose issues have
+  parents, which is every tracker with a plan in it, and `ready` is the verb an
+  agent polls. On 20,000 issues across 10 projects the call drops from 617 ms to
+  512 ms, and the gap widens as parents sit further from the top of their file.
+- `vissue-core` now builds against `capnp` 0.27. Versions before 0.24 let safe
+  Rust code trigger undefined behaviour through the generated schema readers
+  (capnproto-rust#605), and the operation set this crate reads is one of those
+  readers. Nothing about the schema or the verbs changed; regenerate
+  `vissue_capnp.rs` with `capnpc` 0.27 if you carry a local edit to
+  `schema/vissue.capnp`.
+
+
 ## [0.8.0](https://github.com/HaoZeke/vissue/releases/tag/v0.8.0) - 2026-08-23
 
 ### Added

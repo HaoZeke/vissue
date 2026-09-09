@@ -25,7 +25,7 @@ dist generate --check
 # on the registry until the release puts them there. Naming a few crates
 # here is how a local check passes while the release stops at the first
 # crate whose dependency was never uploaded.
-mapfile -t crates < <("$repo_root/scripts/publish-order.py")
+mapfile -t crates < <(cargo run -q -p xtask -- publish-order)
 test "${#crates[@]}" -gt 0
 echo "publishing order: ${crates[*]}"
 for target in "${crates[@]}"; do

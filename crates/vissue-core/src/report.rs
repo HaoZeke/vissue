@@ -103,11 +103,17 @@ pub fn list(
 }
 
 fn format_issue_rows(recs: &[IssueRec], rows: &[IssueRow]) -> String {
+    // Indexed once. Looking each row's record up by scanning the corpus made
+    // rendering quadratic in the number of issues, which is the whole cost of
+    // `list` on a large tracker and none of the work it is there to do.
+    let by_id: std::collections::HashMap<&str, &IssueRec> = recs
+        .iter()
+        .map(|rec| (rec.heading.id.as_str(), rec))
+        .collect();
     let mut out = String::new();
     for row in rows {
-        let suffix = recs
-            .iter()
-            .find(|r| r.heading.id == row.id)
+        let suffix = by_id
+            .get(row.id.as_str())
             .map(|r| claim_suffix(&r.heading))
             .unwrap_or_default();
         let _ = writeln!(

@@ -33,8 +33,24 @@ sed -i "s/^release = \".*\"/release = \"$version\"/" docs/source/conf.py
 sed -i "s/^version = \".*\"/version = \"$minor\"/" docs/source/conf.py
 sed -i "0,/^version = /s/^version = \".*\"/version = \"$version\"/" towncrier.toml
 
-# The lockfile records the workspace members' own versions.
+# The lockfile records the workspace members' own versions. Offline first, so
+# a bump does not quietly drag every transitive dependency to a newer patch
+# release along the way; the online run is the fallback for a cold cache.
 cargo generate-lockfile --offline >/dev/null 2>&1 || cargo generate-lockfile
+
+# And check it took. A member whose name does not match the `vissue-` pattern
+# the rest of this script keys on is exactly the one that gets left behind, and
+# the failure lands later as `--locked` refusing to resolve in CI rather than
+# here. `cargo metadata --locked` is the same question CI asks.
+if ! cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
+  echo "error: the lockfile does not match the manifests after the bump." >&2
+  echo "       every workspace member inherits the workspace version, so a" >&2
+  echo "       member left at the old one is the usual cause:" >&2
+  cargo metadata --format-version 1 2>/dev/null \
+    | grep -o "\"name\":\"[^\"]*\",\"version\":\"[^\"]*\"" \
+    | grep -v "\"$version\"" | head -5 >&2 || true
+  exit 1
+fi
 
 echo "version surfaces now at $version:"
 grep -m1 '^version = ' Cargo.toml

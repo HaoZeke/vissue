@@ -31,7 +31,7 @@ struct RejectDest {
 
 fn text<E: std::fmt::Display>(result: Result<String, E>) -> Result<CallToolResult, McpError> {
     match result {
-        Ok(s) => Ok(CallToolResult::success(vec![Content::text(s)])),
+        Ok(s) => Ok(CallToolResult::success(vec![ContentBlock::text(s)])),
         Err(e) => Err(McpError::internal_error(format!("{e}"), None)),
     }
 }
@@ -42,7 +42,7 @@ fn json<E: std::fmt::Display>(
     match result {
         Ok(v) => {
             let rendered = serde_json::to_string_pretty(&v).unwrap_or_else(|_| "null".to_string());
-            Ok(CallToolResult::success(vec![Content::text(rendered)]))
+            Ok(CallToolResult::success(vec![ContentBlock::text(rendered)]))
         }
         Err(e) => Err(McpError::internal_error(format!("{e}"), None)),
     }

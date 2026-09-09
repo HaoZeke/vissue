@@ -183,6 +183,24 @@ pub fn mutating_mcp_tools() -> Vec<String> {
         .collect()
 }
 
+/// One operation as the schema text states it.
+///
+/// Everything the encoded constant can drift from without changing a surface
+/// name or a field count, which is what made a note-only edit invisible.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaRow {
+    /// Subcommand name.
+    pub cli: String,
+    /// Control-socket method.
+    pub socket: String,
+    /// MCP tool name.
+    pub mcp: String,
+    /// The operation's own note.
+    pub note: String,
+    /// One note per field, in order, empty where a field has none.
+    pub field_notes: Vec<String>,
+}
+
 /// The schema as its text states it, for comparison with the encoded constant.
 ///
 /// This exists to close a hole in the arrangement rather than to be used at
@@ -195,14 +213,14 @@ pub fn mutating_mcp_tools() -> Vec<String> {
 /// reader for one list of flat records, not a Cap'n Proto parser: it needs to run
 /// where `capnp` is not installed, which is everywhere this is built.
 ///
-/// Returns one entry per operation: `(cli, socket, mcp, field-count)`.
+/// Returns one [`SchemaRow`] per operation.
 #[must_use]
-pub fn parse_schema_text(text: &str) -> Vec<(String, String, String, usize)> {
+pub fn parse_schema_text(text: &str) -> Vec<SchemaRow> {
     let Some(start) = text.find("const operations") else {
         return Vec::new();
     };
     let body = &text[start..];
-    let mut out: Vec<(String, String, String, usize)> = Vec::new();
+    let mut out: Vec<SchemaRow> = Vec::new();
     for line in body.lines() {
         let trimmed = line.trim();
         let quoted = |name: &str| -> Option<String> {
@@ -218,18 +236,33 @@ pub fn parse_schema_text(text: &str) -> Vec<(String, String, String, usize)> {
             && let (Some(cli), Some(socket), Some(mcp)) =
                 (quoted("cli"), quoted("socket"), quoted("mcp"))
         {
-            out.push((cli, socket, mcp, 0));
+            out.push(SchemaRow {
+                cli,
+                socket,
+                mcp,
+                note: String::new(),
+                field_notes: Vec::new(),
+            });
+            continue;
+        }
+        // An operation's note is on its own line under the row it belongs to.
+        // It is read because a note-only edit is otherwise invisible: the
+        // surfaces and the field count are unchanged, so the comparison passed
+        // while the constant still carried the previous prose.
+        if trimmed.starts_with("note = ")
+            && let (Some(note), Some(last)) = (quoted("note"), out.last_mut())
+        {
+            last.note = note;
             continue;
         }
         // A field row also opens with `( cli = `, so it is told apart by carrying a
-        // `tool =` and no `socket = "issue/`. Counting them catches a field added to
-        // the text without a regeneration.
+        // `tool =` and no `socket = "issue/`. Its note rides on the same line.
         if trimmed.starts_with("( cli = ")
             && trimmed.contains("tool = ")
             && !trimmed.contains("mutates = ")
             && let Some(last) = out.last_mut()
         {
-            last.3 += 1;
+            last.field_notes.push(quoted("note").unwrap_or_default());
         }
     }
     out
@@ -258,14 +291,44 @@ mod tests {
             !from_text.is_empty(),
             "no operations parsed from the schema text; the reader and the file have diverged"
         );
-        let from_bytes: Vec<(String, String, String, usize)> = operations()
+        let from_bytes: Vec<SchemaRow> = operations()
             .into_iter()
-            .map(|o| (o.cli, o.socket, o.mcp, o.fields.len()))
+            .map(|o| SchemaRow {
+                cli: o.cli,
+                socket: o.socket,
+                mcp: o.mcp,
+                note: o.note,
+                field_notes: o.fields.into_iter().map(|f| f.note).collect(),
+            })
             .collect();
         assert_eq!(
             from_text, from_bytes,
             "schema/vissue.capnp and the committed vissue_capnp.rs disagree; \
              regenerate it, see schema/README.md"
+        );
+    }
+
+    /// The note is prose and the checks are about names, which is how a
+    /// note-only edit came to be invisible: the surfaces and the field count
+    /// were unchanged, so the constant kept the previous wording and every
+    /// check passed. The schema is meant to be authoritative in fact and not
+    /// only in the documentation.
+    #[test]
+    fn a_note_the_schema_states_reaches_the_constant() {
+        let ops = operations();
+        let backlinks = ops
+            .iter()
+            .find(|o| o.cli == "backlinks")
+            .expect("backlinks is in the operation set");
+        assert!(
+            backlinks.note.contains("scan every routed tracker"),
+            "the command line and tool half of the split is missing: {:?}",
+            backlinks.note
+        );
+        assert!(
+            backlinks.note.contains("the layout it was started on"),
+            "the socket half of the split is missing: {:?}",
+            backlinks.note
         );
     }
 

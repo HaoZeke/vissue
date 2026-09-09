@@ -6,6 +6,7 @@ use rmcp::{
 };
 
 use vissue_core::config::Layout;
+use vissue_core::error::Error;
 use vissue_core::mirror::{self, Format};
 use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
 use vissue_core::router::Router;
@@ -73,10 +74,14 @@ impl VissueServer {
     /// A known id routes to its own layout. An accession names a product
     /// rather than a heading, so it has no layout of its own and every tracker
     /// in reach can cite it.
+    ///
+    /// Only "no such heading" falls through to the accession walk. A duplicate
+    /// id or an unreadable file is a fault in the corpus, and answering it with
+    /// a citation list would report that fault as an empty result.
     fn backlinks_text(&self, id: &str) -> vissue_core::Result<String> {
         match self.layout_for_id(id) {
             Ok(layout) => report::backlinks(&layout, id),
-            Err(_) if ops::is_deed_accession(id) => {
+            Err(Error::IssueNotFound { .. }) if ops::is_deed_accession(id) => {
                 let mut out = String::new();
                 for layout in self.router.unique_layouts() {
                     out.push_str(&report::backlinks(layout, id)?);

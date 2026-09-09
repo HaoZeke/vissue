@@ -2530,6 +2530,62 @@ fn backlinks_answers_for_a_deed_as_well_as_an_issue() {
     assert!(!own(&["backlinks", "keys-zzzz"]).status.success());
 }
 
+/// A corpus fault must not be answered as a citation list.
+///
+/// The accession walk exists because an accession has no heading of its own.
+/// An id that has one in two routed trackers is a different thing, and
+/// answering it with the empty scan of a deed would report the fault as "no
+/// issue cites this" for as long as nobody looked the id up by another route.
+#[test]
+fn a_duplicated_accession_shaped_id_is_reported_rather_than_walked_as_a_deed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let work = tmp.path().join("work");
+    fs::create_dir_all(vault.join("Software/keys")).unwrap();
+    fs::create_dir_all(work.join("Issues/api")).unwrap();
+    let cfg = tmp.path().join("config.toml");
+    fs::write(
+        &cfg,
+        format!(
+            "[layouts.work]\nroot = \"{}\"\nprefix = \"Issues\"\n\n[routes]\napi = \"work\"\n",
+            work.display()
+        ),
+    )
+    .unwrap();
+
+    // One accession-shaped id, a heading of that id in each tracker.
+    let heading = |title: &str| {
+        format!(
+            "#+TITLE: sample\n#+TODO: TODO STARTED BLOCKED | DONE CANCELLED\n\n\
+             * TODO [#B] {title}\n:PROPERTIES:\n:ID:         deed-patch-overlay\n:END:\n"
+        )
+    };
+    fs::write(
+        vault.join("Software/keys/issues.org"),
+        heading("Built the overlay"),
+    )
+    .unwrap();
+    fs::write(
+        work.join("Issues/api/issues.org"),
+        heading("Used the overlay"),
+    )
+    .unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_vissue"))
+        .env_remove("VISSUE_NO_ROUTE")
+        .env("VISSUE_CONFIG", &cfg)
+        .args(["--root", vault.to_str().unwrap()])
+        .args(["backlinks", "deed-patch-overlay"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "{}", stdout(&out));
+    let complaint = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        complaint.contains("more than one tracker"),
+        "the duplicate is named: {complaint}"
+    );
+}
+
 /// A project named `deed` mints ids that look exactly like accessions. The
 /// corpus decides, so a real id keeps its own meaning.
 #[test]

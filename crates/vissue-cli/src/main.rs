@@ -14,6 +14,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use vissue_core::config::Layout;
+use vissue_core::error::Error;
 use vissue_core::mirror::{self, Format};
 use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
 use vissue_core::router::Router;
@@ -1954,13 +1955,24 @@ fn hygiene_routed(router: &Router, stale_days: Option<i64>) -> Result<String> {
 /// every other walk does. An accession names a product rather than a heading,
 /// so it has no layout of its own and any tracker in reach can cite it: those
 /// are scanned in full.
+///
+/// Only "no such heading" falls through to the accession walk. A duplicate id
+/// or an unreadable file is a fault in the corpus, and answering it with a
+/// citation list would report that fault as an empty result.
 fn backlinks_layouts(router: &Router, id: &str) -> Result<Vec<Layout>> {
     match layout_for_id(router, id) {
         Ok(found) => Ok(vec![found]),
-        Err(_) if ops::is_deed_accession(id) => {
-            Ok(router.unique_layouts().into_iter().cloned().collect())
+        Err(err) => {
+            let unknown = matches!(
+                err.downcast_ref::<Error>(),
+                Some(Error::IssueNotFound { .. })
+            );
+            if unknown && ops::is_deed_accession(id) {
+                Ok(router.unique_layouts().into_iter().cloned().collect())
+            } else {
+                Err(err)
+            }
         }
-        Err(err) => Err(err),
     }
 }
 

@@ -261,6 +261,14 @@ impl IssueDoc {
         keyword_src.push_str(content);
         let keyword_lines: Vec<&str> = keyword_src.lines().collect();
         let keywords = todo_keywords_from_lines(&keyword_lines);
+        // Once for the file, then indexed. The test walks a heading's whole
+        // property drawer looking for an id, and it used to run in four
+        // separate passes over every line: finding the first heading, the
+        // heading loop, and the scan for what sits between two headings. It
+        // reads no nesting state, so one pass answers for all of them.
+        let headline_at: Vec<bool> = (0..lines.len())
+            .map(|i| is_vissue_headline(&lines, i, &keywords))
+            .collect();
         let mut nest = OrgScan::new();
         let first_heading = lines
             .iter()
@@ -269,7 +277,7 @@ impl IssueDoc {
                 if nest.observe(line) {
                     return false;
                 }
-                is_vissue_headline(&lines, i, &keywords)
+                headline_at[i]
             })
             .unwrap_or(lines.len());
         let preamble = if first_heading == 0 {
@@ -277,27 +285,24 @@ impl IssueDoc {
         } else {
             lines[..first_heading].join("\n").trim_end().to_string()
         };
+        // Once, not once per heading: the spec is a property of the file.
+        let default_priority = crate::org::priorities_from_preamble(&settings).default;
         let mut headings = Vec::new();
         let mut after = Vec::new();
         let mut i = first_heading;
         while i < lines.len() {
-            if !is_vissue_headline(&lines, i, &keywords) {
+            if !headline_at[i] {
                 i += 1;
                 continue;
             }
-            let (heading, body_end) = parse_heading(
-                &lines,
-                i,
-                &keywords,
-                crate::org::priorities_from_preamble(&settings).default,
-            )
-            .with_context(|| format!("at {}:{}", path.display(), i + 1))?;
+            let (heading, body_end) = parse_heading(&lines, i, &keywords, default_priority)
+                .with_context(|| format!("at {}:{}", path.display(), i + 1))?;
             headings.push(heading);
             i = body_end;
             let inter_start = i;
             let mut nest = OrgScan::new();
             while i < lines.len() {
-                if !nest.observe(lines[i]) && is_vissue_headline(&lines, i, &keywords) {
+                if !nest.observe(lines[i]) && headline_at[i] {
                     break;
                 }
                 i += 1;
@@ -487,10 +492,16 @@ fn is_vissue_headline(lines: &[&str], i: usize, keywords: &[String]) -> bool {
     if !is_issue_headline(lines[i], keywords) {
         return false;
     }
-    peek_heading_id(lines, i).is_none_or(|id| !crate::org::is_gcal_event_id(&id))
+    peek_heading_id(lines, i).is_none_or(|id| !crate::org::is_gcal_event_id(id))
 }
 
-fn peek_heading_id(lines: &[&str], start: usize) -> Option<String> {
+/// The `:ID:` of the heading at `start`, borrowed from the line it sits on.
+///
+/// Called once per line by [`is_vissue_headline`], which runs in several
+/// passes, so every heading's drawer is walked more than once. Returning an
+/// owned `String` meant an allocation each time to answer one question about
+/// the shape of the id.
+fn peek_heading_id<'a>(lines: &[&'a str], start: usize) -> Option<&'a str> {
     let mut i = start + 1;
     while i < lines.len() && !parse_planning_line(lines[i]).is_empty() {
         i += 1;
@@ -515,7 +526,7 @@ fn peek_heading_id(lines: &[&str], start: usize) -> Option<String> {
                     if key.eq_ignore_ascii_case("ID") {
                         let value = value.trim();
                         if !value.is_empty() {
-                            return Some(value.to_string());
+                            return Some(value);
                         }
                     }
                 }

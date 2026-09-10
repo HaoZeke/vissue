@@ -42,10 +42,11 @@ iced = { version = "0.14", default-features = true, features = [
     "lazy",
     "svg",
 ] }
-# 0.16.2, not 0.16.0: virtual_column gained its click handler in the patch
-# release, so the board does not build against the older one and a caret
-# requirement on .0 lets cargo pick it.
-icedtea = "0.16.2"
+# 0.17.0: checkbox is CheckState, label takes LabelFace, markdown_view
+# takes MarkdownOpts, and drawing patterns take caller A11y. 0.16.2
+# compiled, but crates.io current is 0.17 and the 0.16 signatures
+# are gone.
+icedtea = "0.17.0"
 serde.workspace = true
 serde_json.workspace = true
 vissue-control.workspace = true

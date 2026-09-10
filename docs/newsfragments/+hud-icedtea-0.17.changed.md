@@ -1,0 +1,1 @@
+The HUD board now builds against icedtea 0.17. Checkboxes use `CheckState`, labels take a face, help markdown takes outline opts, status pages take A11y, and the old `info_bar` is a `banner`. iced stays 0.14; the TUI stays on ratatui 0.30.2.

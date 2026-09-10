@@ -40,6 +40,7 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
                 "a to add, / to search",
                 None,
                 tea,
+                A11y::new("empty", Role::Status),
             ));
         } else {
             pane = pane.push(task_board(palette, tea));
@@ -56,17 +57,19 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
         pane = pane.push(deed_bar(palette, tea));
     }
     if let Some(kind) = palette.confirm() {
-        pane = pane.push(widget::info_bar(
-            ToastKind::Warning,
+        pane = pane.push(widget::banner(
             format!("confirm {}? y/n", kind.state()),
+            None,
+            Some(ToastKind::Warning),
             tea,
             A11y::new("confirm", Role::Status),
         ));
     }
     if !palette.message().is_empty() {
-        pane = pane.push(widget::info_bar(
-            ToastKind::Info,
+        pane = pane.push(widget::banner(
             palette.message().to_string(),
+            None,
+            Some(ToastKind::Info),
             tea,
             A11y::new("status", Role::Status),
         ));
@@ -86,7 +89,12 @@ fn header(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
         vissue_tui::attach::ServeStatus::Offline => ("offline", Variant::Quiet),
     };
     row![
-        widget::label("vissue", tea, A11y::new("vissue", Role::Header)),
+        widget::label(
+            "vissue",
+            widget::LabelFace::Body,
+            tea,
+            A11y::new("vissue", Role::Header),
+        ),
         widget::badge(
             live,
             None,
@@ -204,6 +212,7 @@ fn project_browser(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
             "Point --prefix at a Software tree.",
             None,
             tea,
+            A11y::new("no-projects", Role::Status),
         );
     }
     let muted = tea.muted;
@@ -440,7 +449,7 @@ fn task_row(item: &HudItem, selected: bool, tea: Tokens) -> Element<'_, Message>
         .into();
     let box_el = widget::checkbox(
         "",
-        done,
+        widget::CheckState::from(done),
         move |_| Message::ToggleDone(id_toggle.clone()),
         tea,
         A11y::new("done", Role::Checkbox).with_disabled(!can_toggle),
@@ -700,7 +709,12 @@ fn help_overlay(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
     let doc = palette.help_md();
     container(
         column![
-            widget::label("vissue", tea, A11y::new("help", Role::Header)),
+            widget::label(
+                "vissue",
+                widget::LabelFace::Body,
+                tea,
+                A11y::new("help", Role::Header),
+            ),
             widget::scroll(
                 widget::markdown_view(
                     &doc.items,
@@ -709,6 +723,7 @@ fn help_overlay(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
                     tea,
                     |url| Message::MdLink(url.to_string()),
                     A11y::new("help-md", Role::Group),
+                    widget::MarkdownOpts::default(),
                 ),
                 tea,
                 A11y::new("help-scroll", Role::Group),
@@ -716,7 +731,7 @@ fn help_overlay(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
                 None,
                 None::<fn(f32) -> Message>,
             ),
-            widget::meta("esc closes help", tea, A11y::new("hint", Role::Status)),
+            meta("esc closes help", tea, A11y::new("hint", Role::Status)),
         ]
         .spacing(12)
         .padding(24),
@@ -772,7 +787,7 @@ fn tree_fold_all(all_open: bool, tea: Tokens) -> Element<'static, Message> {
 fn tree_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     let rows = palette.tree_rows();
     if rows.is_empty() {
-        return widget::meta(
+        return meta(
             tab_empty_copy(DetailTab::Tree),
             tea,
             A11y::new("detail-body", Role::Group),
@@ -788,14 +803,14 @@ fn tree_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
 
 fn notes_body<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     let Some(detail) = palette.detail() else {
-        return widget::meta(
+        return meta(
             tab_empty_copy(DetailTab::Notes),
             tea,
             A11y::new("notes", Role::Group),
         );
     };
     if detail.logbook.is_empty() {
-        return widget::meta(
+        return meta(
             tab_empty_copy(DetailTab::Notes),
             tea,
             A11y::new("notes", Role::Group),
@@ -805,7 +820,7 @@ fn notes_body<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     for (i, entry) in detail.logbook.iter().enumerate() {
         let mut card = column![].spacing(4).width(Fill);
         if !entry.timestamp.is_empty() {
-            card = card.push(widget::meta(
+            card = card.push(meta(
                 crate::dates::format_org_stamps(&entry.timestamp),
                 tea,
                 A11y::new("when", Role::Status),
@@ -878,7 +893,7 @@ fn issue_fields<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
 
 fn issue_prose<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     let Some(excerpt) = palette.excerpt() else {
-        return widget::meta(
+        return meta(
             if palette.detail_body().is_empty() {
                 "Select a row."
             } else {
@@ -889,14 +904,14 @@ fn issue_prose<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         );
     };
     if excerpt.suppressed {
-        return widget::meta(
+        return meta(
             excerpt.text.as_str(),
             tea,
             A11y::new("excerpt", Role::Group),
         );
     }
     let Some(detail) = palette.detail() else {
-        return widget::meta(
+        return meta(
             if palette.detail_body().is_empty() {
                 "Select a row."
             } else {
@@ -907,16 +922,16 @@ fn issue_prose<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         );
     };
     if detail.body.trim().is_empty() {
-        return widget::meta("No body.", tea, A11y::new("body", Role::Status));
+        return meta("No body.", tea, A11y::new("body", Role::Status));
     }
     select_field(palette, "excerpt-body", FontFace::Ui, tea)
-        .unwrap_or_else(|| widget::meta("No body.", tea, A11y::new("body", Role::Status)))
+        .unwrap_or_else(|| meta("No body.", tea, A11y::new("body", Role::Status)))
 }
 
 fn related_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     let hits = palette.related_hits();
     if hits.is_empty() {
-        return widget::meta(
+        return meta(
             tab_empty_copy(DetailTab::Related),
             tea,
             A11y::new("related", Role::Group),
@@ -956,7 +971,7 @@ fn related_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         .width(Fill)
         .align_x(Alignment::Start);
         if !why.is_empty() {
-            body = body.push(widget::meta(why, tea, A11y::new("why", Role::Status)));
+            body = body.push(meta(why, tea, A11y::new("why", Role::Status)));
         }
         let selected = selected == Some(hit.id.as_str());
         col = col.push(
@@ -980,14 +995,14 @@ fn related_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
 /// it stays obvious which piece of work made which product.
 fn recall_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     let Some(set) = palette.recall() else {
-        return widget::meta(
+        return meta(
             tab_empty_copy(DetailTab::Recall),
             tea,
             A11y::new("recall", Role::Group),
         );
     };
     if set.plan.is_empty() && set.inputs.is_empty() && set.produced.is_empty() {
-        return widget::meta(
+        return meta(
             tab_empty_copy(DetailTab::Recall),
             tea,
             A11y::new("recall", Role::Group),
@@ -1000,7 +1015,7 @@ fn recall_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
             mouse_area(
                 container(
                     column![
-                        widget::meta(
+                        meta(
                             format!("plan  {}", step.id),
                             tea,
                             A11y::new("plan", Role::Status)
@@ -1029,7 +1044,7 @@ fn recall_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
             tea.text
         };
         let mut body = column![
-            widget::meta(
+            meta(
                 format!("{}  {}  [{}]", input.state, input.id, input.relation),
                 tea,
                 A11y::new("input", Role::Status)
@@ -1045,21 +1060,21 @@ fn recall_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         .width(Fill)
         .align_x(Alignment::Start);
         for deed in &input.deeds {
-            body = body.push(widget::meta(
+            body = body.push(meta(
                 deed.clone(),
                 tea,
                 A11y::new("deed", Role::Status),
             ));
         }
         if input.deeds.is_empty() {
-            body = body.push(widget::meta(
+            body = body.push(meta(
                 "no deeds cited".to_string(),
                 tea,
                 A11y::new("deed", Role::Status),
             ));
         }
         if let Some(note) = &input.last_note {
-            body = body.push(widget::meta(
+            body = body.push(meta(
                 format!("note: {}", note.lines().next().unwrap_or_default().trim()),
                 tea,
                 A11y::new("note", Role::Status),
@@ -1075,7 +1090,7 @@ fn recall_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         );
     }
     for deed in &set.produced {
-        col = col.push(widget::meta(
+        col = col.push(meta(
             format!("produced  {deed}"),
             tea,
             A11y::new("produced", Role::Status),
@@ -1128,6 +1143,11 @@ fn tab_empty_copy(tab: DetailTab) -> &'static str {
 
 fn pane_scroll<'a>(child: Element<'a, Message>, tea: Tokens, a11y: A11y) -> Element<'a, Message> {
     widget::scroll(child, tea, a11y, false, None, None::<fn(f32) -> Message>)
+}
+
+/// icedtea 0.17 folded `widget::meta` into [`widget::label`] + [`widget::LabelFace::Meta`].
+fn meta<'a>(s: impl Into<String>, tea: Tokens, a11y: A11y) -> Element<'a, Message> {
+    widget::label(s, widget::LabelFace::Meta, tea, a11y)
 }
 
 fn empty_copy(palette: &Palette) -> &'static str {

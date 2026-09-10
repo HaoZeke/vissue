@@ -195,8 +195,11 @@ mod tests {
         }
 
         // Named, so a rename that leaves the router happy still fails here.
-        let names: Vec<&str> = declared.iter().map(|p| p.name.as_str()).collect();
-        assert_eq!(names, ["pack_a_slice", "pick_up_work", "check_citations"]);
+        // As a set: the router lists by name, and what matters is which
+        // prompts are declared rather than the order a listing returns them.
+        let mut names: Vec<&str> = declared.iter().map(|p| p.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["check_citations", "pack_a_slice", "pick_up_work"]);
 
         let packed = server
             .pack_a_slice_prompt(Parameters(SliceArgs {

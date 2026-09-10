@@ -285,6 +285,10 @@ Work a node: =vissue_recall= before starting, to open what the plan says the
 work stands on; =vissue_deed= when it finishes, to name what it produced;
 =vissue_consensus= before acting on what a plurality looks like.
 
+Hand work over: =vissue_satchel= packs a slice of the tracker into a
+directory somebody else can open; =vissue_satchel_seal= remanifests it after
+the deed store fills the payload; =vissue_satchel_verify= checks what arrived.
+
 * The operation set
 
 =schema/vissue.capnp= states the verb set once, naming each verb on all three

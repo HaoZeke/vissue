@@ -1671,6 +1671,7 @@ mod tests {
             "vissue_recall",
             "vissue_related",
             "vissue_roadmap",
+            "vissue_satchel_verify",
             "vissue_search",
             "vissue_show",
             "vissue_tree",

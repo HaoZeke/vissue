@@ -1177,6 +1177,35 @@ impl VissueServer {
             .map_err(|e| McpError::resource_not_found(format!("{e}"), None))
     }
 
+    /// Ids matching what has been typed, by id prefix then by title.
+    ///
+    /// Split out from the protocol handler so the matching can be tested
+    /// without standing up a session.
+    fn complete_issue_ids(&self, typed: &str) -> Result<Vec<String>, McpError> {
+        let typed = typed.to_ascii_lowercase();
+        let mut hit: Vec<String> = Vec::new();
+        for pref in self
+            .router
+            .visible_projects()
+            .map_err(|e| McpError::internal_error(format!("{e}"), None))?
+        {
+            let rows = agent::issues_rows(&pref.layout, Some(&pref.dir), None, false)
+                .map_err(|e| McpError::internal_error(format!("{e}"), None))?;
+            for row in rows {
+                let id = row.id.to_ascii_lowercase();
+                if typed.is_empty()
+                    || id.starts_with(&typed)
+                    || row.title.to_ascii_lowercase().contains(&typed)
+                {
+                    hit.push(row.id);
+                }
+            }
+        }
+        hit.sort_unstable();
+        hit.dedup();
+        Ok(hit)
+    }
+
     /// One project's issues, as the org a reader would open.
     fn read_project(&self, project: &str) -> Result<String, McpError> {
         let pref = self.router.route(project);
@@ -1197,6 +1226,7 @@ impl ServerHandler for VissueServer {
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
+                .enable_completions()
                 .build(),
         )
         .with_server_info(Implementation::new("vissue", env!("CARGO_PKG_VERSION")))
@@ -1251,6 +1281,42 @@ impl ServerHandler for VissueServer {
             Some("The org text of one issue, by id, with secrets screened out.".to_string());
         template.mime_type = Some(ORG.to_string());
         Ok(ListResourceTemplatesResult::with_all_items(vec![template]))
+    }
+
+    /// Fill in the id a resource template asks for.
+    ///
+    /// The spec completes resource template and prompt arguments, not tool
+    /// arguments, which is the right shape here anyway: the template is the
+    /// one place a caller has to produce an id from nothing. Every tool that
+    /// answers a question hands ids back, so a caller working from an answer
+    /// already has them; a caller starting from the template does not.
+    ///
+    /// Matching is a prefix on the id, then anywhere in the title, because a
+    /// person completing an issue remembers what it was about more often than
+    /// what it was called. Capped at the hundred the spec allows, with
+    /// `has_more` set so a client can say the list is a window rather than the
+    /// answer.
+    async fn complete(
+        &self,
+        request: CompleteRequestParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<CompleteResult, McpError> {
+        let Reference::Resource(template) = &request.r#ref else {
+            return Ok(CompleteResult::default());
+        };
+        if !template.uri.starts_with(&format!("{SCHEME}://issue/")) || request.argument.name != "id"
+        {
+            return Ok(CompleteResult::default());
+        }
+        let mut hit = self.complete_issue_ids(&request.argument.value)?;
+        let total = hit.len();
+        hit.truncate(CompletionInfo::MAX_VALUES);
+        let more = total > hit.len();
+        let mut completion =
+            CompletionInfo::new(hit).map_err(|e| McpError::internal_error(e, None))?;
+        completion.total = u32::try_from(total).ok();
+        completion.has_more = Some(more);
+        Ok(CompleteResult::new(completion))
     }
 
     async fn read_resource(
@@ -1676,6 +1742,35 @@ mod tests {
         // A uri that names nothing is not found rather than empty, which is
         // the same distinction the tracker root makes.
         assert!(server.read_issue("atlas-nosuch").is_err());
+    }
+
+    /// The template's id completes from the corpus, by id and by title.
+    ///
+    /// A caller working from any tool's answer already has ids. A caller
+    /// starting from the template has nothing, which is the case this exists
+    /// for, and remembering what an issue was about is more common than
+    /// remembering its suffix.
+    #[tokio::test]
+    async fn the_issue_template_completes_its_id() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixture_vault");
+        let server = VissueServer::with_layout(Layout::new(&root, DEFAULT_PREFIX));
+
+        let ids = server.complete_issue_ids("atlas-2c").expect("completes");
+        assert!(ids.contains(&"atlas-2c3d".to_string()), "{ids:?}");
+
+        // Empty offers the corpus rather than nothing, which is what a client
+        // opening a picker wants.
+        let all = server.complete_issue_ids("").expect("completes");
+        assert!(all.len() >= ids.len(), "{} vs {}", all.len(), ids.len());
+
+        // A suffix nobody has completes to nothing rather than everything.
+        assert!(
+            server
+                .complete_issue_ids("zzzz-nope")
+                .expect("completes")
+                .is_empty()
+        );
     }
 
     /// The tools that answer with data publish the shape of it.

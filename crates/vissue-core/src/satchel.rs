@@ -302,6 +302,33 @@ fn shortfall(dir: &Path, satchel: &Satchel) -> Vec<String> {
     )]
 }
 
+/// What this check did and did not establish about who packed the satchel.
+///
+/// The payload matching the manifest says the bag arrived as it was written.
+/// It says nothing about who wrote it, because a receiver recomputing digests
+/// from the bag they were handed is checking the bag against itself. That
+/// second question needs the signature over the manifest, and the keys a
+/// reader accepts live in their deed store rather than here, so this names
+/// what is left rather than answering it.
+///
+/// Saying so is the point. A check that reports "ok" for the first question
+/// and stays quiet about the second invites the reader to hear both.
+fn signature_note(dir: &Path) -> String {
+    let manifest = dir.join("manifest-sha256.txt");
+    let signature = manifest.with_extension("txt.sig");
+    if signature.is_file() {
+        format!(
+            "the payload matches the manifest, and the manifest carries a signature this check \
+             did not verify: `deedar vouch check {}` says whether a key you accept made it",
+            manifest.display()
+        )
+    } else {
+        "the payload matches the manifest, and the manifest is unsigned, so this establishes \
+         that the bag arrived as written and nothing about who wrote it"
+            .to_string()
+    }
+}
+
 /// How many atoms the pack put in, counted rather than parsed: the receiver
 /// wants to know something came, and reading them is their business.
 fn atom_lines(dir: &Path) -> usize {
@@ -397,6 +424,7 @@ pub fn verify(dir: &Path) -> Result<Report> {
         if atoms > 0 {
             notes.push(format!("{atoms} atoms arrived from a pack"));
         }
+        notes.push(signature_note(dir));
         Ok(Report {
             issues: satchel.issues.len(),
             needs: satchel.needs.len(),
@@ -686,6 +714,47 @@ mod tests {
         std::fs::write(atoms.join("late.jsonl"), "{\"id\":\"a3\"}\n").expect("write");
         let err = verify(out.path()).expect_err("a late atom file passed");
         assert!(format!("{err}").contains("unlisted"), "{err}");
+    }
+
+    /// A clean check says what it established and what it did not.
+    ///
+    /// The failure this guards is a reader running one command, seeing that
+    /// the payload matches, and hearing that the bag is trustworthy. Matching
+    /// a manifest a stranger could have written establishes nothing about who
+    /// wrote it.
+    #[test]
+    fn checking_a_satchel_says_what_it_did_not_check() {
+        let (_dir, layout) = tracker();
+        made(&layout, "first", CreateOpts::default());
+        let out = tempfile::tempdir().expect("out");
+        pack(
+            &layout,
+            &Slice {
+                projects: vec!["sample".into()],
+                issues: Vec::new(),
+            },
+            out.path(),
+        )
+        .expect("packs");
+
+        let unsigned = verify(out.path()).expect("checks out");
+        let said = unsigned.notes.join(" ");
+        assert!(
+            said.contains("nothing about who wrote it"),
+            "an unsigned satchel did not say so: {said}"
+        );
+
+        // With a signature beside the manifest, the check names the verb that
+        // answers the other question rather than implying it answered it.
+        std::fs::write(
+            out.path().join("manifest-sha256.txt.sig"),
+            "ed25519 aa bb\n",
+        )
+        .expect("write");
+        let signed = verify(out.path()).expect("still checks out");
+        let said = signed.notes.join(" ");
+        assert!(said.contains("did not verify"), "{said}");
+        assert!(said.contains("vouch check"), "{said}");
     }
 
     /// A slice that names nothing is not a slice, and an issue that is not

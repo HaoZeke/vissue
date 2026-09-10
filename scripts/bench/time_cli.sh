@@ -5,7 +5,7 @@
 set -euo pipefail
 root="${1:?tracker root}"; runs="${2:-7}"
 export VISSUE_ROOT="$root" VISSUE_PREFIX=Issues
-some_id=$(grep -rh "^:ID:" "$root/Issues" | head -1 | awk "{print \$2}")
+some_id=$(grep -rh "^:ID:" "$root/Issues" | awk 'NR==1{print $2}')
 verbs=("list" "ready" "count" "check" "search lease" "show $some_id" "tree $some_id" "cycles" "digest" "agenda")
 printf "%-22s %10s %10s\n" verb min_ms median_ms
 for v in "${verbs[@]}"; do

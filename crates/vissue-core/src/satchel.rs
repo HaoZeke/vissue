@@ -369,13 +369,16 @@ fn provenance_note(dir: &Path, enclosed: &BTreeSet<String>) -> Option<String> {
         .collect();
     if bare.is_empty() {
         return Some(format!(
-            "{} deeds arrived carrying a proof this check does not read: `deedar check {}` says              whether the sender's log held them before the handover",
+            "{} deeds arrived carrying a proof this check does not read: \
+             `deedar check {}` says whether the sender's log held them before \
+             the handover",
             enclosed.len(),
             dir.display()
         ));
     }
     Some(format!(
-        "{} of {} enclosed deeds carry no proof, so nothing says they were logged before they          were handed over: {}",
+        "{} of {} enclosed deeds carry no proof, so nothing says they were \
+         logged before they were handed over: {}",
         bare.len(),
         enclosed.len(),
         bare.iter()

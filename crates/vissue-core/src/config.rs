@@ -54,7 +54,8 @@ impl Layout {
 
     /// Resolve from explicit arguments, falling back to the environment, the
     /// directory the caller stands in, the seat's own file, and finally the
-    /// compiled defaults. See [`choose_root`] for the order and why.
+    /// compiled defaults. The order is the caller, then the environment, then
+    /// the working directory when that is a tracker, then the seat file.
     ///
     /// # Errors
     ///

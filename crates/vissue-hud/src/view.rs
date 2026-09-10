@@ -1060,11 +1060,7 @@ fn recall_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
         .width(Fill)
         .align_x(Alignment::Start);
         for deed in &input.deeds {
-            body = body.push(meta(
-                deed.clone(),
-                tea,
-                A11y::new("deed", Role::Status),
-            ));
+            body = body.push(meta(deed.clone(), tea, A11y::new("deed", Role::Status)));
         }
         if input.deeds.is_empty() {
             body = body.push(meta(

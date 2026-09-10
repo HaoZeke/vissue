@@ -40,7 +40,7 @@ neighborhood over declared edges, the same discipline as a citation
 graph [12], [14], [17] and the opposite of an extracted memory graph
 [24], [25], [26]. `:DEEDS:` names what a unit of work produced rather
 than describing it [30], and `consensus` averages opinions over declared
-trust [27], [28], [29]. The numbered sources are in the
+trust [27], [28], [29], [31]. The numbered sources are in the
 [explanation](https://vissue.rgoswami.me/explanation.html); OokCite is
 how they were found and checked, not a second reading list to copy.
 
@@ -291,6 +291,23 @@ doubly stochastic and the consensus is the tally as a fraction.
 [consensus.trust]
 reviewer = { maintainer = 3.0, worker = 1.0 }
 worker = { maintainer = 1.0 }
+```
+
+DeGroot is the first model of a family, not the last word on it. On a connected
+aperiodic graph it always converges to one number, which is a property of the
+update rule rather than a finding about the group, so it cannot represent
+agents who listen and still hold their ground. Friedkin and Johnsen [31] add
+one parameter for that: each agent keeps weight `1 - susceptibility` on the
+ballot it cast, and what settles is a profile of persistent disagreement rather
+than a single share. The outcome then reports `anchored` with the spread the
+group kept, which is a different answer from a split trust graph.
+
+```toml
+[consensus]
+susceptibility = 0.8            # 1.0 is DeGroot, and the default
+
+[consensus.susceptibility_of]
+maintainer = 0.5                # this one holds its ground harder
 ```
 
 ## Terminal board and HUD

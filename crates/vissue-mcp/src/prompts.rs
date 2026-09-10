@@ -61,7 +61,7 @@ impl VissueServer {
         let issues = args.issues.unwrap_or_default();
         if projects.trim().is_empty() && issues.trim().is_empty() {
             return Err(McpError::invalid_params(
-                "a slice that names nothing is not a slice: give projects, issues, or both".into(),
+                "a slice that names nothing is not a slice: give projects, issues, or both",
                 None,
             ));
         }

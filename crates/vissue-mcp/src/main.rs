@@ -10,6 +10,7 @@
 
 use rmcp::ServiceExt;
 
+mod prompts;
 mod server;
 mod tools;
 

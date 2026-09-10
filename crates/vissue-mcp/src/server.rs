@@ -2,7 +2,8 @@
 
 use rmcp::{
     ErrorData as McpError, handler::server::ServerHandler, handler::server::wrapper::Json,
-    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
+    handler::server::wrapper::Parameters, model::*, prompt_handler, tool, tool_handler,
+    tool_router,
 };
 
 use vissue_core::config::Layout;
@@ -34,6 +35,12 @@ use std::path::PathBuf;
 pub struct VissueServer {
     layout: Layout,
     router: Router,
+}
+
+/// Which list a completion request is asking for.
+enum Wanted {
+    Issue,
+    Project,
 }
 
 /// Where a `reject` should put its successor.
@@ -1206,6 +1213,25 @@ impl VissueServer {
         Ok(hit)
     }
 
+    /// Which list a completion is drawn from.
+    fn complete_projects(&self, prefix: &str) -> Result<Vec<String>, McpError> {
+        let prefix = prefix.to_ascii_lowercase();
+        // A comma separated argument completes its last field, because that is
+        // the one the caller is typing.
+        let tail = prefix.rsplit(',').next().unwrap_or_default().trim();
+        let mut hit: Vec<String> = self
+            .router
+            .visible_projects()
+            .map_err(|e| McpError::internal_error(format!("{e}"), None))?
+            .into_iter()
+            .map(|p| p.key)
+            .filter(|key| key.to_ascii_lowercase().starts_with(tail))
+            .collect();
+        hit.sort_unstable();
+        hit.dedup();
+        Ok(hit)
+    }
+
     /// One project's issues, as the org a reader would open.
     fn read_project(&self, project: &str) -> Result<String, McpError> {
         let pref = self.router.route(project);
@@ -1220,12 +1246,14 @@ impl VissueServer {
 }
 
 #[tool_handler]
+#[prompt_handler(router = Self::prompt_router())]
 impl ServerHandler for VissueServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
+                .enable_prompts()
                 .enable_completions()
                 .build(),
         )
@@ -1283,15 +1311,15 @@ impl ServerHandler for VissueServer {
         Ok(ListResourceTemplatesResult::with_all_items(vec![template]))
     }
 
-    /// Fill in the id a resource template asks for.
+    /// Fill in the id or the project a template or a prompt asks for.
     ///
     /// The spec completes resource template and prompt arguments, not tool
-    /// arguments, which is the right shape here anyway: the template is the
-    /// one place a caller has to produce an id from nothing. Every tool that
+    /// arguments, which is the right shape here anyway: those are the two
+    /// places a caller has to produce a name from nothing. Every tool that
     /// answers a question hands ids back, so a caller working from an answer
-    /// already has them; a caller starting from the template does not.
+    /// already has them; a caller starting from a blank prompt does not.
     ///
-    /// Matching is a prefix on the id, then anywhere in the title, because a
+    /// Matching on an id is a prefix, then anywhere in the title, because a
     /// person completing an issue remembers what it was about more often than
     /// what it was called. Capped at the hundred the spec allows, with
     /// `has_more` set so a client can say the list is a window rather than the
@@ -1301,14 +1329,24 @@ impl ServerHandler for VissueServer {
         request: CompleteRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<CompleteResult, McpError> {
-        let Reference::Resource(template) = &request.r#ref else {
-            return Ok(CompleteResult::default());
+        let wants = &request.argument.name;
+        let asking_for = match &request.r#ref {
+            // The one template, whose only argument is an id.
+            Reference::Resource(template)
+                if template.uri.starts_with(&format!("{SCHEME}://issue/")) && wants == "id" =>
+            {
+                Wanted::Issue
+            }
+            // A prompt names its arguments, so the argument name is what says
+            // which list to draw from rather than the prompt it belongs to.
+            Reference::Prompt(_) if wants == "issue" || wants == "issues" => Wanted::Issue,
+            Reference::Prompt(_) if wants == "project" || wants == "projects" => Wanted::Project,
+            _ => return Ok(CompleteResult::default()),
         };
-        if !template.uri.starts_with(&format!("{SCHEME}://issue/")) || request.argument.name != "id"
-        {
-            return Ok(CompleteResult::default());
-        }
-        let mut hit = self.complete_issue_ids(&request.argument.value)?;
+        let mut hit = match asking_for {
+            Wanted::Issue => self.complete_issue_ids(&request.argument.value)?,
+            Wanted::Project => self.complete_projects(&request.argument.value)?,
+        };
         let total = hit.len();
         hit.truncate(CompletionInfo::MAX_VALUES);
         let more = total > hit.len();

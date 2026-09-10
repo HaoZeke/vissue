@@ -342,20 +342,73 @@ fn agenda_orders_overdue_then_soonest_and_respects_the_horizon() {
 
     let out = report::agenda(&layout, 14, Some("atlas")).unwrap();
     let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines.len(), 2, "{out}");
     assert!(
-        lines[0].contains("atlas-1a2b") && lines[0].contains("3d overdue"),
+        lines[0] == "deadline"
+            && lines[1].contains("atlas-1a2b")
+            && lines[1].contains("3d overdue"),
         "{out}"
     );
     assert!(
-        lines[1].contains("atlas-2c3d") && lines[1].contains("in 2d"),
+        lines.iter().any(|l| *l == "scheduled")
+            && out.contains("atlas-2c3d")
+            && out.contains("in 2d"),
         "{out}"
     );
+    let deadline_at = lines.iter().position(|l| *l == "deadline").unwrap();
+    let scheduled_at = lines.iter().position(|l| *l == "scheduled").unwrap();
+    assert!(deadline_at < scheduled_at, "{out}");
     assert!(!out.contains("atlas-3e4f"), "{out}");
 
     // A 100-day horizon pulls the far deadline in.
     let wide = report::agenda(&layout, 100, Some("atlas")).unwrap();
     assert!(wide.contains("atlas-3e4f"), "{wide}");
+}
+
+#[test]
+fn agenda_keeps_appointments_out_of_the_scheduled_queue() {
+    let (_dir, layout) = writable_copy();
+    let path = layout.project_issues_path("atlas");
+    let mut doc = IssueDoc::parse_file("atlas", &path).unwrap();
+    let today = chrono::Local::now().date_naive();
+    let stamp = |d: chrono::NaiveDate| format!("<{}>", d.format("%Y-%m-%d %a"));
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-1a2b")
+        .unwrap()
+        .properties
+        .insert("DEADLINE".into(), stamp(today - chrono::Duration::days(1)));
+    doc.headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-2c3d")
+        .unwrap()
+        .properties
+        .insert("SCHEDULED".into(), stamp(today));
+    let meet = doc
+        .headings
+        .iter_mut()
+        .find(|h| h.id == "atlas-3e4f")
+        .unwrap();
+    meet.title = format!("Standup {}", stamp(today + chrono::Duration::days(1)));
+    doc.write().unwrap();
+
+    let out = report::agenda(&layout, 14, Some("atlas")).unwrap();
+    let kinds: Vec<&str> = out
+        .lines()
+        .filter(|l| matches!(*l, "deadline" | "scheduled" | "appointment"))
+        .collect();
+    assert_eq!(kinds, ["deadline", "scheduled", "appointment"], "{out}");
+    assert!(
+        out.contains("atlas-1a2b") && out.contains("1d overdue"),
+        "{out}"
+    );
+    assert!(
+        out.contains("scheduled") && out.contains("atlas-2c3d"),
+        "{out}"
+    );
+    assert!(
+        out.contains("appointment") && out.contains("atlas-3e4f") && out.contains("  on       "),
+        "{out}"
+    );
 }
 
 #[test]

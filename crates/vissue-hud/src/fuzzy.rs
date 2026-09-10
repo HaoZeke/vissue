@@ -174,6 +174,7 @@ mod tests {
             extra: String::new(),
             parent: None,
             depth: 0,
+            group: None,
         }
     }
 

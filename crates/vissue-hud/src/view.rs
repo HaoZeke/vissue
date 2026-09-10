@@ -1,6 +1,6 @@
 //! Board face on icedtea constructors. Drawing only; logic lives in [`crate::palette`].
 
-use iced::widget::{Space, button, column, container, mouse_area, row, text};
+use iced::widget::{Id, Space, button, column, container, mouse_area, row, text};
 use iced::{Alignment, Element, Fill, Length};
 use icedtea::a11y::{A11y, Role};
 use icedtea::collection::Tabs;
@@ -669,6 +669,9 @@ fn list_detail<'a>(
     list: Element<'a, Message>,
     tea: Tokens,
 ) -> Element<'a, Message> {
+    if palette.preview_hidden() {
+        return list;
+    }
     icedtea::layout::split_view(
         container(list).width(Fill).into(),
         container(detail_panel(palette, tea)).width(Fill).into(),
@@ -920,13 +923,16 @@ fn notes_body<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
 }
 
 fn issue_main<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
-    pane_scroll(
+    widget::scroll(
         column![issue_fields(palette, tea), issue_prose(palette, tea)]
             .spacing(12)
             .width(Fill)
             .into(),
         tea,
         A11y::new("issue", Role::Group),
+        false,
+        Some(Id::from(Palette::PREVIEW_SCROLL_ID)),
+        Some(Message::PreviewScrolled),
     )
 }
 

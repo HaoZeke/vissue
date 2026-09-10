@@ -668,13 +668,21 @@ fn row_from_claim(row: vissue_core::views::ClaimRow) -> BoardRow {
 }
 
 fn row_from_agenda(row: vissue_core::views::AgendaRow) -> BoardRow {
+    let extra = match row.kind.as_str() {
+        "deadline" if row.overdue_days > 0 => {
+            format!("deadline {} {}d overdue", row.date, row.overdue_days)
+        }
+        "deadline" => format!("deadline {}", row.date),
+        "scheduled" => format!("scheduled {}", row.date),
+        _ => format!("on {}", row.date),
+    };
     BoardRow {
         id: row.id,
         state: row.state,
         priority: row.priority,
         title: row.title,
         project: row.project,
-        extra: format!("{} {}", row.kind, row.date),
+        extra,
     }
 }
 

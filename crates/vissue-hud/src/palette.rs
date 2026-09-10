@@ -176,6 +176,8 @@ pub struct HudItem {
     pub parent: Option<String>,
     /// Forest indent; `0` for a root heading.
     pub depth: usize,
+    /// Agenda class (`deadline`, `scheduled`, `appointment`) when grouped.
+    pub group: Option<String>,
 }
 
 /// One row on the home project list.
@@ -258,6 +260,7 @@ impl HudItem {
             extra: row.claimed_by.clone().unwrap_or_default(),
             parent: row.parent,
             depth: 0,
+            group: None,
         }
     }
 
@@ -275,6 +278,7 @@ impl HudItem {
             extra: hit.snippet,
             parent: None,
             depth: 0,
+            group: None,
         }
     }
 
@@ -297,11 +301,19 @@ impl HudItem {
             extra,
             parent: None,
             depth: 0,
+            group: None,
         }
     }
 
     fn from_agenda(row: vissue_core::views::AgendaRow) -> Self {
-        let extra = format!("{}  {}", row.kind, row.date);
+        let extra = match row.kind.as_str() {
+            "deadline" if row.overdue_days > 0 => {
+                format!("deadline  {}  {}d overdue", row.date, row.overdue_days)
+            }
+            "deadline" => format!("deadline  {}", row.date),
+            "scheduled" => format!("scheduled  {}", row.date),
+            _ => format!("on  {}", row.date),
+        };
         Self {
             id: row.id,
             title: row.title,
@@ -310,11 +322,12 @@ impl HudItem {
             priority: row.priority,
             source: ItemSource::Agenda,
             claimed_by: None,
-            due: Some(row.date),
+            due: Some(row.date.clone()),
             blocked_by: Vec::new(),
             extra,
             parent: None,
             depth: 0,
+            group: Some(row.kind),
         }
     }
 
@@ -382,6 +395,11 @@ pub struct Palette {
     command_query: String,
     command_sel: usize,
     command_recents: Vec<ActionId>,
+    preview_hidden: bool,
+    preview_offset: f32,
+    frozen_ids: Option<Vec<String>>,
+    frozen_sel: Option<String>,
+    frozen_project_sel: Option<usize>,
     project: Option<String>,
     projects: Vec<String>,
     confirm: Option<Confirm>,
@@ -501,6 +519,11 @@ impl Palette {
             command_query: String::new(),
             command_sel: 0,
             command_recents: Vec::new(),
+            preview_hidden: false,
+            preview_offset: 0.0,
+            frozen_ids: None,
+            frozen_sel: None,
+            frozen_project_sel: None,
             project: None,
             projects,
             confirm: None,
@@ -862,7 +885,7 @@ impl Palette {
 
     /// Visible task-board rows: group headers, then the open cards.
     pub fn board_rows(&self) -> Vec<BoardRow<'_>> {
-        let group = self.project.is_none();
+        let group = self.project.is_none() || self.filter == BoardFilter::Agenda;
         let searching = !self.query.is_empty();
         let mut out = Vec::new();
         for section in self.sections() {
@@ -1008,20 +1031,26 @@ impl Palette {
         let _ = self.reload();
     }
 
+    fn section_key(item: &HudItem) -> &str {
+        item.group.as_deref().unwrap_or(item.project.as_str())
+    }
+
     /// Project runs over the current filter, for collapsible headers.
+    /// Agenda groups by Org class (deadline, scheduled, appointment).
     pub fn sections(&self) -> Vec<ProjectSection<'_>> {
         let mut out: Vec<ProjectSection<'_>> = Vec::new();
         for (i, item) in self.filtered_items().into_iter().enumerate() {
+            let key = Self::section_key(item);
             match out.last_mut() {
-                Some(sec) if sec.project == item.project => {
+                Some(sec) if sec.project == key => {
                     sec.end = i + 1;
                     sec.rows.push((i, item));
                 }
                 _ => out.push(ProjectSection {
-                    project: item.project.as_str(),
+                    project: key,
                     start: i,
                     end: i + 1,
-                    collapsed: self.collapsed.contains(&item.project),
+                    collapsed: self.collapsed.contains(key),
                     rows: vec![(i, item)],
                 }),
             }
@@ -1041,13 +1070,17 @@ impl Palette {
         if self.collapse_seeded {
             return;
         }
+        if self.filter == BoardFilter::Agenda {
+            self.collapse_seeded = true;
+            return;
+        }
         let open = self
             .selected_item()
-            .map(|i| i.project.clone())
-            .or_else(|| self.items.first().map(|i| i.project.clone()));
+            .map(|i| Self::section_key(i).to_string())
+            .or_else(|| self.items.first().map(|i| Self::section_key(i).to_string()));
         let mut seen = std::collections::BTreeSet::new();
         for item in &self.items {
-            seen.insert(item.project.clone());
+            seen.insert(Self::section_key(item).to_string());
         }
         if seen.len() <= 1 {
             self.collapse_seeded = true;
@@ -1194,10 +1227,65 @@ impl Palette {
     /// Map the overlay window.
     pub fn show(&mut self) {
         self.visible = true;
+        self.restore_frozen_layout();
     }
 
-    /// Unmap the overlay and drop drafts.
+    fn restore_frozen_layout(&mut self) {
+        let Some(ids) = self.frozen_ids.take() else {
+            return;
+        };
+        if self.browsing() {
+            if let Some(sel) = self.frozen_project_sel.take()
+                && sel < self.project_cards.len()
+            {
+                self.project_sel = sel;
+                self.sync_project_selection();
+            }
+            return;
+        }
+        if ids.is_empty() {
+            return;
+        }
+        let mut by_id: std::collections::BTreeMap<String, HudItem> = self
+            .items
+            .drain(..)
+            .map(|item| (item.id.clone(), item))
+            .collect();
+        let mut ordered = Vec::with_capacity(by_id.len());
+        for id in &ids {
+            if let Some(item) = by_id.remove(id) {
+                ordered.push(item);
+            }
+        }
+        ordered.extend(by_id.into_values());
+        self.items = ordered;
+        if !self.query.is_empty() && self.filter != BoardFilter::Search {
+            self.filtered = rank_indices(&self.query, &self.items);
+        } else {
+            self.filtered = (0..self.items.len()).collect();
+        }
+        if let Some(id) = self.frozen_sel.take()
+            && let Some(pos) = self
+                .filtered
+                .iter()
+                .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
+        {
+            self.selected = pos;
+        }
+        self.refresh_task_list();
+    }
+
+    /// Unmap the overlay and drop drafts. The row order is frozen so a
+    /// later show does not reflow the board.
     pub fn hide(&mut self) {
+        self.frozen_ids = Some(
+            self.filtered_items()
+                .into_iter()
+                .map(|item| item.id.clone())
+                .collect(),
+        );
+        self.frozen_sel = self.selected_id().map(str::to_string);
+        self.frozen_project_sel = Some(self.project_sel);
         self.note_draft = None;
         self.deed_draft = None;
         self.add_draft.clear();
@@ -1397,6 +1485,15 @@ impl Palette {
             }
             ActionId::Help => self.focus = Focus::Help,
             ActionId::Palette => self.open_command_palette(),
+            ActionId::PreviewToggle => {
+                self.preview_hidden = !self.preview_hidden;
+            }
+            ActionId::PreviewDown => {
+                self.preview_offset = (self.preview_offset + 24.0).min(4000.0);
+            }
+            ActionId::PreviewUp => {
+                self.preview_offset = (self.preview_offset - 24.0).max(0.0);
+            }
         }
     }
 
@@ -1530,6 +1627,24 @@ impl Palette {
     pub fn run_command_at(&mut self, index: usize) {
         self.command_sel = index;
         self.run_command_hit();
+    }
+
+    /// Whether the detail preview is hidden.
+    pub fn preview_hidden(&self) -> bool {
+        self.preview_hidden
+    }
+
+    /// Vertical offset of the detail preview, in pixels.
+    pub fn preview_offset(&self) -> f32 {
+        self.preview_offset
+    }
+
+    /// Id of the issue-body scroller. `J`/`K` drive `scroll_to` on this id.
+    pub const PREVIEW_SCROLL_ID: &'static str = "preview-scroll";
+
+    /// Remember the preview scroller's pixel offset (wheel or `J`/`K`).
+    pub fn set_preview_offset(&mut self, y: f32) {
+        self.preview_offset = y.clamp(0.0, 4000.0);
     }
 
     fn handle_note_key(&mut self, key: PaletteKey) {
@@ -1980,6 +2095,9 @@ impl Palette {
             .iter()
             .position(|&i| self.items.get(i).is_some_and(|item| item.id == id))
         {
+            if pos != self.selected {
+                self.preview_offset = 0.0;
+            }
             self.selected = pos;
             if let Some(p) = self.selected_item().map(|i| i.project.clone()) {
                 self.collapsed.remove(&p);
@@ -2144,6 +2262,9 @@ impl Palette {
     ///
     /// Peek only: a positive wait would sleep on the frame thread.
     pub fn poll_updates(&mut self) {
+        if !self.visible {
+            return;
+        }
         let last = match self.backend.live() {
             vissue_tui::BackendKind::Control => self.backend.revision(),
             vissue_tui::BackendKind::Core => self.backend.generation(),
@@ -2394,6 +2515,7 @@ impl Palette {
         let next = vis[next];
         if next != self.selected {
             self.selected = next;
+            self.preview_offset = 0.0;
             self.follow_selection();
             self.refresh_task_list();
         }
@@ -3541,6 +3663,80 @@ mod tests {
         palette.handle_key(PaletteKey::Esc);
         palette.handle_key(PaletteKey::Char(':'));
         assert_eq!(palette.command_hits()[0].id, ActionId::Deed);
+    }
+
+    #[test]
+    fn hide_then_show_keeps_the_selected_row() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.handle_key(PaletteKey::Down);
+        let id = palette.selected_id().unwrap().to_string();
+        let before: Vec<_> = palette
+            .filtered_items()
+            .iter()
+            .map(|item| item.id.clone())
+            .collect();
+        palette.hide();
+        let _ = palette.reload();
+        palette.show();
+        assert_eq!(palette.selected_id(), Some(id.as_str()));
+        let after: Vec<_> = palette
+            .filtered_items()
+            .iter()
+            .map(|item| item.id.clone())
+            .collect();
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn z_hides_the_preview_and_j_scrolls_it_without_moving_the_list() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        let id = palette.selected_id().unwrap().to_string();
+        assert!(!palette.preview_hidden());
+        palette.handle_key(PaletteKey::Char('z'));
+        assert!(palette.preview_hidden());
+        assert_eq!(palette.selected_id(), Some(id.as_str()));
+        palette.handle_key(PaletteKey::Char('z'));
+        assert!(!palette.preview_hidden());
+        palette.handle_key(PaletteKey::Char('J'));
+        assert!(palette.preview_offset() > 0.0);
+        assert_eq!(palette.selected_id(), Some(id.as_str()));
+        palette.handle_key(PaletteKey::Char('K'));
+        assert_eq!(palette.preview_offset(), 0.0);
+    }
+
+    #[test]
+    fn agenda_groups_by_org_class_not_project() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.set_filter(BoardFilter::Agenda);
+        let names: Vec<&str> = palette.sections().iter().map(|s| s.project).collect();
+        assert!(
+            names.contains(&"deadline"),
+            "atlas-3e4f carries a past DEADLINE planning line: {names:?}"
+        );
+        assert!(
+            !names.contains(&"atlas"),
+            "agenda sections are timestamp classes, not projects: {names:?}"
+        );
+        let item = palette
+            .filtered_items()
+            .into_iter()
+            .find(|item| item.id == "atlas-3e4f")
+            .expect("blocked overdue deadline stays on the agenda");
+        assert_eq!(item.group.as_deref(), Some("deadline"));
+        assert!(item.extra.contains("overdue"), "{}", item.extra);
+
+        let meet = HudItem::from_agenda(vissue_core::views::AgendaRow {
+            date: "2026-09-11".into(),
+            kind: "appointment".into(),
+            overdue_days: 0,
+            id: "atlas-meet".into(),
+            project: "atlas".into(),
+            state: "TODO".into(),
+            priority: "B".into(),
+            title: "Standup".into(),
+        });
+        assert_eq!(meet.group.as_deref(), Some("appointment"));
+        assert!(meet.extra.starts_with("on "), "{}", meet.extra);
     }
 
     #[test]

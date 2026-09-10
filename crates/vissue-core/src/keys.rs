@@ -59,6 +59,12 @@ pub enum ActionId {
     Help,
     /// Open the command palette.
     Palette,
+    /// Hide or show the detail preview.
+    PreviewToggle,
+    /// Scroll the detail preview down.
+    PreviewDown,
+    /// Scroll the detail preview up.
+    PreviewUp,
 }
 
 impl ActionId {
@@ -90,6 +96,9 @@ impl ActionId {
             Self::Reload => "board.reload",
             Self::Help => "board.help",
             Self::Palette => "board.palette",
+            Self::PreviewToggle => "preview.toggle",
+            Self::PreviewDown => "preview.down",
+            Self::PreviewUp => "preview.up",
         }
     }
 
@@ -126,6 +135,9 @@ impl ActionId {
             Self::Reload => "Reload",
             Self::Help => "Show help",
             Self::Palette => "Command palette",
+            Self::PreviewToggle => "Hide or show the preview",
+            Self::PreviewDown => "Scroll the preview down",
+            Self::PreviewUp => "Scroll the preview up",
         }
     }
 }
@@ -175,6 +187,9 @@ const ALL: &[ActionId] = &[
     ActionId::Reload,
     ActionId::Help,
     ActionId::Palette,
+    ActionId::PreviewToggle,
+    ActionId::PreviewDown,
+    ActionId::PreviewUp,
 ];
 
 /// One catalog row. Defaults stay in this table.
@@ -339,6 +354,24 @@ const CATALOG: &[ActionRow] = &[
         id: ActionId::Palette,
         scope: Scope::Global,
         default: ":",
+        remappable: true,
+    },
+    ActionRow {
+        id: ActionId::PreviewToggle,
+        scope: Scope::Board,
+        default: "z",
+        remappable: true,
+    },
+    ActionRow {
+        id: ActionId::PreviewDown,
+        scope: Scope::Board,
+        default: "J",
+        remappable: true,
+    },
+    ActionRow {
+        id: ActionId::PreviewUp,
+        scope: Scope::Board,
+        default: "K",
         remappable: true,
     },
 ];

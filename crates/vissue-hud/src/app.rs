@@ -107,6 +107,8 @@ pub enum Message {
     Noop,
     /// Run this catalog action from the command palette.
     CommandRun(ActionId),
+    /// Pixel offset of the issue-body preview scroller.
+    PreviewScrolled(f32),
 }
 
 /// iced application state.
@@ -185,8 +187,9 @@ impl HudApp {
                 Task::none()
             }
             Message::SelectId(id) => {
+                let before = self.palette.preview_offset();
                 self.palette.select_id(&id);
-                Task::none()
+                self.sync_preview_scroll(before)
             }
             Message::ToggleDone(id) => {
                 self.palette.toggle_done(&id);
@@ -301,6 +304,7 @@ impl HudApp {
             }
             Message::Noop => Task::none(),
             Message::CommandRun(id) => {
+                let before = self.palette.preview_offset();
                 self.palette.run_command_at(
                     self.palette
                         .command_hits()
@@ -308,11 +312,16 @@ impl HudApp {
                         .position(|hit| hit.id == id)
                         .unwrap_or(0),
                 );
+                self.sync_preview_scroll(before)
+            }
+            Message::PreviewScrolled(y) => {
+                self.palette.set_preview_offset(y);
                 Task::none()
             }
             Message::Key(key) => {
                 let was = self.palette.visible();
                 let before = self.palette.clipboard().to_string();
+                let offset_before = self.palette.preview_offset();
                 self.palette.handle_key(key);
                 let clip = self.palette.clipboard().to_string();
                 let mut tasks = Vec::new();
@@ -322,9 +331,21 @@ impl HudApp {
                 if was != self.palette.visible() {
                     tasks.push(self.sync_window());
                 }
+                tasks.push(self.sync_preview_scroll(offset_before));
                 Task::batch(tasks)
             }
         }
+    }
+
+    fn sync_preview_scroll(&self, before: f32) -> Task<Message> {
+        let y = self.palette.preview_offset();
+        if (y - before).abs() < f32::EPSILON {
+            return Task::none();
+        }
+        iced::widget::operation::scroll_to(
+            iced::widget::Id::from(Palette::PREVIEW_SCROLL_ID),
+            iced::widget::scrollable::AbsoluteOffset { x: 0.0, y },
+        )
     }
 
     fn sync_window(&mut self) -> Task<Message> {

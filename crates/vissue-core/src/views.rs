@@ -194,7 +194,7 @@ pub struct SearchHit {
 pub struct AgendaRow {
     /// Calendar date as `YYYY-MM-DD`.
     pub date: String,
-    /// `deadline` or `scheduled`.
+    /// `deadline`, `scheduled`, or `appointment` (a plain active stamp).
     pub kind: String,
     /// Days past the date; `0` when it is today or still upcoming.
     pub overdue_days: i64,

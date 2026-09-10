@@ -710,6 +710,10 @@ pub fn claims_from(
 
 /// Dated open work in the next `days` days, plus anything already overdue.
 ///
+/// Three Org classes, in this order: `deadline` (overdue first),
+/// `scheduled` (eligible that day and after), `appointment` (a plain
+/// active stamp in the title, that day only).
+///
 /// # Errors
 ///
 /// Does not fail for a parsed catalog.
@@ -720,7 +724,7 @@ pub fn agenda_rows_from(
 ) -> Result<Vec<AgendaRow>> {
     let today = Local::now().date_naive();
     let horizon = today + chrono::Duration::days(days);
-    let mut rows: Vec<(chrono::NaiveDate, char, AgendaRow)> = Vec::new();
+    let mut rows: Vec<AgendaRow> = Vec::new();
     for rec in issues {
         if !project_selected(&rec.project, project) {
             continue;
@@ -729,35 +733,81 @@ pub fn agenda_rows_from(
         if !READY_STATES.contains(&h.state.as_str()) && h.state != "BLOCKED" {
             continue;
         }
-        for (kind_ch, kind, value) in [
-            ('D', "deadline", h.deadline()),
-            ('S', "scheduled", h.scheduled()),
-        ] {
-            let Some(parsed) = value.and_then(parse_org_date) else {
+        let deadline = h.deadline().and_then(parse_org_date);
+        let scheduled = h.scheduled().and_then(parse_org_date);
+        for (kind, parsed) in [("deadline", deadline), ("scheduled", scheduled)] {
+            let Some(parsed) = parsed else {
                 continue;
             };
             if parsed > horizon {
                 continue;
             }
             let delta = (parsed - today).num_days();
-            rows.push((
-                parsed,
-                kind_ch,
-                AgendaRow {
-                    date: parsed.to_string(),
-                    kind: kind.to_string(),
-                    overdue_days: if delta < 0 { -delta } else { 0 },
-                    id: h.id.clone(),
-                    project: rec.project.clone(),
-                    state: h.state.clone(),
-                    priority: h.priority.to_string(),
-                    title: h.title.clone(),
-                },
-            ));
+            rows.push(AgendaRow {
+                date: parsed.to_string(),
+                kind: kind.to_string(),
+                overdue_days: if delta < 0 { -delta } else { 0 },
+                id: h.id.clone(),
+                project: rec.project.clone(),
+                state: h.state.clone(),
+                priority: h.priority.to_string(),
+                title: h.title.clone(),
+            });
+        }
+        for parsed in active_stamps_in(&h.title) {
+            if deadline == Some(parsed) || scheduled == Some(parsed) {
+                continue;
+            }
+            if parsed < today || parsed > horizon {
+                continue;
+            }
+            rows.push(AgendaRow {
+                date: parsed.to_string(),
+                kind: "appointment".to_string(),
+                overdue_days: 0,
+                id: h.id.clone(),
+                project: rec.project.clone(),
+                state: h.state.clone(),
+                priority: h.priority.to_string(),
+                title: h.title.clone(),
+            });
         }
     }
-    rows.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.id.cmp(&b.2.id)));
-    Ok(rows.into_iter().map(|r| r.2).collect())
+    rows.sort_by(|a, b| {
+        agenda_kind_rank(&a.kind)
+            .cmp(&agenda_kind_rank(&b.kind))
+            .then(b.overdue_days.cmp(&a.overdue_days))
+            .then(a.date.cmp(&b.date))
+            .then(a.id.cmp(&b.id))
+    });
+    Ok(rows)
+}
+
+fn agenda_kind_rank(kind: &str) -> u8 {
+    match kind {
+        "deadline" => 0,
+        "scheduled" => 1,
+        _ => 2,
+    }
+}
+
+/// Active Org stamps in `text` (`<YYYY-MM-DD...>`). Inactive `[...]` stay out.
+fn active_stamps_in(text: &str) -> Vec<chrono::NaiveDate> {
+    let mut out = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + 11 <= bytes.len() {
+        if bytes[i] == b'<'
+            && let Ok(slice) = std::str::from_utf8(&bytes[i + 1..i + 11])
+            && let Ok(date) = chrono::NaiveDate::parse_from_str(slice, "%Y-%m-%d")
+        {
+            out.push(date);
+            i += 11;
+            continue;
+        }
+        i += 1;
+    }
+    out
 }
 
 /// Parent/child subtree rooted at `id`.

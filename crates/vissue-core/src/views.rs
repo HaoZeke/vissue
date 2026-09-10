@@ -115,6 +115,7 @@ pub struct IssueDetail {
 
 /// One logbook line on a detail card: note, state flip, or raw CLOCK.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct LogbookLine {
     /// Inactive org timestamp on the line, or empty for a raw CLOCK row.
     #[serde(default)]

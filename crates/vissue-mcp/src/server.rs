@@ -1479,6 +1479,41 @@ mod tests {
         assert_eq!(reads, READS, "the read-only set moved");
     }
 
+    /// The tools that answer with data publish the shape of it.
+    ///
+    /// A schema is what lets a caller check a reply rather than hope, and it
+    /// is derived from the type that is returned, so this also fails if the
+    /// core stops deriving it and the tool silently goes back to handing over
+    /// a string.
+    #[test]
+    fn the_tools_that_return_data_publish_its_shape() {
+        const SHAPED: &[&str] = &[
+            "vissue_digest",
+            "vissue_list",
+            "vissue_ready",
+            "vissue_show",
+        ];
+        let tools = VissueServer::tool_router().list_all();
+        let mut shaped: Vec<&str> = tools
+            .iter()
+            .filter(|t| t.output_schema.is_some())
+            .map(|t| t.name.as_ref())
+            .collect();
+        shaped.sort_unstable();
+        assert_eq!(shaped, SHAPED, "the tools answering with data moved");
+
+        let rows = tools
+            .iter()
+            .find(|t| t.name == "vissue_list")
+            .and_then(|t| t.output_schema.clone())
+            .expect("a schema for the rows");
+        // An array of issue rows, and the row names the fields a board paints.
+        let rendered = serde_json::to_string(&rows).expect("schema serializes");
+        for field in ["id", "state", "priority", "title", "project", "blocked_by"] {
+            assert!(rendered.contains(field), "{field} is not in {rendered}");
+        }
+    }
+
     #[tokio::test]
     async fn read_only_tools_cover_the_fixture_tracker_surface() {
         let root =

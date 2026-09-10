@@ -349,9 +349,7 @@ fn agenda_orders_overdue_then_soonest_and_respects_the_horizon() {
         "{out}"
     );
     assert!(
-        lines.iter().any(|l| *l == "scheduled")
-            && out.contains("atlas-2c3d")
-            && out.contains("in 2d"),
+        lines.contains(&"scheduled") && out.contains("atlas-2c3d") && out.contains("in 2d"),
         "{out}"
     );
     let deadline_at = lines.iter().position(|l| *l == "deadline").unwrap();

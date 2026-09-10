@@ -24,8 +24,20 @@
 //! meant to be, or which of the parts were asked for rather than pulled in.
 //!
 //! This packs what the tracker holds. Deed bytes are the deed store's to
-//! export, and `needs` is the list it takes, so the two halves compose without
-//! this crate depending on that one.
+//! export and atoms are the pack's, and `needs` is the list the deed store
+//! takes, so the three halves compose on pipes without this crate depending on
+//! either of them:
+//!
+//! ```console
+//! $ vissue satchel --out bag --project x --issue y
+//! $ packset export --into bag/data/atoms | deedar export --into bag/data/deeds -
+//! $ jq -r '.needs[]' bag/data/satchel.json | deedar export --into bag/data/deeds -
+//! $ vissue satchel --seal bag && vissue satchel --verify bag
+//! ```
+//!
+//! The accession is what makes that work. It is the one identifier crossing
+//! all three stores, so each of them can name what it needs from the others
+//! without reading their formats.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -256,19 +268,10 @@ pub fn seal(dir: &Path) -> Result<Report> {
     payload.sort();
     write_manifest(dir, &payload)?;
 
-    let enclosed = enclosed_deeds(dir);
-    let mut notes = Vec::new();
-    let short: Vec<&String> = satchel
-        .needs
-        .iter()
-        .filter(|acc| !enclosed.contains(*acc))
-        .collect();
-    if !short.is_empty() {
-        notes.push(format!(
-            "{} of {} deed accessions are named and not enclosed",
-            short.len(),
-            satchel.needs.len()
-        ));
+    let mut notes = shortfall(dir, &satchel);
+    let atoms = atom_lines(dir);
+    if atoms > 0 {
+        notes.push(format!("{atoms} atoms arrived from a pack"));
     }
     Ok(Report {
         issues: satchel.issues.len(),
@@ -276,6 +279,40 @@ pub fn seal(dir: &Path) -> Result<Report> {
         files: payload.len(),
         notes,
     })
+}
+
+/// What the description names and the payload does not hold.
+///
+/// A satchel that names a deed and does not carry it is not broken, because
+/// the deed store may not have been asked yet. It is worth saying out loud, so
+/// the receiver learns it from the check rather than from opening one.
+fn shortfall(dir: &Path, satchel: &Satchel) -> Vec<String> {
+    let enclosed = enclosed_deeds(dir);
+    let short = satchel
+        .needs
+        .iter()
+        .filter(|acc| !enclosed.contains(*acc))
+        .count();
+    if short == 0 {
+        return Vec::new();
+    }
+    vec![format!(
+        "{short} of {} deed accessions are named and not enclosed",
+        satchel.needs.len()
+    )]
+}
+
+/// How many atoms the pack put in, counted rather than parsed: the receiver
+/// wants to know something came, and reading them is their business.
+fn atom_lines(dir: &Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir.join("data").join("atoms")) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
+        .map(|text| text.lines().filter(|l| !l.trim().is_empty()).count())
+        .sum()
 }
 
 /// Which accessions actually have a directory under the payload.
@@ -351,22 +388,14 @@ pub fn verify(dir: &Path) -> Result<Report> {
         ));
     }
 
-    // A named deed that never arrived is worth saying out loud rather than
-    // leaving the receiver to notice when they open one.
-    let enclosed = enclosed_deeds(dir);
-    let short = satchel
-        .needs
-        .iter()
-        .filter(|acc| !enclosed.contains(*acc))
-        .count();
-
     if notes.is_empty() {
-        let mut notes = Vec::new();
-        if short > 0 {
-            notes.push(format!(
-                "{short} of {} deed accessions are named and not enclosed",
-                satchel.needs.len()
-            ));
+        // A named deed that never arrived is a note, not a failure: the deed
+        // store may not have been asked. What arrived and does not check out
+        // is the failure, and that is already above.
+        let mut notes = shortfall(dir, &satchel);
+        let atoms = atom_lines(dir);
+        if atoms > 0 {
+            notes.push(format!("{atoms} atoms arrived from a pack"));
         }
         Ok(Report {
             issues: satchel.issues.len(),
@@ -611,6 +640,52 @@ mod tests {
         let report = seal(out.path()).expect("seals");
         assert!(report.files >= 3, "{report:?}");
         verify(out.path()).expect("a sealed satchel checks out");
+    }
+
+    /// Atoms are payload like anything else: the manifest covers them once
+    /// sealed, and the check says they arrived.
+    #[test]
+    fn a_pack_can_put_what_the_seat_learned_in_too() {
+        let (_dir, layout) = tracker();
+        made(&layout, "first", CreateOpts::default());
+        let out = tempfile::tempdir().expect("out");
+        pack(
+            &layout,
+            &Slice {
+                projects: vec!["sample".into()],
+                issues: Vec::new(),
+            },
+            out.path(),
+        )
+        .expect("packs");
+
+        // What `packset export --into` writes.
+        let atoms = out.path().join("data/atoms");
+        std::fs::create_dir_all(&atoms).expect("mkdir");
+        std::fs::write(
+            atoms.join("seat.jsonl"),
+            "{\"id\":\"a1\",\"text\":\"what was learned\"}\n             {\"id\":\"a2\",\"text\":\"and this\"}\n",
+        )
+        .expect("write");
+
+        let sealed = seal(out.path()).expect("seals");
+        assert!(
+            sealed.notes.iter().any(|n| n.contains("2 atoms")),
+            "{:?}",
+            sealed.notes
+        );
+        let checked = verify(out.path()).expect("checks out");
+        assert!(
+            checked.notes.iter().any(|n| n.contains("2 atoms")),
+            "{:?}",
+            checked.notes
+        );
+
+        // And an atom file added after sealing is unlisted, the same as any
+        // other payload nobody agreed to.
+        std::fs::write(atoms.join("late.jsonl"), "{\"id\":\"a3\"}\n").expect("write");
+        let err = verify(out.path()).expect_err("a late atom file passed");
+        assert!(format!("{err}").contains("unlisted"), "{err}");
     }
 
     /// A slice that names nothing is not a slice, and an issue that is not

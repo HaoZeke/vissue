@@ -193,8 +193,10 @@ ready set [8], [9], and refuses a cyclic edit [5], [6].
 
 `related` asks what else in the corpus is a neighbor, and why.
 Explicit `:PARENT:`, `:BLOCKED_BY:`, `:DISCOVERED_FROM:`, a shared deed,
-and Org body links outrank shared tags and rare terms [22]. The command
-prints the evidence (`blocked_by`, `deed:deed-patch-overlay`,
+and Org body links outrank shared tags and rare terms [22]. Distance,
+tags, project, and terms each vote a list; Borda merges the guesses.
+A declared edge still adds 1000, so a fact stays above coincidence.
+The command prints the evidence (`blocked_by`, `deed:deed-patch-overlay`,
 `term:keymap`) and writes nothing back [24], [25], [26].
 
 ## Working memory: what the node stands on

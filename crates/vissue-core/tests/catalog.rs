@@ -418,6 +418,49 @@ fn backlinks_name_the_relation_that_points_at_the_issue() {
 }
 
 #[test]
+fn related_merges_guess_rankers_with_borda_and_keeps_the_edge_floor() {
+    let recs = vec![
+        with_property(
+            with_org_tags(
+                issue("atlas", "atlas-target", "TODO", "Parse the unique header"),
+                &["parser"],
+            ),
+            "BLOCKED_BY",
+            "atlas-edge",
+        ),
+        issue("atlas", "atlas-edge", "TODO", "A declared blocker"),
+        with_org_tags(
+            issue("atlas", "atlas-tagged", "TODO", "No shared wording at all"),
+            &["parser"],
+        ),
+        issue(
+            "beacon",
+            "beacon-words",
+            "TODO",
+            "Parse the unique header wording",
+        ),
+    ];
+    let hits = CatalogService::from_recs(&recs)
+        .related("atlas-target", 1, 10)
+        .unwrap();
+    let edge = hits
+        .iter()
+        .find(|h| h.id == "atlas-edge")
+        .expect("{hits:?}");
+    assert!(
+        edge.score >= 1_000.0,
+        "a declared edge keeps the floor: {hits:?}"
+    );
+    assert!(
+        hits.iter()
+            .filter(|h| h.id != "atlas-edge")
+            .all(|h| h.score < 1_000.0),
+        "guesses stay under the floor: {hits:?}"
+    );
+    assert_eq!(hits[0].id, "atlas-edge", "{hits:?}");
+}
+
+#[test]
 fn related_ranks_a_declared_edge_above_shared_words() {
     let recs = corpus();
     let hits = CatalogService::from_recs(&recs)
@@ -760,12 +803,12 @@ fn related_scores_a_shared_tag_and_a_shared_project() {
         elsewhere.map(|h| &h.evidence)
     );
 
-    // A declared edge outranks both, which is what the weights are for. Two of them
-    // tie here and the id settles it, so the assertion is on the score rather than on
-    // which of the pair came first.
+    // A declared edge keeps the 1000-point floor. Borda may reorder guesses;
+    // it must not lift a tag/project hit over a fact.
     let declared = hits[0].score;
+    let tagged = tagged_score(&hits, "atlas-4g5h");
     assert!(
-        declared > 1_000.0 && declared > tagged_score(&hits, "atlas-4g5h") * 10.0,
+        declared >= 1_000.0 && tagged < 1_000.0 && declared > tagged,
         "{hits:?}"
     );
 }
@@ -794,9 +837,8 @@ fn a_shared_tag_is_worth_more_than_the_words_that_come_with_it() {
     let tagged = tagged_score(&hits, "atlas-tagged");
     let plain = tagged_score(&hits, "atlas-plain");
     assert!(
-        tagged - plain >= 25.0,
-        "the tag is worth {}, and matching its word alone would be worth a few: {hits:?}",
-        tagged - plain
+        tagged > plain,
+        "the tag ranker must lift the tagged issue: {hits:?}"
     );
 }
 
@@ -855,9 +897,8 @@ fn sharing_a_project_is_worth_a_little_and_not_nothing() {
     let near = tagged_score(&hits, "atlas-near");
     let far = tagged_score(&hits, "beacon-far");
     assert!(
-        (near - far - 2.0).abs() < 1e-9,
-        "the project is worth {}: {hits:?}",
-        near - far
+        near > far,
+        "the project ranker must lift the same-project issue: {hits:?}"
     );
 }
 

@@ -24,10 +24,28 @@ struct IssueTerms {
     tags: HashSet<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Candidate {
     score: f64,
     evidence: Vec<String>,
+    edge: f64,
+    distance: f64,
+    tags: f64,
+    project: f64,
+    terms: f64,
+}
+
+/// A Borda ballot is at most this long, so four guess rankers cannot
+/// outvote one declared edge (`1000 e`).
+const BORDA_CAP: usize = 249;
+
+#[derive(Clone, Copy)]
+enum Signal {
+    Edge,
+    Distance,
+    Tags,
+    Project,
+    Terms,
 }
 
 fn tokens(text: &str) -> impl Iterator<Item = String> + '_ {
@@ -88,10 +106,82 @@ fn issue_terms(project: &str, issue: &IssueHeading) -> IssueTerms {
     }
 }
 
-fn add_evidence(candidate: &mut Candidate, score: f64, evidence: &str) {
-    candidate.score += score;
+fn add_evidence(candidate: &mut Candidate, score: f64, evidence: &str, signal: Signal) {
+    match signal {
+        Signal::Edge => candidate.edge += score,
+        Signal::Distance => candidate.distance += score,
+        Signal::Tags => candidate.tags += score,
+        Signal::Project => candidate.project += score,
+        Signal::Terms => candidate.terms += score,
+    }
     if !candidate.evidence.iter().any(|item| item == evidence) {
         candidate.evidence.push(evidence.to_string());
+    }
+}
+
+/// Borda points: `k - position` (position 0 is first). `k` is the ballot
+/// length, capped so guess rankers stay under the 1000-point edge floor.
+fn borda_points(raw: &HashMap<usize, f64>) -> HashMap<usize, f64> {
+    let mut rows: Vec<(usize, f64)> = raw
+        .iter()
+        .filter(|(_, score)| **score > 0.0)
+        .map(|(&index, &score)| (index, score))
+        .collect();
+    rows.sort_by(|left, right| {
+        right
+            .1
+            .total_cmp(&left.1)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    let k = rows.len().min(BORDA_CAP);
+    let mut out = HashMap::new();
+    let mut i = 0;
+    while i < rows.len() {
+        let score = rows[i].1;
+        let mut j = i + 1;
+        while j < rows.len() && (rows[j].1 - score).abs() < f64::EPSILON {
+            j += 1;
+        }
+        let points = k.saturating_sub(i) as f64;
+        if points > 0.0 {
+            for &(index, _) in &rows[i..j] {
+                out.insert(index, points);
+            }
+        }
+        i = j;
+    }
+    out
+}
+
+fn apply_borda(candidates: &mut HashMap<usize, Candidate>) {
+    let mut distance = HashMap::new();
+    let mut tags = HashMap::new();
+    let mut project = HashMap::new();
+    let mut terms = HashMap::new();
+    for (&index, candidate) in candidates.iter() {
+        if candidate.distance > 0.0 {
+            distance.insert(index, candidate.distance);
+        }
+        if candidate.tags > 0.0 {
+            tags.insert(index, candidate.tags);
+        }
+        if candidate.project > 0.0 {
+            project.insert(index, candidate.project);
+        }
+        if candidate.terms > 0.0 {
+            terms.insert(index, candidate.terms);
+        }
+    }
+    let distance = borda_points(&distance);
+    let tags = borda_points(&tags);
+    let project = borda_points(&project);
+    let terms = borda_points(&terms);
+    for (index, candidate) in candidates.iter_mut() {
+        candidate.score = 1_000.0 * candidate.edge
+            + distance.get(index).copied().unwrap_or(0.0)
+            + tags.get(index).copied().unwrap_or(0.0)
+            + project.get(index).copied().unwrap_or(0.0)
+            + terms.get(index).copied().unwrap_or(0.0);
     }
 }
 
@@ -160,14 +250,18 @@ pub fn related(
 ///
 /// Six scorers reach for this, and each spelled the same `entry().or_insert_with()`
 /// with a fresh zeroed `Candidate` inline.
-fn bump(candidates: &mut HashMap<usize, Candidate>, index: usize, score: f64, evidence: &str) {
+fn bump(
+    candidates: &mut HashMap<usize, Candidate>,
+    index: usize,
+    score: f64,
+    evidence: &str,
+    signal: Signal,
+) {
     add_evidence(
-        candidates.entry(index).or_insert_with(|| Candidate {
-            score: 0.0,
-            evidence: Vec::new(),
-        }),
+        candidates.entry(index).or_default(),
         score,
         evidence,
+        signal,
     );
 }
 
@@ -196,7 +290,13 @@ fn score_shared_terms(
         let idf = ((total + 1.0) / (frequency + 1.0)).ln() + 1.0;
         for &index in inverted.get(term.as_str()).into_iter().flatten() {
             if index != target_idx {
-                bump(candidates, index, idf * idf, &format!("term:{term}"));
+                bump(
+                    candidates,
+                    index,
+                    idf * idf,
+                    &format!("term:{term}"),
+                    Signal::Terms,
+                );
             }
         }
     }
@@ -266,6 +366,7 @@ fn score_graph_distance(
                         neighbor,
                         100.0 / reached as f64,
                         &format!("org_distance:{reached}"),
+                        Signal::Distance,
                     );
                 }
             }
@@ -326,10 +427,8 @@ fn declared_relations(
 /// Score what the target and one other issue share directly: a declared relation, a
 /// tag, a project.
 ///
-/// The weights are three orders apart, which is the whole ranking. A declared relation
-/// is what somebody wrote down and outranks any amount of coincidence; a shared tag is
-/// worth a shared word or two; a shared project is worth almost nothing, because on a
-/// tracker with one busy project it would otherwise relate everything to everything.
+/// Each signal ranks on its own. Borda merges the guess rankers; a declared
+/// relation still adds 1000 so no amount of coincidence outvotes a fact.
 fn score_direct_relations(
     all: &[(&str, &IssueHeading)],
     terms: &[IssueTerms],
@@ -346,7 +445,7 @@ fn score_direct_relations(
             continue;
         }
         for relation in declared_relations(target, target_id, issue, known_ids) {
-            bump(candidates, index, 1_000.0, relation);
+            bump(candidates, index, 1.0, relation, Signal::Edge);
         }
         // Two issues citing one deed worked on the same product. That is a
         // declared fact rather than a resemblance, so it scores with the edges
@@ -355,7 +454,13 @@ fn score_direct_relations(
         let theirs = issue.deeds();
         for cited in &target_deeds {
             if theirs.contains(cited) {
-                bump(candidates, index, 1_000.0, &format!("deed:{cited}"));
+                bump(
+                    candidates,
+                    index,
+                    1.0,
+                    &format!("deed:{cited}"),
+                    Signal::Edge,
+                );
             }
         }
         let shared_tags = terms[target_idx]
@@ -363,10 +468,16 @@ fn score_direct_relations(
             .intersection(&terms[index].tags)
             .count();
         if shared_tags > 0 {
-            bump(candidates, index, 25.0 * shared_tags as f64, "shared_tags");
+            bump(
+                candidates,
+                index,
+                25.0 * shared_tags as f64,
+                "shared_tags",
+                Signal::Tags,
+            );
         }
         if terms[target_idx].project == terms[index].project {
-            bump(candidates, index, 2.0, "same_project");
+            bump(candidates, index, 2.0, "same_project", Signal::Project);
         }
     }
 }
@@ -446,6 +557,30 @@ pub fn related_hits_from(
     let neighbors = neighbour_graph(&all, &ids, &known_ids);
     score_graph_distance(&neighbors, target_idx, depth, &mut candidates);
     score_direct_relations(&all, &terms, target_idx, &known_ids, &mut candidates);
+    apply_borda(&mut candidates);
 
     Ok(rank(candidates, &all, limit))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::borda_points;
+    use std::collections::HashMap;
+
+    #[test]
+    fn borda_gives_k_minus_position() {
+        let raw = HashMap::from([(0, 9.0), (1, 3.0), (2, 6.0)]);
+        let points = borda_points(&raw);
+        assert_eq!(points.get(&0).copied(), Some(3.0), "{points:?}");
+        assert_eq!(points.get(&2).copied(), Some(2.0), "{points:?}");
+        assert_eq!(points.get(&1).copied(), Some(1.0), "{points:?}");
+    }
+
+    #[test]
+    fn borda_gives_tied_raw_scores_the_same_points() {
+        let raw = HashMap::from([(0, 2.0), (1, 2.0)]);
+        let points = borda_points(&raw);
+        assert_eq!(points.get(&0), points.get(&1), "{points:?}");
+        assert_eq!(points.get(&0).copied(), Some(2.0), "{points:?}");
+    }
 }

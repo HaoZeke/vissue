@@ -1,1 +1,0 @@
-The HUD command palette (`:`) lists every catalog action with its chord. Help is generated from that same table, so `d` (cite a deed) is no longer missing. Enter runs the same handler as the chord; an empty query is recents.

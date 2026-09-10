@@ -6,6 +6,55 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.9.3](https://github.com/HaoZeke/vissue/releases/tag/v0.9.3) - 2026-09-10
+
+### Added
+
+- A satchel carries what the seat learned as well as the work and what the work
+  produced. `packset export --into <dir>/data/atoms` writes the atoms and names
+  the accessions they cite; sealing takes them into the manifest, and the check
+  reports how many arrived.
+- Every MCP tool now declares whether it reads or writes, whether a write is
+  destructive, and whether calling it twice changes anything more than calling it
+  once. A client can tell `vissue_list` from `vissue_normalize` without calling
+  either, which it could not before: forty-six tools carried no hints at all.
+- The HUD command palette (`:`) lists every catalog action with its chord. Help is generated from that same table, so `d` (cite a deed) is no longer missing. Enter runs the same handler as the chord; an empty query is recents.
+- The MCP surface completes the id a resource template asks for, matching on id
+  prefix then anywhere in the title. A caller working from any tool's answer
+  already has ids; the template is the one place they have to produce one from
+  nothing.
+- `vissue satchel` packs a slice of the tracker so somebody else can open it:
+  the issues named, everything they stand on, and the deed accessions their work
+  produced. The shape is BagIt, so a receiver checks a manifest before reading
+  anything, and the manifest has to account for the whole payload rather than
+  only for what it lists. `--seal` re-manifests after the deed store has filled
+  in the deeds; `--verify` is the receiver's check.
+- `vissue_list`, `vissue_ready`, `vissue_show` and `vissue_digest` return
+  `structuredContent` with an `outputSchema`, rather than a pretty-printed JSON
+  string inside a text block. The schema comes from the types themselves, so it
+  cannot drift from what is returned. The serialized text stays beside it, for a
+  client that reads only text.
+- `z` hides the detail preview. `J` and `K` scroll it without moving the list cursor.
+
+### Changed
+
+- Agenda is three Org classes: overdue deadlines first, then scheduled, then appointments (a plain active stamp in the title). Scheduled no longer looks like an appointment.
+
+### Fixed
+
+- Checking a satchel says what it established and what it did not. Matching a
+  manifest proves the bag arrived as written and nothing about who wrote it, so
+  an unsigned satchel says so, and a signed one names the verb that answers the
+  other question rather than implying it answered it.
+- Hiding the HUD freezes the row order. Showing it again puts the same ticket in the same place; a poll while hidden does not reflow the board.
+
+### Developer
+
+- `vissue-core` gains an optional `schema` feature deriving JSON Schema on the
+  view types, and `agent` gains typed accessors beside the JSON ones so a caller
+  that wants the type does not go through a `Value` to get back to it.
+
+
 ## [0.9.2](https://github.com/HaoZeke/vissue/releases/tag/v0.9.2) - 2026-09-09
 
 ### Added

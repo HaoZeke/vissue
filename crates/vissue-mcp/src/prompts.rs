@@ -48,7 +48,7 @@ fn asked(text: String) -> Vec<PromptMessage> {
     vec![PromptMessage::new_text(Role::User, text)]
 }
 
-#[prompt_router(vis = pub(crate))]
+#[prompt_router(vis = "pub(crate)")]
 impl VissueServer {
     /// Pack a slice of this seat so somebody else can open it: the issues, what
     /// they stand on, the deeds they cite and what the seat learned.

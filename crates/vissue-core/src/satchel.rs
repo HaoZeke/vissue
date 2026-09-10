@@ -833,16 +833,17 @@ mod tests {
         // The deed store's half arrives: one deed with the proof an export
         // writes, one without.
         let deeds = out.path().join("data").join("deeds");
-        for (accession, proof) in [
-            ("deed-file-proven", true),
-            ("deed-file-bare", false),
-        ] {
+        for (accession, proof) in [("deed-file-proven", true), ("deed-file-bare", false)] {
             let held = deeds.join(accession);
             std::fs::create_dir_all(&held).expect("dirs");
             std::fs::write(held.join("deed.bin"), b"bytes").expect("bytes");
             if proof {
-                std::fs::write(held.join("proof.txt"), "id=deed-file-proven
-").expect("proof");
+                std::fs::write(
+                    held.join("proof.txt"),
+                    "id=deed-file-proven
+",
+                )
+                .expect("proof");
             }
         }
         seal(out.path()).expect("seals");

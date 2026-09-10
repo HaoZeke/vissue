@@ -57,6 +57,8 @@ pub enum ActionId {
     Reload,
     /// Show the key help overlay.
     Help,
+    /// Open the command palette.
+    Palette,
 }
 
 impl ActionId {
@@ -87,12 +89,44 @@ impl ActionId {
             Self::CopyId => "issue.copy",
             Self::Reload => "board.reload",
             Self::Help => "board.help",
+            Self::Palette => "board.palette",
         }
     }
 
     /// Parse a dotted id such as `list.down`. Unknown names yield `None`.
     pub fn parse(raw: &str) -> Option<Self> {
         ALL.iter().find(|a| a.as_str() == raw).copied()
+    }
+
+    /// Short title for help and the command palette.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::ListDown => "Move down",
+            Self::ListUp => "Move up",
+            Self::ListSelect => "Open the selected row",
+            Self::ListDone => "Toggle done",
+            Self::PaneReady => "Ready pane",
+            Self::PaneList => "List pane",
+            Self::PaneClaims => "Claims pane",
+            Self::PaneAgenda => "Agenda pane",
+            Self::PaneSearch => "Search pane",
+            Self::PaneNext => "Next pane",
+            Self::DetailCycle => "Cycle detail",
+            Self::ProjectCycle => "Next project",
+            Self::Search => "Search this project",
+            Self::Add => "Add a task",
+            Self::Claim => "Claim the selected issue",
+            Self::Note => "Note the selected issue",
+            Self::Deed => "Cite a deed",
+            Self::StateCycle => "Cycle TODO / STARTED / BLOCKED",
+            Self::ConfirmDone => "Mark done",
+            Self::ConfirmCancel => "Cancel the selected issue",
+            Self::Open => "Open heading",
+            Self::CopyId => "Copy id",
+            Self::Reload => "Reload",
+            Self::Help => "Show help",
+            Self::Palette => "Command palette",
+        }
     }
 }
 
@@ -140,6 +174,7 @@ const ALL: &[ActionId] = &[
     ActionId::CopyId,
     ActionId::Reload,
     ActionId::Help,
+    ActionId::Palette,
 ];
 
 /// One catalog row. Defaults stay in this table.
@@ -300,6 +335,12 @@ const CATALOG: &[ActionRow] = &[
         default: "?",
         remappable: false,
     },
+    ActionRow {
+        id: ActionId::Palette,
+        scope: Scope::Global,
+        default: ":",
+        remappable: true,
+    },
 ];
 
 /// Reserved chords the overlay may not steal.
@@ -360,6 +401,45 @@ impl KeyMap {
     /// Action bound to `chord` in board scope, if any.
     pub fn get(&self, chord: &str) -> Option<ActionId> {
         self.by_chord.get(chord).copied()
+    }
+
+    /// The compiled catalog. Help and the command palette read this table.
+    pub fn catalog() -> &'static [ActionRow] {
+        CATALOG
+    }
+
+    /// Resolved chord for `id`, or the compiled default.
+    pub fn chord_for(&self, id: ActionId) -> &str {
+        self.by_chord
+            .iter()
+            .find(|(_, bound)| **bound == id)
+            .map(|(c, _)| c.as_str())
+            .or_else(|| {
+                CATALOG
+                    .iter()
+                    .find(|row| row.id == id)
+                    .map(|row| row.default)
+            })
+            .unwrap_or("")
+    }
+
+    /// Markdown help generated from the catalog, not a second key list.
+    pub fn help_markdown(&self) -> String {
+        let mut out = String::from(
+            "# vissue hud\n\n\
+             Home is the project list. Enter opens one.\n\
+             Esc from a project returns to that list.\n\n\
+             Body edits stay in the file.\n\n",
+        );
+        for row in CATALOG {
+            out.push_str(&format!(
+                "- `{}` — {} (`{}`)\n",
+                self.chord_for(row.id),
+                row.id.title(),
+                row.id.as_str()
+            ));
+        }
+        out
     }
 
     /// Help overlay rows: resolved chord, then the dotted action id.
@@ -646,6 +726,12 @@ mod tests {
             assert_eq!(ActionId::parse(row.id.as_str()), Some(row.id));
         }
         assert_eq!(seen.len(), ALL.len());
+        for row in CATALOG {
+            assert!(!row.id.title().is_empty(), "{}", row.id.as_str());
+        }
+        let md = KeyMap::from_defaults().help_markdown();
+        assert!(md.contains("issue.deed"), "{md}");
+        assert!(md.contains("board.palette"), "{md}");
     }
 
     #[test]

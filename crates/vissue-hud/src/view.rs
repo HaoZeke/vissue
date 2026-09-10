@@ -25,6 +25,9 @@ pub fn view(palette: &Palette) -> Element<'_, Message> {
     if palette.focus() == Focus::Help {
         return help_overlay(palette, tea);
     }
+    if palette.focus() == Focus::Palette {
+        return command_overlay(palette, tea);
+    }
 
     let mut pane = column![header(palette, tea), actions(palette, tea)]
         .spacing(10)
@@ -703,6 +706,68 @@ fn deed_bar(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
         A11y::new("deed", Role::TextBox),
         None,
     )
+}
+
+fn command_overlay(palette: &Palette, tea: Tokens) -> Element<'_, Message> {
+    let hits = palette.command_hits();
+    let selected = palette.command_selected();
+    let mut list = column![].spacing(2).width(Fill);
+    if hits.is_empty() {
+        list = list.push(meta(
+            "Nothing matches.",
+            tea,
+            A11y::new("empty", Role::Status),
+        ));
+    }
+    for (i, hit) in hits.iter().enumerate() {
+        let on = i == selected;
+        let line = format!("{:<8}  {}", hit.chord, hit.title);
+        list = list.push(
+            mouse_area(
+                container(text(line).size(tea.body()).font(icedtea::typo::UI))
+                    .width(Fill)
+                    .padding([4, 8])
+                    .style(move |_| icedtea::style::list_row(tea, on)),
+            )
+            .on_press(Message::CommandRun(hit.id)),
+        );
+    }
+    let q = palette.command_query();
+    let prompt = if q.is_empty() {
+        "type to filter actions".to_string()
+    } else {
+        format!(": {q}")
+    };
+    container(
+        column![
+            widget::label(
+                "commands",
+                widget::LabelFace::Body,
+                tea,
+                A11y::new("commands", Role::Header),
+            ),
+            meta(prompt, tea, A11y::new("query", Role::Status)),
+            widget::scroll(
+                list.into(),
+                tea,
+                A11y::new("command-list", Role::List),
+                false,
+                None,
+                None::<fn(f32) -> Message>,
+            ),
+            meta(
+                "enter runs the same handler as the chord",
+                tea,
+                A11y::new("hint", Role::Status),
+            ),
+        ]
+        .spacing(12)
+        .padding(24),
+    )
+    .width(Fill)
+    .height(Fill)
+    .style(move |_| icedtea::style::shell(tea))
+    .into()
 }
 
 fn help_overlay(palette: &Palette, tea: Tokens) -> Element<'_, Message> {

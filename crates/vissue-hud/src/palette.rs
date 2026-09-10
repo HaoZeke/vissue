@@ -14,32 +14,6 @@ use crate::fuzzy::rank_indices;
 use crate::keys::{ActionId, KeyMap};
 use crate::summon::{SummonAction, SummonRequest};
 
-const HELP: &str = "\
-vissue hud
-
-Home is the project list. Enter opens one.
-Esc from a project returns to that list.
-
-j/k, arrows   move
-Tab, 1-4      pane (Ready List Claims Agenda)
-Enter         open project / cycle detail
-p             next project
-/             search this project
-a             add a task
-c             claim
-n             note
-s             cycle TODO / STARTED / BLOCKED
-space / D     DONE (D confirms)
-X             CANCELLED (confirm)
-o             open heading
-y             copy id
-R             reload
-?             this help
-esc           back / hide
-
-Body edits stay in the file.
-";
-
 /// Where a row came from before the filter merge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemSource {
@@ -160,6 +134,19 @@ pub enum Focus {
     Project,
     /// Help overlay.
     Help,
+    /// Command palette over the action catalog.
+    Palette,
+}
+
+/// One row in the command palette.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandHit {
+    /// Action this row runs.
+    pub id: ActionId,
+    /// Resolved chord.
+    pub chord: String,
+    /// Short title from the catalog.
+    pub title: String,
 }
 
 /// One selectable palette row.
@@ -392,6 +379,9 @@ pub struct Palette {
     recall: Option<vissue_core::views::Recall>,
     related_marks: std::collections::BTreeMap<String, (String, bool, bool)>,
     help_md: icedtea::widget::MarkdownDoc,
+    command_query: String,
+    command_sel: usize,
+    command_recents: Vec<ActionId>,
     project: Option<String>,
     projects: Vec<String>,
     confirm: Option<Confirm>,
@@ -507,7 +497,10 @@ impl Palette {
             related_hits: Vec::new(),
             recall: None,
             related_marks: std::collections::BTreeMap::new(),
-            help_md: icedtea::widget::parse(HELP),
+            help_md: icedtea::widget::parse(&KeyMap::from_defaults().help_markdown()),
+            command_query: String::new(),
+            command_sel: 0,
+            command_recents: Vec::new(),
             project: None,
             projects,
             confirm: None,
@@ -672,9 +665,9 @@ impl Palette {
         })
     }
 
-    /// Help overlay body.
-    pub fn help_text(&self) -> &'static str {
-        HELP
+    /// Help overlay body, generated from the key catalog.
+    pub fn help_text(&self) -> String {
+        self.keymap.help_markdown()
     }
 
     /// Parsed help markdown. Same source as [`Self::help_text`].
@@ -1237,12 +1230,17 @@ impl Palette {
             return;
         }
         if self.focus == Focus::Help {
-            if matches!(
-                key,
-                PaletteKey::Esc | PaletteKey::Char('?') | PaletteKey::Char('q')
-            ) {
-                self.focus = Focus::List;
+            match key {
+                PaletteKey::Esc | PaletteKey::Char('?') | PaletteKey::Char('q') => {
+                    self.focus = Focus::List;
+                }
+                PaletteKey::Char(':') => self.open_command_palette(),
+                _ => {}
             }
+            return;
+        }
+        if self.focus == Focus::Palette {
+            self.handle_palette_key(key);
             return;
         }
         if self.confirm.is_some() {
@@ -1398,7 +1396,140 @@ impl Palette {
                 let _ = self.reload();
             }
             ActionId::Help => self.focus = Focus::Help,
+            ActionId::Palette => self.open_command_palette(),
         }
+    }
+
+    fn open_command_palette(&mut self) {
+        self.command_query.clear();
+        self.command_sel = 0;
+        self.focus = Focus::Palette;
+    }
+
+    fn handle_palette_key(&mut self, key: PaletteKey) {
+        match key {
+            PaletteKey::Esc => {
+                self.command_query.clear();
+                self.focus = Focus::List;
+            }
+            PaletteKey::Enter => self.run_command_hit(),
+            PaletteKey::Up => self.move_command_sel(-1),
+            PaletteKey::Down | PaletteKey::Tab => self.move_command_sel(1),
+            PaletteKey::Backspace => {
+                self.command_query.pop();
+                self.command_sel = 0;
+            }
+            PaletteKey::Space => {
+                self.command_query.push(' ');
+                self.command_sel = 0;
+            }
+            PaletteKey::Char(c) => {
+                if c == '?' {
+                    self.focus = Focus::Help;
+                    return;
+                }
+                self.command_query.push(c);
+                self.command_sel = 0;
+            }
+        }
+    }
+
+    fn move_command_sel(&mut self, delta: i32) {
+        let n = self.command_hits().len();
+        if n == 0 {
+            self.command_sel = 0;
+            return;
+        }
+        let cur = self.command_sel.min(n - 1);
+        self.command_sel = (cur as i32 + delta).rem_euclid(n as i32) as usize;
+    }
+
+    fn run_command_hit(&mut self) {
+        let hits = self.command_hits();
+        let Some(hit) = hits.get(self.command_sel.min(hits.len().saturating_sub(1))) else {
+            self.focus = Focus::List;
+            return;
+        };
+        let id = hit.id;
+        self.command_query.clear();
+        self.focus = Focus::List;
+        if id != ActionId::Palette {
+            self.command_recents.retain(|a| *a != id);
+            self.command_recents.insert(0, id);
+            self.command_recents.truncate(8);
+            self.dispatch(id);
+        }
+    }
+
+    /// Filtered command-palette rows. Empty query is recents, then the catalog.
+    pub fn command_hits(&self) -> Vec<CommandHit> {
+        let mut ids: Vec<ActionId> = Vec::new();
+        let q = self.command_query.trim();
+        if q.is_empty() {
+            ids.extend(
+                self.command_recents
+                    .iter()
+                    .copied()
+                    .filter(|id| *id != ActionId::Palette),
+            );
+            for row in KeyMap::catalog() {
+                if row.id != ActionId::Palette && !ids.contains(&row.id) {
+                    ids.push(row.id);
+                }
+            }
+        } else {
+            let ql = q.to_ascii_lowercase();
+            let mut scored: Vec<(i32, ActionId)> = Vec::new();
+            for row in KeyMap::catalog() {
+                if row.id == ActionId::Palette {
+                    continue;
+                }
+                let chord = self.keymap.chord_for(row.id);
+                let idl = row.id.as_str().to_ascii_lowercase();
+                let title = row.id.title();
+                let mut score = 0;
+                if idl == ql || title.eq_ignore_ascii_case(q) {
+                    score = score.max(100_000);
+                } else if idl.starts_with(&ql) || title.to_ascii_lowercase().starts_with(&ql) {
+                    score = score.max(80_000);
+                } else if idl.contains(&ql) || title.to_ascii_lowercase().contains(&ql) {
+                    score = score.max(20_000);
+                }
+                let hay = format!("{} {} {}", title, row.id.as_str(), chord);
+                let fuzzy = crate::fuzzy::fzf_score(q, &hay);
+                if fuzzy > 0 {
+                    score = score.max(fuzzy);
+                }
+                if score > 0 {
+                    scored.push((score, row.id));
+                }
+            }
+            scored.sort_by(|a, b| b.0.cmp(&a.0));
+            ids.extend(scored.into_iter().map(|(_, id)| id));
+        }
+        ids.into_iter()
+            .map(|id| CommandHit {
+                chord: self.keymap.chord_for(id).to_string(),
+                title: id.title().to_string(),
+                id,
+            })
+            .collect()
+    }
+
+    /// Typed command-palette query.
+    pub fn command_query(&self) -> &str {
+        &self.command_query
+    }
+
+    /// Selected command-palette row.
+    pub fn command_selected(&self) -> usize {
+        self.command_sel
+    }
+
+    /// Run the command-palette row at `index`.
+    pub fn run_command_at(&mut self, index: usize) {
+        self.command_sel = index;
+        self.run_command_hit();
     }
 
     fn handle_note_key(&mut self, key: PaletteKey) {
@@ -3372,6 +3503,44 @@ mod tests {
             "help source must parse into markdown items"
         );
         assert!(palette.help_md().source.contains("claim"));
+        assert!(
+            palette.help_text().contains("issue.deed"),
+            "help must come from the catalog, including deed"
+        );
+    }
+
+    #[test]
+    fn colon_opens_a_palette_that_runs_the_catalog() {
+        let mut palette = open_atlas(Layout::new(fixture_root(), DEFAULT_PREFIX), "snap");
+        palette.handle_key(PaletteKey::Char(':'));
+        assert_eq!(palette.focus(), Focus::Palette);
+        let hits = palette.command_hits();
+        assert!(
+            hits.iter()
+                .any(|h| h.id == ActionId::Deed && h.chord == "d"),
+            "{hits:?}"
+        );
+        assert!(
+            hits.iter()
+                .any(|h| h.id == ActionId::Claim && h.title.contains("Claim")),
+            "{hits:?}"
+        );
+        assert_eq!(hits.len(), KeyMap::catalog().len() - 1);
+
+        for c in "deed".chars() {
+            palette.handle_key(PaletteKey::Char(c));
+        }
+        let hits = palette.command_hits();
+        assert_eq!(hits[0].id, ActionId::Deed, "{hits:?}");
+        palette.handle_key(PaletteKey::Enter);
+        assert_eq!(
+            palette.focus(),
+            Focus::Deed,
+            "enter must run the same handler as the d chord"
+        );
+        palette.handle_key(PaletteKey::Esc);
+        palette.handle_key(PaletteKey::Char(':'));
+        assert_eq!(palette.command_hits()[0].id, ActionId::Deed);
     }
 
     #[test]

@@ -485,6 +485,24 @@ fn question_mark_opens_help_and_three_keys_close_it() {
 }
 
 #[test]
+fn colon_opens_the_command_palette_and_enter_runs_the_chord() {
+    let (_dir, mut palette) = open();
+    press(&mut palette, ":");
+    assert_eq!(palette.focus(), Focus::Palette);
+    assert!(
+        palette
+            .command_hits()
+            .iter()
+            .any(|hit| hit.chord == "d" && hit.title.to_lowercase().contains("deed"))
+    );
+    press(&mut palette, "copy");
+    assert_eq!(palette.command_hits()[0].id.as_str(), "issue.copy");
+    palette.handle_key(PaletteKey::Enter);
+    assert_eq!(palette.focus(), Focus::List);
+    assert!(!palette.clipboard().is_empty());
+}
+
+#[test]
 fn enter_cycles_the_side_tabs() {
     let (_dir, mut palette) = open();
     assert_eq!(palette.detail_tab(), DetailTab::Tree);

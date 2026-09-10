@@ -11,6 +11,7 @@ use iced::{Element, Font, Pixels, Subscription, Task, time};
 use vissue_core::config::Layout;
 
 use crate::attach;
+use crate::keys::ActionId;
 use crate::palette::{BoardFilter, DetailTab, Palette, PaletteKey};
 use crate::summon;
 use crate::theme;
@@ -104,6 +105,8 @@ pub enum Message {
     WindowResized(f32),
     /// Discarded click (tab-bar close, unused).
     Noop,
+    /// Run this catalog action from the command palette.
+    CommandRun(ActionId),
 }
 
 /// iced application state.
@@ -297,6 +300,16 @@ impl HudApp {
                 Task::none()
             }
             Message::Noop => Task::none(),
+            Message::CommandRun(id) => {
+                self.palette.run_command_at(
+                    self.palette
+                        .command_hits()
+                        .iter()
+                        .position(|hit| hit.id == id)
+                        .unwrap_or(0),
+                );
+                Task::none()
+            }
             Message::Key(key) => {
                 let was = self.palette.visible();
                 let before = self.palette.clipboard().to_string();

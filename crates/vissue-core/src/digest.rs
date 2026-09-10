@@ -7,7 +7,8 @@
 //! the digest either. Every function here reads; none writes.
 
 use crate::error::Result;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fmt::Write as _;
 use xxhash_rust::xxh3::xxh3_64;
 
@@ -17,7 +18,8 @@ use crate::report;
 use crate::store::list_projects;
 
 /// One project's contribution to the digest.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProjectDigest {
     /// Project directory name.
     pub project: String,
@@ -28,7 +30,8 @@ pub struct ProjectDigest {
 }
 
 /// The digest of a selected set of projects, plus what it was taken against.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CorpusDigest {
     /// Hash over the per-project digests, so it moves exactly when one of them
     /// does.
@@ -124,17 +127,12 @@ impl CorpusDigest {
     }
 
     /// The digest as a JSON object: combined hash, counts, and per-project rows.
+    ///
+    /// The type's own serialization rather than a second copy of its shape
+    /// written out by hand, which is a second place for a field to be added and
+    /// only one of them to get it.
     pub fn to_json(&self) -> Value {
-        json!({
-            "combined": self.combined,
-            "issues": self.issues,
-            "generation": self.generation,
-            "projects": self.projects.iter().map(|p| json!({
-                "project": p.project,
-                "digest": p.digest,
-                "issues": p.issues,
-            })).collect::<Vec<_>>(),
-        })
+        serde_json::to_value(self).unwrap_or(Value::Null)
     }
 
     /// The per-project digest for `project`, when that name is in this corpus.

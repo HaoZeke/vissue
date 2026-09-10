@@ -25,14 +25,36 @@ pub fn issues_json(
     state_filter: Option<&str>,
     ready_only: bool,
 ) -> Result<Value> {
+    Ok(serde_json::to_value(issues_rows(
+        layout,
+        project_filter,
+        state_filter,
+        ready_only,
+    )?)?)
+}
+
+/// The same rows, still typed.
+///
+/// A caller that has to publish the shape it returns needs the type rather than
+/// the value: a schema taken from `IssueRow` cannot disagree with what this
+/// hands back, and one written beside it can.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read or the filter is not a state.
+pub fn issues_rows(
+    layout: &Layout,
+    project_filter: Option<&str>,
+    state_filter: Option<&str>,
+    ready_only: bool,
+) -> Result<Vec<crate::views::IssueRow>> {
     let recs = load_recs(layout)?;
-    let rows = CatalogService::from_recs(&recs).issues_rows(ListQuery {
+    CatalogService::from_recs(&recs).issues_rows(ListQuery {
         project: project_filter.map(str::to_string),
         state: state_filter.map(str::to_string),
         ready: ready_only,
         ..ListQuery::default()
-    })?;
-    Ok(serde_json::to_value(rows)?)
+    })
 }
 
 /// One issue as JSON, including its file and line range.
@@ -42,9 +64,17 @@ pub fn issues_json(
 /// Returns an error if the corpus cannot be read, `id` is not in it, or the
 /// detail cannot be serialized.
 pub fn show_json(layout: &Layout, id: &str) -> Result<Value> {
+    Ok(serde_json::to_value(show_detail(layout, id)?)?)
+}
+
+/// The same card, still typed. See [`issues_rows`] for why both exist.
+///
+/// # Errors
+///
+/// Returns an error if the corpus cannot be read or `id` is not in it.
+pub fn show_detail(layout: &Layout, id: &str) -> Result<crate::views::IssueDetail> {
     let recs = load_recs(layout)?;
-    let detail = CatalogService::from_recs(&recs).detail(id)?;
-    Ok(serde_json::to_value(detail)?)
+    CatalogService::from_recs(&recs).detail(id)
 }
 
 /// Take an issue: move it to STARTED and stamp the claim.

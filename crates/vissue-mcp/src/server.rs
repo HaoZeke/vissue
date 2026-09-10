@@ -1,8 +1,8 @@
 //! The MCP tool surface, calling vissue-core in process.
 
 use rmcp::{
-    ErrorData as McpError, handler::server::ServerHandler, handler::server::wrapper::Parameters,
-    model::*, tool, tool_handler, tool_router,
+    ErrorData as McpError, handler::server::ServerHandler, handler::server::wrapper::Json,
+    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
 };
 
 use vissue_core::config::Layout;
@@ -10,7 +10,20 @@ use vissue_core::error::Error;
 use vissue_core::mirror::{self, Format};
 use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
 use vissue_core::router::Router;
+use vissue_core::views::{IssueDetail, IssueRow};
 use vissue_core::{agent, events, report};
+
+/// A structured answer, or the error as the protocol carries one.
+///
+/// Four tools return data rather than prose, and a client that has to parse a
+/// pretty-printed string back into the object it already was is doing work the
+/// protocol has a field for. `Json` fills `structuredContent` and leaves the
+/// serialized text beside it, so a caller that reads either still works.
+fn structured<T, E: std::fmt::Display>(result: Result<T, E>) -> Result<Json<T>, McpError> {
+    result
+        .map(Json)
+        .map_err(|e| McpError::internal_error(format!("{e}"), None))
+}
 
 use crate::tools::*;
 use std::path::PathBuf;
@@ -33,18 +46,6 @@ struct RejectDest {
 fn text<E: std::fmt::Display>(result: Result<String, E>) -> Result<CallToolResult, McpError> {
     match result {
         Ok(s) => Ok(CallToolResult::success(vec![ContentBlock::text(s)])),
-        Err(e) => Err(McpError::internal_error(format!("{e}"), None)),
-    }
-}
-
-fn json<E: std::fmt::Display>(
-    result: Result<serde_json::Value, E>,
-) -> Result<CallToolResult, McpError> {
-    match result {
-        Ok(v) => {
-            let rendered = serde_json::to_string_pretty(&v).unwrap_or_else(|_| "null".to_string());
-            Ok(CallToolResult::success(vec![ContentBlock::text(rendered)]))
-        }
         Err(e) => Err(McpError::internal_error(format!("{e}"), None)),
     }
 }
@@ -148,8 +149,8 @@ impl VissueServer {
     async fn vissue_list(
         &self,
         Parameters(args): Parameters<ListArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        json(issues_json_routed(
+    ) -> Result<Json<Vec<IssueRow>>, McpError> {
+        structured(issue_rows_routed(
             &self.router,
             args.project.as_deref(),
             args.state.as_deref(),
@@ -168,8 +169,8 @@ impl VissueServer {
     async fn vissue_ready(
         &self,
         Parameters(args): Parameters<ProjectArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        json(issues_json_routed(
+    ) -> Result<Json<Vec<IssueRow>>, McpError> {
+        structured(issue_rows_routed(
             &self.router,
             args.project.as_deref(),
             None,
@@ -188,10 +189,10 @@ impl VissueServer {
     async fn vissue_show(
         &self,
         Parameters(args): Parameters<IdArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        json(
+    ) -> Result<Json<IssueDetail>, McpError> {
+        structured(
             self.layout_for_id(&args.issue_id)
-                .and_then(|layout| agent::show_json(&layout, &args.issue_id)),
+                .and_then(|layout| agent::show_detail(&layout, &args.issue_id)),
         )
     }
 
@@ -771,11 +772,11 @@ impl VissueServer {
     async fn vissue_digest(
         &self,
         Parameters(args): Parameters<DigestArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        json(
-            vissue_core::digest::corpus_digest(&self.layout, &args.projects.unwrap_or_default())
-                .map(|d| d.to_json()),
-        )
+    ) -> Result<Json<vissue_core::digest::CorpusDigest>, McpError> {
+        structured(vissue_core::digest::corpus_digest(
+            &self.layout,
+            &args.projects.unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -1048,24 +1049,26 @@ fn create_routed(
     ops::create(&pref.layout, &pref.dir, title, opts)
 }
 
-fn issues_json_routed(
+fn issue_rows_routed(
     router: &Router,
     project: Option<&str>,
     state: Option<&str>,
     ready_only: bool,
-) -> vissue_core::Result<serde_json::Value> {
+) -> vissue_core::Result<Vec<IssueRow>> {
     if let Some(p) = project {
         let pref = router.route(p);
-        return agent::issues_json(&pref.layout, Some(&pref.dir), state, ready_only);
+        return agent::issues_rows(&pref.layout, Some(&pref.dir), state, ready_only);
     }
     let mut rows = Vec::new();
     for pref in router.visible_projects()? {
-        let value = agent::issues_json(&pref.layout, Some(&pref.dir), state, ready_only)?;
-        if let Some(arr) = value.as_array() {
-            rows.extend(arr.iter().cloned());
-        }
+        rows.extend(agent::issues_rows(
+            &pref.layout,
+            Some(&pref.dir),
+            state,
+            ready_only,
+        )?);
     }
-    Ok(serde_json::Value::Array(rows))
+    Ok(rows)
 }
 
 fn identity_report(layout: &Layout, router: &Router) -> String {

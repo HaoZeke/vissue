@@ -38,6 +38,7 @@ pub struct ListQuery {
 
 /// One list/ready row: the fields a board or JSON client paints.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct IssueRow {
     /// Issue id, `<project>-<suffix>`.
     pub id: String,
@@ -62,6 +63,7 @@ pub struct IssueRow {
 
 /// One issue as a detail card: properties, tags, file range, body, and logbook.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct IssueDetail {
     /// Issue id, `<project>-<suffix>`.
     pub id: String,

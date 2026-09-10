@@ -124,7 +124,14 @@ impl VissueServer {
         })
     }
 
-    #[tool(description = "List the projects that hold an issues.org under the tracker root.")]
+    #[tool(
+        description = "List the projects that hold an issues.org under the tracker root.",
+        annotations(
+            title = "List projects",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_projects(&self) -> Result<CallToolResult, McpError> {
         text(self.router.visible_projects().map(|ps| {
             format!(
@@ -134,7 +141,10 @@ impl VissueServer {
         }))
     }
 
-    #[tool(description = "List issues, optionally filtered by project and state.")]
+    #[tool(
+        description = "List issues, optionally filtered by project and state.",
+        annotations(title = "List issues", read_only_hint = true, open_world_hint = false)
+    )]
     async fn vissue_list(
         &self,
         Parameters(args): Parameters<ListArgs>,
@@ -147,7 +157,14 @@ impl VissueServer {
         ))
     }
 
-    #[tool(description = "List actionable issues: TODO or STARTED with no open blocker.")]
+    #[tool(
+        description = "List actionable issues: TODO or STARTED with no open blocker.",
+        annotations(
+            title = "Actionable issues",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_ready(
         &self,
         Parameters(args): Parameters<ProjectArgs>,
@@ -160,7 +177,14 @@ impl VissueServer {
         ))
     }
 
-    #[tool(description = "Show one issue's metadata and file range. Never returns body prose.")]
+    #[tool(
+        description = "Show one issue's metadata and file range. Never returns body prose.",
+        annotations(
+            title = "Show an issue",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_show(
         &self,
         Parameters(args): Parameters<IdArgs>,
@@ -171,7 +195,16 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "Create an issue in a project's issues.org.")]
+    #[tool(
+        description = "Create an issue in a project's issues.org.",
+        annotations(
+            title = "Create an issue",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_create(
         &self,
         Parameters(args): Parameters<CreateArgs>,
@@ -194,7 +227,14 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Reject an issue by redirecting it to an existing destination (`to`) or a newly created replacement (`project` + `title`)."
+        description = "Reject an issue by redirecting it to an existing destination (`to`) or a newly created replacement (`project` + `title`).",
+        annotations(
+            title = "Reject an issue",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn vissue_reject(
         &self,
@@ -218,7 +258,16 @@ impl VissueServer {
         }))
     }
 
-    #[tool(description = "Pick one terminal after a sibling close (DONE or CANCELLED).")]
+    #[tool(
+        description = "Pick one terminal after a sibling close (DONE or CANCELLED).",
+        annotations(
+            title = "Resolve a sibling close",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_resolve(
         &self,
         Parameters(args): Parameters<ResolveArgs>,
@@ -229,7 +278,16 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "Update an issue's state, priority, or blocker edges.")]
+    #[tool(
+        description = "Update an issue's state, priority, or blocker edges.",
+        annotations(
+            title = "Update an issue",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_update(
         &self,
         Parameters(args): Parameters<UpdateArgs>,
@@ -257,7 +315,16 @@ impl VissueServer {
         }))
     }
 
-    #[tool(description = "Claim an issue: move it to STARTED and stamp the claiming identity.")]
+    #[tool(
+        description = "Claim an issue: move it to STARTED and stamp the claiming identity.",
+        annotations(
+            title = "Claim an issue",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_claim(
         &self,
         Parameters(args): Parameters<ClaimArgs>,
@@ -270,7 +337,14 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Append a dated report to an issue's body. Use this to record work that was done: the logbook holds one line per event, so a written report belongs in the body. Markdown is safe."
+        description = "Append a dated report to an issue's body. Use this to record work that was done: the logbook holds one line per event, so a written report belongs in the body. Markdown is safe.",
+        annotations(
+            title = "Append a report",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn vissue_append(
         &self,
@@ -282,7 +356,16 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "Add a dated note to an issue's logbook without touching state or claim.")]
+    #[tool(
+        description = "Add a dated note to an issue's logbook without touching state or claim.",
+        annotations(
+            title = "Add a logbook note",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_note(
         &self,
         Parameters(args): Parameters<NoteArgs>,
@@ -294,7 +377,14 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Cast this agent's vote on an issue, or read the tally when no choice is given. One ballot per identity: voting again replaces your own ballot and never another agent's. The tally separates a majority from a plurality and from a tie, so consult it before acting on what looks like agreement."
+        description = "Cast this agent's vote on an issue, or read the tally when no choice is given. One ballot per identity: voting again replaces your own ballot and never another agent's. The tally separates a majority from a plurality and from a tie, so consult it before acting on what looks like agreement.",
+        annotations(
+            title = "Cast a ballot",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_vote(
         &self,
@@ -307,7 +397,14 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Cite, drop, or list the deeds this issue's work produced. A deed is deedar's frozen record of a product: name the accession here when work finishes, and the next unit opens it with `deedar get` instead of rereading a transcript. Omit both lists to read the citations. Accessions are `deed-<kind>-<slug>`, or a `sha256:` of the deed or of one product path."
+        description = "Cite, drop, or list the deeds this issue's work produced. A deed is deedar's frozen record of a product: name the accession here when work finishes, and the next unit opens it with `deedar get` instead of rereading a transcript. Omit both lists to read the citations. Accessions are `deed-<kind>-<slug>`, or a `sha256:` of the deed or of one product path.",
+        annotations(
+            title = "Cite or drop deeds",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_deed(
         &self,
@@ -322,7 +419,12 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "The working set for an issue: the plan it sits in, the deeds produced by what blocks it, the issue it was bounced from, and what it has produced itself. Read this before starting work on a node. Assembled from the declared edges rather than by resemblance, so it is what the plan says the work stands on and not a ranked guess; `vissue_related` answers the resemblance question. Set `excerpts` to splice in what each input concluded, which is in its body rather than in the deed it named."
+        description = "The working set for an issue: the plan it sits in, the deeds produced by what blocks it, the issue it was bounced from, and what it has produced itself. Read this before starting work on a node. Assembled from the declared edges rather than by resemblance, so it is what the plan says the work stands on and not a ranked guess; `vissue_related` answers the resemblance question. Set `excerpts` to splice in what each input concluded, which is in its body rather than in the deed it named.",
+        annotations(
+            title = "Working set for an issue",
+            read_only_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_recall(
         &self,
@@ -339,7 +441,12 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Weigh an issue's ballots by who the group listens to (DeGroot averaging over the configured trust graph). Reports the count and the weighted position side by side, each agent's social power, and the two ways there is no consensus to report: a trust graph with more than one closed group, or one that never settles. Use it before acting on what a plurality looks like. Set `children` to roll up over a plan's children instead: that answers whether an epic can close, and it reports the children row by row rather than averaging them, because a split child has no position to fold in and an unvoted child is absent rather than neutral."
+        description = "Weigh an issue's ballots by who the group listens to (DeGroot averaging over the configured trust graph). Reports the count and the weighted position side by side, each agent's social power, and the two ways there is no consensus to report: a trust graph with more than one closed group, or one that never settles. Use it before acting on what a plurality looks like. Set `children` to roll up over a plan's children instead: that answers whether an epic can close, and it reports the children row by row rather than averaging them, because a split child has no position to fold in and an unvoted child is absent rather than neutral.",
+        annotations(
+            title = "Weighted consensus",
+            read_only_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_consensus(
         &self,
@@ -355,7 +462,10 @@ impl VissueServer {
         }))
     }
 
-    #[tool(description = "Every live claim, oldest first: who holds what issue, and for how long.")]
+    #[tool(
+        description = "Every live claim, oldest first: who holds what issue, and for how long.",
+        annotations(title = "Live claims", read_only_hint = true, open_world_hint = false)
+    )]
     async fn vissue_claims(
         &self,
         Parameters(args): Parameters<ClaimsArgs>,
@@ -369,7 +479,12 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Dated open work: deadlines and scheduled starts inside a horizon, overdue first."
+        description = "Dated open work: deadlines and scheduled starts inside a horizon, overdue first.",
+        annotations(
+            title = "Dated open work",
+            read_only_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_agenda(
         &self,
@@ -383,7 +498,14 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Fold an inbox org file: each unstamped `* TODO` heading becomes an issue and the heading is stamped with the id in place."
+        description = "Fold an inbox org file: each unstamped `* TODO` heading becomes an issue and the heading is stamped with the id in place.",
+        annotations(
+            title = "Fold an inbox file",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_fold(
         &self,
@@ -395,7 +517,10 @@ impl VissueServer {
         })
     }
 
-    #[tool(description = "Count issues, optionally filtered by project, state, or readiness.")]
+    #[tool(
+        description = "Count issues, optionally filtered by project, state, or readiness.",
+        annotations(title = "Count issues", read_only_hint = true, open_world_hint = false)
+    )]
     async fn vissue_count(
         &self,
         Parameters(args): Parameters<CountArgs>,
@@ -408,7 +533,14 @@ impl VissueServer {
         ))
     }
 
-    #[tool(description = "Substring search over ids, titles, properties, and bodies.")]
+    #[tool(
+        description = "Substring search over ids, titles, properties, and bodies.",
+        annotations(
+            title = "Search the corpus",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_search(
         &self,
         Parameters(args): Parameters<SearchArgs>,
@@ -420,7 +552,14 @@ impl VissueServer {
         ))
     }
 
-    #[tool(description = "Explain bounded Org and lexical connections around an issue.")]
+    #[tool(
+        description = "Explain bounded Org and lexical connections around an issue.",
+        annotations(
+            title = "Related issues",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_related(
         &self,
         Parameters(args): Parameters<RelatedArgs>,
@@ -436,7 +575,14 @@ impl VissueServer {
         }))
     }
 
-    #[tool(description = "List issues whose PARENT property matches this id.")]
+    #[tool(
+        description = "List issues whose PARENT property matches this id.",
+        annotations(
+            title = "Children of an issue",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_children(
         &self,
         Parameters(args): Parameters<IdArgs>,
@@ -448,7 +594,8 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "List issues that refer to this id through any relation, or that cite this deed accession."
+        description = "List issues that refer to this id through any relation, or that cite this deed accession.",
+        annotations(title = "Backlinks", read_only_hint = true, open_world_hint = false)
     )]
     async fn vissue_backlinks(
         &self,
@@ -457,7 +604,14 @@ impl VissueServer {
         text(self.backlinks_text(&args.issue_id))
     }
 
-    #[tool(description = "Issues waiting on this id. Dependency hygiene alias for backlinks.")]
+    #[tool(
+        description = "Issues waiting on this id. Dependency hygiene alias for backlinks.",
+        annotations(
+            title = "Issues waiting on this",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_waiting_on(
         &self,
         Parameters(args): Parameters<IdArgs>,
@@ -468,7 +622,10 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "The first lines of an issue's file range, screened for secrets.")]
+    #[tool(
+        description = "The first lines of an issue's file range, screened for secrets.",
+        annotations(title = "Body excerpt", read_only_hint = true, open_world_hint = false)
+    )]
     async fn vissue_body_excerpt(
         &self,
         Parameters(args): Parameters<IdArgs>,
@@ -480,7 +637,12 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "One issue's org text in full, untruncated, screened for secrets. Use this when handing an issue to someone as the thing to work from; body_excerpt is a capped preview."
+        description = "One issue's org text in full, untruncated, screened for secrets. Use this when handing an issue to someone as the thing to work from; body_excerpt is a capped preview.",
+        annotations(
+            title = "Full Org text",
+            read_only_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_org(
         &self,
@@ -492,7 +654,14 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "Children and blockers below an id, as ascii indent or Graphviz DOT.")]
+    #[tool(
+        description = "Children and blockers below an id, as ascii indent or Graphviz DOT.",
+        annotations(
+            title = "Tree below an id",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_tree(
         &self,
         Parameters(args): Parameters<TreeArgs>,
@@ -506,7 +675,10 @@ impl VissueServer {
         }))
     }
 
-    #[tool(description = "The blocker and parent graph as Graphviz DOT.")]
+    #[tool(
+        description = "The blocker and parent graph as Graphviz DOT.",
+        annotations(title = "Graph as DOT", read_only_hint = true, open_world_hint = false)
+    )]
     async fn vissue_graph(
         &self,
         Parameters(args): Parameters<ProjectArgs>,
@@ -514,7 +686,10 @@ impl VissueServer {
         text(report::graph(&self.layout, args.project.as_deref()))
     }
 
-    #[tool(description = "A markdown roadmap of active and closed work.")]
+    #[tool(
+        description = "A markdown roadmap of active and closed work.",
+        annotations(title = "Roadmap", read_only_hint = true, open_world_hint = false)
+    )]
     async fn vissue_roadmap(
         &self,
         Parameters(args): Parameters<ProjectArgs>,
@@ -522,7 +697,14 @@ impl VissueServer {
         text(report::roadmap(&self.layout, args.project.as_deref()))
     }
 
-    #[tool(description = "One JSON object per issue per line.")]
+    #[tool(
+        description = "One JSON object per issue per line.",
+        annotations(
+            title = "Export as JSON lines",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_export(
         &self,
         Parameters(args): Parameters<ProjectArgs>,
@@ -530,13 +712,27 @@ impl VissueServer {
         text(report::export(&self.layout, args.project.as_deref()))
     }
 
-    #[tool(description = "Validate the corpus: dangling edges, bad dates, duplicate ids.")]
+    #[tool(
+        description = "Validate the corpus: dangling edges, bad dates, duplicate ids.",
+        annotations(
+            title = "Validate the corpus",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_check(&self) -> Result<CallToolResult, McpError> {
         text(report::check(&self.layout).map(|r| r.text))
     }
 
     #[tool(
-        description = "Rewrite files onto the Org / ELPA / vissue property split. Dry-run by default when dry_run is true."
+        description = "Rewrite files onto the Org / ELPA / vissue property split. Dry-run by default when dry_run is true.",
+        annotations(
+            title = "Rewrite property split",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_normalize(
         &self,
@@ -549,7 +745,14 @@ impl VissueServer {
         ))
     }
 
-    #[tool(description = "Checklist for agents and CI: stalled claims plus corpus validation.")]
+    #[tool(
+        description = "Checklist for agents and CI: stalled claims plus corpus validation.",
+        annotations(
+            title = "Hygiene checklist",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_hygiene(
         &self,
         Parameters(args): Parameters<HygieneArgs>,
@@ -558,7 +761,12 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Content digest of the corpus: combined, per-project, issue count, generation."
+        description = "Content digest of the corpus: combined, per-project, issue count, generation.",
+        annotations(
+            title = "Corpus digest",
+            read_only_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_digest(
         &self,
@@ -570,7 +778,14 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "Check whether a mirror file's SYNC stamp still matches the tracker.")]
+    #[tool(
+        description = "Check whether a mirror file's SYNC stamp still matches the tracker.",
+        annotations(
+            title = "Check a mirror stamp",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_mirror_check(
         &self,
         Parameters(args): Parameters<MirrorCheckArgs>,
@@ -585,7 +800,14 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "Render a read-only projection of selected projects.")]
+    #[tool(
+        description = "Render a read-only projection of selected projects.",
+        annotations(
+            title = "Render a projection",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_mirror(
         &self,
         Parameters(args): Parameters<MirrorArgs>,
@@ -603,7 +825,12 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Change events with a sequence above `since`, plus the current generation."
+        description = "Change events with a sequence above `since`, plus the current generation.",
+        annotations(
+            title = "Change events",
+            read_only_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_events(
         &self,
@@ -616,7 +843,16 @@ impl VissueServer {
         ))
     }
 
-    #[tool(description = "Append a manual event, waking pollers without editing an issue.")]
+    #[tool(
+        description = "Append a manual event, waking pollers without editing an issue.",
+        annotations(
+            title = "Append an event",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_ping(
         &self,
         Parameters(args): Parameters<PingArgs>,
@@ -624,7 +860,14 @@ impl VissueServer {
         text(events::ping_report(&self.layout, args.detail.as_deref()))
     }
 
-    #[tool(description = "The generation counter. Compare against the last value seen.")]
+    #[tool(
+        description = "The generation counter. Compare against the last value seen.",
+        annotations(
+            title = "Generation counter",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_gen(&self) -> Result<CallToolResult, McpError> {
         text(Ok::<_, vissue_core::error::Error>(format!(
             "{}\n",
@@ -632,7 +875,14 @@ impl VissueServer {
         )))
     }
 
-    #[tool(description = "Report the server version and the resolved root and prefix.")]
+    #[tool(
+        description = "Report the server version and the resolved root and prefix.",
+        annotations(
+            title = "Server identity",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_identity(&self) -> Result<CallToolResult, McpError> {
         text(Ok::<_, vissue_core::error::Error>(identity_report(
             &self.layout,
@@ -640,7 +890,14 @@ impl VissueServer {
         )))
     }
 
-    #[tool(description = "Transitive blocker ancestors, bounded by hop depth.")]
+    #[tool(
+        description = "Transitive blocker ancestors, bounded by hop depth.",
+        annotations(
+            title = "Blocker ancestors",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_ancestors(
         &self,
         Parameters(args): Parameters<DepthArgs>,
@@ -652,7 +909,14 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "Issues transitively waiting on this id, bounded by hop depth.")]
+    #[tool(
+        description = "Issues transitively waiting on this id, bounded by hop depth.",
+        annotations(
+            title = "Transitive impact",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_impact(
         &self,
         Parameters(args): Parameters<DepthArgs>,
@@ -664,12 +928,28 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "Cycles in the blocker graph, or a line saying there are none.")]
+    #[tool(
+        description = "Cycles in the blocker graph, or a line saying there are none.",
+        annotations(
+            title = "Blocker cycles",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_cycles(&self) -> Result<CallToolResult, McpError> {
         text(report::cycles(&self.layout))
     }
 
-    #[tool(description = "Move an issue heading to another project file.")]
+    #[tool(
+        description = "Move an issue heading to another project file.",
+        annotations(
+            title = "Move to another project",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_refile(
         &self,
         Parameters(args): Parameters<RefileArgs>,
@@ -681,7 +961,12 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Block until the generation counter passes last, or until an issue is DONE or CANCELLED when until_terminal and id are set."
+        description = "Block until the generation counter passes last, or until an issue is DONE or CANCELLED when until_terminal and id are set.",
+        annotations(
+            title = "Wait for a change",
+            read_only_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn vissue_wait(
         &self,
@@ -732,7 +1017,14 @@ impl VissueServer {
         )
     }
 
-    #[tool(description = "The identity a claim would record.")]
+    #[tool(
+        description = "The identity a claim would record.",
+        annotations(
+            title = "Claiming identity",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
     async fn vissue_whoami(&self) -> Result<CallToolResult, McpError> {
         text(Ok::<_, vissue_core::error::Error>(format!(
             "{}\n",
@@ -1087,6 +1379,101 @@ mod tests {
             .await
             .unwrap_err();
         assert!(format!("{err:?}").contains("pdf"), "{err:?}");
+    }
+
+    /// Every tool says whether it reads or writes, and a new one cannot ship
+    /// without saying.
+    ///
+    /// The hints are what a client uses to decide whether a call is safe to
+    /// make on its own, retry, or batch. A surface where the tool that lists
+    /// projects and the tool that rewrites every file look alike gives a
+    /// caller nothing to reason with, and forty-six unannotated tools is a
+    /// surface that says nothing forty-six times.
+    ///
+    /// The read-only set is written out rather than derived, so adding a tool
+    /// fails here until somebody decides which side it is on.
+    #[test]
+    fn every_tool_declares_what_it_does_to_the_tracker() {
+        const READS: &[&str] = &[
+            "vissue_agenda",
+            "vissue_ancestors",
+            "vissue_backlinks",
+            "vissue_body_excerpt",
+            "vissue_check",
+            "vissue_children",
+            "vissue_claims",
+            "vissue_consensus",
+            "vissue_count",
+            "vissue_cycles",
+            "vissue_digest",
+            "vissue_events",
+            "vissue_export",
+            "vissue_gen",
+            "vissue_graph",
+            "vissue_hygiene",
+            "vissue_identity",
+            "vissue_impact",
+            "vissue_list",
+            "vissue_mirror",
+            "vissue_mirror_check",
+            "vissue_org",
+            "vissue_projects",
+            "vissue_ready",
+            "vissue_recall",
+            "vissue_related",
+            "vissue_roadmap",
+            "vissue_search",
+            "vissue_show",
+            "vissue_tree",
+            "vissue_wait",
+            "vissue_waiting_on",
+            "vissue_whoami",
+        ];
+
+        let tools = VissueServer::tool_router().list_all();
+        assert!(tools.len() >= READS.len(), "{} tools", tools.len());
+
+        let mut reads: Vec<&str> = Vec::new();
+        for tool in &tools {
+            let hints = tool
+                .annotations
+                .as_ref()
+                .unwrap_or_else(|| panic!("{} carries no annotations", tool.name));
+            assert!(
+                hints.title.as_ref().is_some_and(|t| !t.is_empty()),
+                "{} has no title",
+                tool.name
+            );
+            // Everything here reads files under one root. A tool that reached
+            // outside it would be a different kind of thing and should say so.
+            assert_eq!(
+                hints.open_world_hint,
+                Some(false),
+                "{} claims an open world",
+                tool.name
+            );
+            match hints.read_only_hint {
+                Some(true) => reads.push(&tool.name),
+                Some(false) => {
+                    // The other two hints are meaningful only for a writer,
+                    // and a writer that leaves them unset takes the spec's
+                    // defaults: destructive, not idempotent. Say it instead.
+                    assert!(
+                        hints.destructive_hint.is_some(),
+                        "{} does not say whether it is destructive",
+                        tool.name
+                    );
+                    assert!(
+                        hints.idempotent_hint.is_some(),
+                        "{} does not say whether it is idempotent",
+                        tool.name
+                    );
+                }
+                None => panic!("{} does not say whether it writes", tool.name),
+            }
+        }
+        reads.sort_unstable();
+        assert_eq!(reads, READS, "the read-only set moved");
     }
 
     #[tokio::test]

@@ -1601,7 +1601,7 @@ impl Palette {
                     scored.push((score, row.id));
                 }
             }
-            scored.sort_by(|a, b| b.0.cmp(&a.0));
+            scored.sort_by_key(|b| std::cmp::Reverse(b.0));
             ids.extend(scored.into_iter().map(|(_, id)| id));
         }
         ids.into_iter()

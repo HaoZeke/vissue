@@ -6,6 +6,33 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.9.2](https://github.com/HaoZeke/vissue/releases/tag/v0.9.2) - 2026-09-09
+
+### Added
+
+- A seat file can name the tracker the bare command should use. `root` in
+  the configuration file is read after the environment and after the
+  working directory, so standing in a tracker still means that one.
+  A missing, empty, or unreadable seat file is ignored.
+
+### Changed
+
+- The HUD board now builds against icedtea 0.17. Checkboxes use `CheckState`, labels take a face, help markdown takes outline opts, status pages take A11y, and the old `info_bar` is a `banner`. iced stays 0.14; the TUI stays on ratatui 0.30.2.
+
+### Fixed
+
+- `root` lives on the router's own configuration file. Writing it to
+  `~/.config/vissue/config.toml` used to make the whole file unreadable,
+  because that file denied unknown keys. The router now accepts `root`,
+  and `$VISSUE_CONFIG` points at the same file.
+
+### Developer
+
+- The version bump rewrites every workspace member in the lockfile,
+  including `xtask`, and refuses to finish if `cargo metadata --locked`
+  disagrees. 0.9.1 left `xtask` at 0.9.0 and CI failed `--locked`.
+
+
 ## [0.9.1](https://github.com/HaoZeke/vissue/releases/tag/v0.9.1) - 2026-09-09
 
 ### Fixed

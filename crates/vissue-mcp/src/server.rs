@@ -1221,6 +1221,9 @@ mod tests {
         ops::create(&layout, "sample", "first", CreateOpts::default()).unwrap();
 
         let server = VissueServer::with_layout(layout);
+        // The rows come back as rows. Reading a field is a stronger check
+        // than an error flag: it fails if the shape moves, not only if the
+        // call does.
         let listed = server
             .vissue_list(Parameters(ListArgs {
                 project: None,
@@ -1228,7 +1231,9 @@ mod tests {
             }))
             .await
             .unwrap();
-        assert_eq!(listed.is_error, Some(false));
+        assert_eq!(listed.0.len(), 1, "{:?}", listed.0);
+        assert_eq!(listed.0[0].project, "sample");
+        assert_eq!(listed.0[0].state, "TODO");
 
         let counted = server
             .vissue_count(Parameters(CountArgs {
@@ -1528,37 +1533,28 @@ mod tests {
                 .is_error
                 .unwrap_or(false)
         );
-        assert!(
-            !server
-                .vissue_list(Parameters(ListArgs {
-                    project: Some("atlas".into()),
-                    state: Some("TODO".into()),
-                }))
-                .await
-                .unwrap()
-                .is_error
-                .unwrap_or(false)
-        );
-        assert!(
-            !server
-                .vissue_ready(Parameters(ProjectArgs {
-                    project: Some("atlas".into()),
-                }))
-                .await
-                .unwrap()
-                .is_error
-                .unwrap_or(false)
-        );
-        assert!(
-            !server
-                .vissue_show(Parameters(IdArgs {
-                    issue_id: "atlas-2c3d".into(),
-                }))
-                .await
-                .unwrap()
-                .is_error
-                .unwrap_or(false)
-        );
+        let listed = server
+            .vissue_list(Parameters(ListArgs {
+                project: Some("atlas".into()),
+                state: Some("TODO".into()),
+            }))
+            .await
+            .unwrap();
+        assert!(listed.0.iter().all(|row| row.state == "TODO"));
+        let ready = server
+            .vissue_ready(Parameters(ProjectArgs {
+                project: Some("atlas".into()),
+            }))
+            .await
+            .unwrap();
+        assert!(ready.0.iter().all(|row| row.blocked_by.is_empty()));
+        let shown = server
+            .vissue_show(Parameters(IdArgs {
+                issue_id: "atlas-2c3d".into(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(shown.0.id, "atlas-2c3d");
         assert!(
             !server
                 .vissue_claims(Parameters(ClaimsArgs {
@@ -1715,16 +1711,13 @@ mod tests {
                 .is_error
                 .unwrap_or(false)
         );
-        assert!(
-            !server
-                .vissue_digest(Parameters(DigestArgs {
-                    projects: Some(vec!["atlas".into()]),
-                }))
-                .await
-                .unwrap()
-                .is_error
-                .unwrap_or(false)
-        );
+        let digested = server
+            .vissue_digest(Parameters(DigestArgs {
+                projects: Some(vec!["atlas".into()]),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(digested.0.combined.len(), 16, "{}", digested.0.combined);
         assert!(
             !server
                 .vissue_mirror(Parameters(MirrorArgs {

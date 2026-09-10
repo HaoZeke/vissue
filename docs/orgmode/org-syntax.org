@@ -193,9 +193,8 @@ entry, past body text, is an ordinary drawer and does not define an
 id. Column view and =#+PROPERTY:= inheritance are not interpreted.
 
 The names that matter are the ones Org and ELPA already own. A vault
-pass found =:BLOCKER:= used as an id list (GrokOS, ridley) and no
-=Effort= anywhere. =:BLOCKER:= is not a vissue typo for
-=:BLOCKED_BY:= when it is org-edna.
+pass found =:BLOCKER:= used as an id list and no =Effort= anywhere.
+=:BLOCKER:= is not a vissue typo for =:BLOCKED_BY:= when it is org-edna.
 
 ** Org specials (manual 7.2)
 

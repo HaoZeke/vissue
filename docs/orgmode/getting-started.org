@@ -152,7 +152,22 @@ parser-3xq7            STARTED   [#A]    0d  impl-1  Publish the release notes (
 A claim held by another identity is refused unless you pass =--force=, which
 records the takeover in the logbook rather than losing it.
 
-* 7. Share it with someone who cannot reach the tracker
+* 7. Compare-and-swap, then watch the log
+
+Two writers do not last-write-wins. Name the generation you read, and a
+later write refuses if the corpus moved:
+
+#+begin_src console
+$ vissue gen
+7
+$ vissue update parser-3xq7 --state DONE --if-gen 7
+#+end_src
+
+=gen=, =events --since=, and =wait= are the log a second process polls.
+The tracker is those files and that log. Completing a session elsewhere
+does not close an issue.
+
+* 8. Share it with someone who cannot reach the tracker
 
 #+begin_src console
 $ vissue mirror --project parser --out /tmp/demo/backlog-mirror.org

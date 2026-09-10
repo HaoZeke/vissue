@@ -55,6 +55,31 @@ A user-level `~/.config/vissue/config.toml` can send named projects to a
 different checkout. Those routes win over `--root`. `--no-route` keeps
 the process on a single layout. See the [reference](https://vissue.rgoswami.me/reference.html).
 
+## A ledger a stranger can clone
+
+The tracker is those Org files, a generation counter, and an append-only
+event log. It is not a session graph. Closing a session, or completing a
+node somewhere else, does not close an issue. The only write from leftover
+session work is an explicit `vissue create` or `vissue update`.
+
+```console
+$ mkdir -p /tmp/ledger && cd /tmp/ledger
+$ vissue create --project parser "Reject a manifest with no header"
+parser-k29f  TODO  [#C]  Reject a manifest with no header
+$ vissue gen
+1
+$ VISSUE_AGENT=impl vissue claim parser-k29f
+claimed parser-k29f by impl (TODO -> STARTED)
+$ vissue update parser-k29f --state DONE --if-gen 2
+parser-k29f: state STARTED -> DONE, claim released (impl)
+$ vissue events --since 0
+```
+
+`--if-gen` is compare-and-swap on the corpus generation: if another writer
+moved the files first, the update refuses instead of last-write-wins.
+`gen` / `events` / `wait` are the log a second process polls. Nothing in
+this path names a host vault or a product seat.
+
 ## A plan on the board
 
 A feature becomes one parent issue and five tagged children. This is the
@@ -334,7 +359,7 @@ the outline. Escape on the project list unmaps the overlay; `vissue hud
 --toggle` (or `--show` / `--hide`) talks to the running owner. Closing the
 mapped window quits. `n` opens the logbook and writes a note. Keys
 come from a catalog; `~/.config/vissue/keys.toml` (or
-`VISSUE_KEYS`) remaps them. `--rofi` is the seat dmenu picker.
+`VISSUE_KEYS`) remaps them. `--rofi` is the rofi/dmenu picker.
 
 ```console
 $ vissue tui

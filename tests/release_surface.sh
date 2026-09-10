@@ -94,6 +94,14 @@ test "$publish_line" -lt "$tagflow_line"
 # The scope that the bootstrap actually needs, which is what bit us.
 grep -q 'publish-new' RELEASING.md
 
+# Public story is a cloneable Org ledger, not a seat vault.
+! grep -qi grokos README.md
+! grep -q WorkGraph README.md
+! grep -q 'Software/GrokOS' README.md docs/orgmode/getting-started.org
+grep -q -- '--if-gen' README.md
+grep -q 'vissue gen' README.md
+grep -q 'vissue events' README.md
+
 # Agents are not a second writer. The skill, the CLI docs, and hygiene
 # all say so, because a raw issues.org edit races the lock.
 grep -q 'never `Write` or `StrReplace`' README.md

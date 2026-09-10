@@ -27,7 +27,8 @@ An issue is a top-level Org heading. The file is the database: every command
 parses the files it needs, every mutation rewrites one file under a lock. The
 tracker diffs, merges, and greps like the repository it lives in, and a
 command-line tool, a Model Context Protocol server, and Emacs all read the
-same bytes.
+same bytes. A session graph is not this store: leftover work reaches the
+ledger only through an explicit =vissue= write.
 
 #+begin_src text
 <root>/Software/<project>/issues.org

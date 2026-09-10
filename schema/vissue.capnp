@@ -193,6 +193,25 @@ const operations :List(Operation) = [
       ( cli = "file", tool = "", socket = "", note = "no tool argument: a path resolves on the host running the server, not the caller's", toolType = "", socketType = "" ),
       ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment", toolType = "", socketType = "Option<String>" )
     ] ),
+  ( cli = "satchel", socket = "", mcp = "vissue_satchel", mutates = false, local = true,
+    note = "packs a slice of the tracker into a directory somebody else opens; it writes outside the corpus rather than to it, and sealing or checking one needs no tracker at all, which is why the receiver can run it",
+    fields = [
+      ( cli = "out", tool = "out", socket = "", note = "where to write the satchel; absent on the command line when sealing or checking one instead", toolType = "String", socketType = "" ),
+      ( cli = "project", tool = "projects", socket = "", note = "the command line repeats the flag where the tool takes a list", toolType = "Option<Vec<String>>", socketType = "" ),
+      ( cli = "issue", tool = "issues", socket = "", note = "the command line repeats the flag where the tool takes a list", toolType = "Option<Vec<String>>", socketType = "" ),
+      ( cli = "seal", tool = "", socket = "", note = "the tool splits this into its own name because a tool argument that changes what the verb does is a second verb", toolType = "", socketType = "" ),
+      ( cli = "verify", tool = "", socket = "", note = "the tool splits this into its own name for the same reason as seal", toolType = "", socketType = "" )
+    ] ),
+  ( cli = "", socket = "", mcp = "vissue_satchel_seal", mutates = false, local = true,
+    note = "the seal half of satchel, which the command line spells as a flag",
+    fields = [
+      ( cli = "", tool = "dir", socket = "", note = "", toolType = "String", socketType = "" )
+    ] ),
+  ( cli = "", socket = "", mcp = "vissue_satchel_verify", mutates = false, local = true,
+    note = "the check half of satchel, which the command line spells as a flag",
+    fields = [
+      ( cli = "", tool = "dir", socket = "", note = "", toolType = "String", socketType = "" )
+    ] ),
   ( cli = "refile", socket = "issue/refile", mcp = "vissue_refile", mutates = true, local = false,
     note = "",
     fields = [

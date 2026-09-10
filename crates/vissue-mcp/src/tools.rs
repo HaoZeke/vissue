@@ -310,3 +310,23 @@ mod tests {
         assert_eq!(priority_char(None), None);
     }
 }
+
+/// What to pack, and where.
+#[derive(Deserialize, JsonSchema)]
+pub struct SatchelArgs {
+    /// Directory to write the satchel into. Created if absent.
+    pub out: String,
+    /// Take these projects whole.
+    #[serde(default)]
+    pub projects: Option<Vec<String>>,
+    /// Take these issues, and everything they stand on.
+    #[serde(default)]
+    pub issues: Option<Vec<String>>,
+}
+
+/// A satchel somebody was handed.
+#[derive(Deserialize, JsonSchema)]
+pub struct SatchelDirArgs {
+    /// The satchel's directory.
+    pub dir: String,
+}

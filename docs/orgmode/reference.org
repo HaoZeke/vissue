@@ -26,6 +26,7 @@
 | =tree=, =graph=, =cycles=, =waiting-on=                                   | Relationships                                                            |
 | =roadmap=, =mirror=                                                       | Markdown roadmap; read-only Org or markdown projection                   |
 | =digest=, =mirror --check=                                                | Corpus digest; whether a mirror is still current                         |
+| =satchel=                                                                 | Pack a slice of the tracker for somebody else: =--out= with =--project= or =--issue=, then =--seal= once the deeds are in, then =--verify= on arrival |
 | =check=, =hygiene=, =normalize=                                           | Validation; rewrite a tracker onto the house Org shape                    |
 | =gen=, =events=, =wait=, =ping=                                           | Change stream for pollers; =wait --id= =--until-terminal= watches one issue |
 | =projects=, =identity=                                                    | Layout introspection                                                     |

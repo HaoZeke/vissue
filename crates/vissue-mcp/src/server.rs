@@ -942,6 +942,68 @@ impl VissueServer {
     }
 
     #[tool(
+        description = "Pack a slice of the tracker into a directory somebody else can open: the issues named, everything they stand on, and the deed accessions their work produced. Deeds are named and not enclosed, because only the deed store can vouch for them; fill them with `deedar export --into <dir>/data/deeds -` and then seal. Reports what was packed and what came along that was not asked for.",
+        annotations(
+            title = "Pack a satchel",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn vissue_satchel(
+        &self,
+        Parameters(args): Parameters<SatchelArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let slice = vissue_core::satchel::Slice {
+            projects: args.projects.unwrap_or_default(),
+            issues: args.issues.unwrap_or_default(),
+        };
+        text(
+            vissue_core::satchel::pack(&self.layout, &slice, std::path::Path::new(&args.out))
+                .map(|report| report.render()),
+        )
+    }
+
+    #[tool(
+        description = "Re-manifest a satchel over everything now in its payload. Run this after the deed store has filled in the deeds, because the manifest written at pack time covers only what the tracker wrote.",
+        annotations(
+            title = "Seal a satchel",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn vissue_satchel_seal(
+        &self,
+        Parameters(args): Parameters<SatchelDirArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(
+            vissue_core::satchel::seal(std::path::Path::new(&args.dir))
+                .map(|report| report.render()),
+        )
+    }
+
+    #[tool(
+        description = "Check a satchel that arrived: every file the manifest names is present and unchanged, and nothing in the payload is unaccounted for. Fails with what is wrong rather than a verdict.",
+        annotations(
+            title = "Check a satchel",
+            read_only_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn vissue_satchel_verify(
+        &self,
+        Parameters(args): Parameters<SatchelDirArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        text(
+            vissue_core::satchel::verify(std::path::Path::new(&args.dir))
+                .map(|report| report.render()),
+        )
+    }
+
+    #[tool(
         description = "Move an issue heading to another project file.",
         annotations(
             title = "Move to another project",

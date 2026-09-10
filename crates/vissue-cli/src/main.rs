@@ -18,6 +18,7 @@ use vissue_core::error::Error;
 use vissue_core::mirror::{self, Format};
 use vissue_core::ops::{self, CreateOpts, RejectOpts, UpdatePred};
 use vissue_core::router::Router;
+use vissue_core::satchel;
 use vissue_core::store;
 use vissue_core::{agent, events, report};
 
@@ -434,6 +435,33 @@ enum Command {
     Graph {
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
+    },
+    /// Pack a slice of the tracker so somebody else can open it.
+    ///
+    /// Writes a BagIt directory: the issues named, everything they stand on,
+    /// and the deed accessions their work produced. The deeds themselves come
+    /// from the deed store, which is the only thing that can vouch for them.
+    ///
+    ///   vissue satchel --out DIR --project X --issue Y
+    ///   ... fill DIR/data/deeds from the deed store ...
+    ///   vissue satchel --seal DIR
+    ///   vissue satchel --verify DIR
+    Satchel {
+        /// Where to write the satchel.
+        #[arg(long, conflicts_with_all = ["seal", "verify"])]
+        out: Option<PathBuf>,
+        /// Take these projects whole. Repeatable.
+        #[arg(long)]
+        project: Vec<String>,
+        /// Take these issues, and whatever they stand on. Repeatable.
+        #[arg(long)]
+        issue: Vec<String>,
+        /// Re-manifest a satchel over everything now in its payload.
+        #[arg(long)]
+        seal: Option<PathBuf>,
+        /// Check a satchel that arrived.
+        #[arg(long)]
+        verify: Option<PathBuf>,
     },
     /// Move an issue to another project's file.
     Refile {
@@ -1051,7 +1079,14 @@ fn run_keys(check: bool, occupancy: bool) -> Result<()> {
 /// corpus, and they have to keep working from anywhere: a shell sourcing
 /// completions is not standing in a tracker and should not have to.
 fn reads_the_corpus(command: &Command) -> bool {
-    !matches!(command, Command::Completions { .. } | Command::Man)
+    match command {
+        Command::Completions { .. } | Command::Man => false,
+        // Sealing and checking a satchel read a directory somebody was handed.
+        // The whole point of a satchel is that it opens where there is no
+        // tracker, so requiring one to check it would refuse the receiver.
+        Command::Satchel { out, .. } => out.is_some(),
+        _ => true,
+    }
 }
 
 fn run() -> Result<()> {
@@ -1394,6 +1429,32 @@ fn run() -> Result<()> {
         }
         Command::Cycles => emit!("{}", cycles_routed(&router)?),
         Command::Graph { project } => emit!("{}", graph_routed(&router, project.as_deref())?),
+        Command::Satchel {
+            out,
+            project,
+            issue,
+            seal,
+            verify,
+        } => {
+            let report = match (out, seal, verify) {
+                (Some(dest), _, _) => satchel::pack(
+                    &layout,
+                    &satchel::Slice {
+                        projects: project,
+                        issues: issue,
+                    },
+                    &dest,
+                )?,
+                (None, Some(dir), _) => satchel::seal(&dir)?,
+                (None, None, Some(dir)) => satchel::verify(&dir)?,
+                (None, None, None) => {
+                    return Err(anyhow::anyhow!(
+                        "satchel needs --out to pack, --seal to close, or --verify to check"
+                    ));
+                }
+            };
+            emit!("{}", report.render())
+        }
         Command::Refile { id, to } => {
             let found = layout_for_id(&router, &id)?;
             let dest = router.route(&to);

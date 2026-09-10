@@ -24,6 +24,7 @@ pub mod props;
 pub mod related;
 pub mod report;
 pub mod router;
+pub mod satchel;
 pub mod store;
 pub mod surface;
 /// Generated from `schema/vissue.capnp`; the operation set is encoded in here.

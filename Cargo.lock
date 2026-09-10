@@ -5940,6 +5940,7 @@ dependencies = [
  "fs2",
  "petgraph",
  "rayon",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",

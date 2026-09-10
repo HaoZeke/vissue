@@ -289,6 +289,36 @@ Hand work over: =vissue_satchel= packs a slice of the tracker into a
 directory somebody else can open; =vissue_satchel_seal= remanifests it after
 the deed store fills the payload; =vissue_satchel_verify= checks what arrived.
 
+Issues are addressable as resources at =vissue://issue/{id}= and projects at
+=vissue://project/{name}=, both rendered as Org. Projects are listed; issues
+arrive through the template, because a list a client pages through to find one
+id is worse than a pattern it fills in.
+
+** Prompts
+
+Three prompts carry what a tool description cannot: an order, and the reason
+the order is what it is.
+
+| Prompt             | Arguments                  | What it sequences                              |
+|--------------------+----------------------------+------------------------------------------------|
+| =pack_a_slice=     | =projects=, =issues=, =out= | Closure, then the other two stores, then seal  |
+| =pick_up_work=     | =project=                  | Ready, recall, claim, cite, close              |
+| =check_citations=  | =issue=                    | Evidenced, still the tip, what waits on it     |
+
+=pack_a_slice= seals last on purpose: a manifest written before the deed store
+and the pack have filled the payload proves only what was enumerated first.
+=pick_up_work= reads ready rather than open, because open includes the blocked
+and working that set is how one task gets started twice. =check_citations=
+asks three questions that are not the same question, and a deed can pass any
+two of them.
+
+Completion covers prompt arguments as well as the resource template: an
+=issue= or =issues= argument completes from the ids, a =project= or =projects=
+argument from the project list, and a comma separated argument completes its
+last field. The specification does not complete tool arguments, and this is
+where argument completion belongs anyway: a tool that answers a question hands
+ids back, so a caller working from an answer already has them.
+
 * The operation set
 
 =schema/vissue.capnp= states the verb set once, naming each verb on all three

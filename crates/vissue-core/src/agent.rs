@@ -49,7 +49,23 @@ pub fn issues_rows(
     ready_only: bool,
 ) -> Result<Vec<crate::views::IssueRow>> {
     let recs = load_recs(layout)?;
-    CatalogService::from_recs(&recs).issues_rows(ListQuery {
+    issues_rows_in(&recs, project_filter, state_filter, ready_only)
+}
+
+/// [`issues_rows`] over a corpus the caller already holds, so a caller asking
+/// about every project of one tracker loads it once rather than once per
+/// project.
+///
+/// # Errors
+///
+/// Does not fail for a parsed corpus.
+pub fn issues_rows_in(
+    recs: &[crate::views::IssueRec],
+    project_filter: Option<&str>,
+    state_filter: Option<&str>,
+    ready_only: bool,
+) -> Result<Vec<crate::views::IssueRow>> {
+    CatalogService::from_recs(recs).issues_rows(ListQuery {
         project: project_filter.map(str::to_string),
         state: state_filter.map(str::to_string),
         ready: ready_only,

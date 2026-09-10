@@ -1824,15 +1824,52 @@ fn list_routed(
         };
     }
     let mut out = String::new();
-    for pref in router.visible_projects()? {
+    for_each_visible_in(router, |recs, dir| {
         let chunk = if ready_only {
-            report::ready(&pref.layout, Some(&pref.dir))?
+            report::ready_in(recs, Some(dir))?
         } else {
-            report::list(&pref.layout, Some(&pref.dir), state, false)?
+            report::list_in(recs, Some(dir), state, false)?
         };
         out.push_str(&chunk);
-    }
+        Ok(())
+    })?;
     Ok(out)
+}
+
+/// Every visible project, with its tracker loaded once.
+///
+/// The visible projects of one tracker share one set of files, and a report
+/// that takes a layout loads all of them to answer about one project. Calling
+/// such a report once per project loaded the tracker once per project, which
+/// made every listing quadratic in the number of projects: twenty projects
+/// were four hundred parses of the same twenty files. This loads each distinct
+/// layout once, in the order its first project appears, and hands the corpus
+/// to the caller per project in visible order, so the output is the same
+/// concatenation it always was.
+fn for_each_visible_in(
+    router: &Router,
+    mut f: impl FnMut(&[vissue_core::views::IssueRec], &str) -> Result<()>,
+) -> Result<()> {
+    let prefs = router.visible_projects()?;
+    // Grouped by layout without a hash on Layout: the count of distinct
+    // trackers a seat routes is small, so a scan is the right structure.
+    let mut groups: Vec<(&vissue_core::config::Layout, Vec<&str>)> = Vec::new();
+    for pref in &prefs {
+        match groups
+            .iter_mut()
+            .find(|(layout, _)| **layout == pref.layout)
+        {
+            Some((_, dirs)) => dirs.push(pref.dir.as_str()),
+            None => groups.push((&pref.layout, vec![pref.dir.as_str()])),
+        }
+    }
+    for (layout, dirs) in groups {
+        let recs = vissue_core::catalog::load_recs(layout)?;
+        for dir in dirs {
+            f(&recs, dir)?;
+        }
+    }
+    Ok(())
 }
 
 fn issues_json_routed(
@@ -1851,12 +1888,14 @@ fn issues_json_routed(
         )?);
     }
     let mut rows = Vec::new();
-    for pref in router.visible_projects()? {
-        let value = agent::issues_json(&pref.layout, Some(&pref.dir), state, ready_only)?;
+    for_each_visible_in(router, |recs, dir| {
+        let value =
+            serde_json::to_value(agent::issues_rows_in(recs, Some(dir), state, ready_only)?)?;
         if let Some(arr) = value.as_array() {
             rows.extend(arr.iter().cloned());
         }
-    }
+        Ok(())
+    })?;
     Ok(serde_json::Value::Array(rows))
 }
 
@@ -1871,10 +1910,11 @@ fn count_routed(
         return Ok(report::count(&pref.layout, Some(&pref.dir), state, ready)?);
     }
     let mut n = 0usize;
-    for pref in router.visible_projects()? {
-        let text = report::count(&pref.layout, Some(&pref.dir), state, ready)?;
+    for_each_visible_in(router, |recs, dir| {
+        let text = report::count_in(recs, Some(dir), state, ready)?;
         n += text.trim().parse::<usize>().unwrap_or(0);
-    }
+        Ok(())
+    })?;
     Ok(format!("{n}\n"))
 }
 
@@ -1919,9 +1959,24 @@ fn claims_json_routed(router: &Router, by: Option<&str>, project: Option<&str>) 
 }
 
 fn agenda_routed(router: &Router, days: i64, project: Option<&str>) -> Result<String> {
-    concat_project_reports_with(router, project, Some(NOTHING_DATED), |layout, filter| {
-        report::agenda(layout, days, filter)
-    })
+    if let Some(p) = project {
+        let pref = router.route(p);
+        return Ok(report::agenda(&pref.layout, days, Some(&pref.dir))?);
+    }
+    // The same collapse of the empty-set line concat_project_reports_with
+    // does, over a tracker loaded once rather than once per project.
+    let mut out = String::new();
+    for_each_visible_in(router, |recs, dir| {
+        let part = report::agenda_in(recs, days, Some(dir))?;
+        if part != NOTHING_DATED {
+            out.push_str(&part);
+        }
+        Ok(())
+    })?;
+    if out.is_empty() {
+        out.push_str(NOTHING_DATED);
+    }
+    Ok(out)
 }
 
 fn stale_routed(router: &Router, days: i64, project: Option<&str>) -> Result<String> {

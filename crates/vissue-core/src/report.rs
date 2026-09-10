@@ -93,13 +93,33 @@ pub fn list(
     ready_only: bool,
 ) -> Result<String> {
     let recs = load_recs(layout)?;
-    let rows = CatalogService::from_recs(&recs).issues_rows(ListQuery {
+    list_in(&recs, project_filter, state_filter, ready_only)
+}
+
+/// [`list`] over a corpus the caller already holds.
+///
+/// A caller asking about several projects of one tracker loads it once and
+/// asks this once per project. Asking [`list`] once per project instead loads
+/// the whole tracker each time, which made every verb over a routed tracker
+/// quadratic in the number of projects: twenty projects were four hundred file
+/// parses for one listing.
+///
+/// # Errors
+///
+/// Does not fail for a parsed corpus.
+pub fn list_in(
+    recs: &[IssueRec],
+    project_filter: Option<&str>,
+    state_filter: Option<&str>,
+    ready_only: bool,
+) -> Result<String> {
+    let rows = CatalogService::from_recs(recs).issues_rows(ListQuery {
         project: project_filter.map(str::to_string),
         state: state_filter.map(str::to_string),
         ready: ready_only,
         ..ListQuery::default()
     })?;
-    Ok(format_issue_rows(&recs, &rows))
+    Ok(format_issue_rows(recs, &rows))
 }
 
 fn format_issue_rows(recs: &[IssueRec], rows: &[IssueRow]) -> String {
@@ -145,8 +165,17 @@ pub(crate) fn claim_suffix(h: &IssueHeading) -> String {
 /// Returns an error if the corpus cannot be read.
 pub fn ready(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     let recs = load_recs(layout)?;
-    let rows = CatalogService::from_recs(&recs).ready(project_filter)?;
-    Ok(format_issue_rows(&recs, &rows))
+    ready_in(&recs, project_filter)
+}
+
+/// [`ready`] over a corpus the caller already holds; see [`list_in`].
+///
+/// # Errors
+///
+/// Does not fail for a parsed corpus.
+pub fn ready_in(recs: &[IssueRec], project_filter: Option<&str>) -> Result<String> {
+    let rows = CatalogService::from_recs(recs).ready(project_filter)?;
+    Ok(format_issue_rows(recs, &rows))
 }
 
 /// One issue's metadata, file range, and body text.
@@ -759,9 +788,18 @@ pub fn claims(
 ///
 /// Returns an error if the corpus cannot be read.
 pub fn agenda(layout: &Layout, days: i64, project_filter: Option<&str>) -> Result<String> {
-    let today = Local::now().date_naive();
     let recs = load_recs(layout)?;
-    let rows = crate::catalog::agenda_rows_from(&recs, days, project_filter)?;
+    agenda_in(&recs, days, project_filter)
+}
+
+/// [`agenda`] over a corpus the caller already holds; see [`list_in`].
+///
+/// # Errors
+///
+/// Does not fail for a parsed corpus.
+pub fn agenda_in(recs: &[IssueRec], days: i64, project_filter: Option<&str>) -> Result<String> {
+    let today = Local::now().date_naive();
+    let rows = crate::catalog::agenda_rows_from(recs, days, project_filter)?;
 
     let mut out = String::new();
     let mut last_kind: Option<&str> = None;
@@ -813,17 +851,33 @@ pub fn count(
     state_filter: Option<&str>,
     ready_only: bool,
 ) -> Result<String> {
-    let all = load_all(layout)?;
-    let active_blockers: HashSet<String> = if ready_only {
-        all.iter()
-            .filter(|(_, h)| h.state != "DONE" && h.state != "CANCELLED")
-            .map(|(_, h)| h.id.clone())
+    let recs = load_recs(layout)?;
+    count_in(&recs, project_filter, state_filter, ready_only)
+}
+
+/// [`count`] over a corpus the caller already holds; see [`list_in`].
+///
+/// # Errors
+///
+/// Does not fail for a parsed corpus.
+pub fn count_in(
+    recs: &[IssueRec],
+    project_filter: Option<&str>,
+    state_filter: Option<&str>,
+    ready_only: bool,
+) -> Result<String> {
+    let active_blockers: HashSet<&str> = if ready_only {
+        recs.iter()
+            .map(|r| &r.heading)
+            .filter(|h| h.state != "DONE" && h.state != "CANCELLED")
+            .map(|h| h.id.as_str())
             .collect()
     } else {
         HashSet::new()
     };
-    let n = all
+    let n = recs
         .iter()
+        .map(|r| (r.project.as_str(), &r.heading))
         .filter(|(project, h)| {
             if !project_selected(project, project_filter) {
                 return false;
@@ -837,7 +891,10 @@ pub fn count(
                 if !READY_STATES.contains(&h.state.as_str()) {
                     return false;
                 }
-                if blocker_ids(h).iter().any(|b| active_blockers.contains(*b)) {
+                if blocker_ids(h)
+                    .iter()
+                    .any(|b| active_blockers.contains(b.as_str()))
+                {
                     return false;
                 }
             }

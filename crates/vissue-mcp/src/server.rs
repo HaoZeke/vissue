@@ -1101,11 +1101,124 @@ fn identity_report(layout: &Layout, router: &Router) -> String {
     out
 }
 
+/// The scheme issues are addressable under.
+const SCHEME: &str = "vissue";
+
+/// Org text, which is what every resource here is.
+const ORG: &str = "text/x-org";
+
+impl VissueServer {
+    /// One issue's org text, addressed rather than queried.
+    fn read_issue(&self, id: &str) -> Result<String, McpError> {
+        self.layout_for_id(id)
+            .and_then(|layout| agent::org_text(&layout, id))
+            .map_err(|e| McpError::resource_not_found(format!("{e}"), None))
+    }
+
+    /// One project's issues, as the org a reader would open.
+    fn read_project(&self, project: &str) -> Result<String, McpError> {
+        let pref = self.router.route(project);
+        mirror::render(
+            &pref.layout,
+            std::slice::from_ref(&pref.dir),
+            Format::Org,
+            None,
+        )
+        .map_err(|e| McpError::resource_not_found(format!("{e}"), None))
+    }
+}
+
 #[tool_handler]
 impl ServerHandler for VissueServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("vissue", env!("CARGO_PKG_VERSION")))
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+        .with_server_info(Implementation::new("vissue", env!("CARGO_PKG_VERSION")))
+        .with_instructions(
+            "An issue is addressable at vissue://issue/<id> and a project at \
+             vissue://project/<name>. Read those rather than calling a tool when \
+             what you want is the text; the tools answer questions the text does \
+             not, like what is ready or what blocks what.",
+        )
+    }
+
+    /// The projects, which are the resources that exist without being named.
+    ///
+    /// Issues are not listed. There are hundreds and they arrive through a
+    /// template instead: a list a client has to page through to find one id is
+    /// worse than a pattern it can fill in, and the ids come back from every
+    /// tool that answers a question.
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        let projects = self
+            .router
+            .visible_projects()
+            .map_err(|e| McpError::internal_error(format!("{e}"), None))?;
+        Ok(ListResourcesResult::with_all_items(
+            projects
+                .into_iter()
+                .map(|p| {
+                    let mut resource =
+                        Resource::new(format!("{SCHEME}://project/{}", p.key), p.key.clone());
+                    resource.title = Some(format!("{} issues", p.key));
+                    resource.description = Some(format!("Every issue in the {} project.", p.key));
+                    resource.mime_type = Some(ORG.to_string());
+                    resource
+                })
+                .collect(),
+        ))
+    }
+
+    /// The pattern one issue is addressed by.
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, McpError> {
+        let mut template =
+            ResourceTemplate::new(format!("{SCHEME}://issue/{{id}}"), "issue".to_string());
+        template.title = Some("One issue".to_string());
+        template.description =
+            Some("The org text of one issue, by id, with secrets screened out.".to_string());
+        template.mime_type = Some(ORG.to_string());
+        Ok(ListResourceTemplatesResult::with_all_items(vec![template]))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ReadResourceResponse, McpError> {
+        let uri = request.uri.clone();
+        let rest = uri.strip_prefix(&format!("{SCHEME}://")).ok_or_else(|| {
+            McpError::resource_not_found(format!("not a {SCHEME} uri: {uri}"), None)
+        })?;
+        let text = match rest.split_once('/') {
+            Some(("issue", id)) if !id.is_empty() => self.read_issue(id)?,
+            Some(("project", project)) if !project.is_empty() => self.read_project(project)?,
+            _ => {
+                return Err(McpError::resource_not_found(
+                    format!("{uri} names neither an issue nor a project"),
+                    None,
+                ));
+            }
+        };
+        Ok(
+            ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
+                uri,
+                mime_type: Some(ORG.to_string()),
+                text,
+                meta: None,
+            }])
+            .into(),
+        )
     }
 }
 
@@ -1482,6 +1595,25 @@ mod tests {
         }
         reads.sort_unstable();
         assert_eq!(reads, READS, "the read-only set moved");
+    }
+
+    /// An issue is a thing with an identity and text, which is what a
+    /// resource is. A question about issues is what a tool is for.
+    #[tokio::test]
+    async fn an_issue_is_addressable_without_a_tool_call() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixture_vault");
+        let server = VissueServer::with_layout(Layout::new(&root, DEFAULT_PREFIX));
+
+        let one = server.read_issue("atlas-2c3d").expect("the issue reads");
+        assert!(one.contains("atlas-2c3d"), "{one}");
+
+        let project = server.read_project("atlas").expect("the project reads");
+        assert!(project.contains("atlas-2c3d"), "{project}");
+
+        // A uri that names nothing is not found rather than empty, which is
+        // the same distinction the tracker root makes.
+        assert!(server.read_issue("atlas-nosuch").is_err());
     }
 
     /// The tools that answer with data publish the shape of it.

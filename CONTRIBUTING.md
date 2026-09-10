@@ -69,8 +69,13 @@ publicly.
 
 ## The file is a contract
 
-An `issues.org` is an ordinary Org file, and other tools read and write it.
-Two checks hold that promise, and a change to the command output or the
+An `issues.org` is an ordinary Org file. Emacs and other Org tools may
+read and write it; that is the interop the tests pin. Agents must not:
+never `Write` or `StrReplace` an `issues.org`. `vissue` and the MCP
+server are the writers, and every mutation already takes the file lock.
+A raw agent edit is a second writer. `scripts/pre-commit-issues-org.sh`
+flags a staged `issues.org` unless `VISSUE_ALLOW_ORG_EDIT=1`.
+Two checks hold the Org promise, and a change to the command output or the
 on-disk shape has to pass both:
 
 ```console

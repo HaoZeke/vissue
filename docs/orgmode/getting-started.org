@@ -41,7 +41,10 @@ That file is ordinary Org:
 #+end_src
 
 Nothing about it is private to this tool. Open it in Emacs and the agenda,
-tag search, and =id:= links all work.
+tag search, and =id:= links all work. An agent must not =Write= or
+=StrReplace= that file: =vissue= and the MCP server are the writers, and
+two creates on the same file serialize under a lock. A hand edit does not
+join that lock.
 
 * 2. Add work that waits on other work
 

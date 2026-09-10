@@ -148,6 +148,10 @@ pub fn waiting_on(layout: &Layout, id: &str) -> Result<String> {
 pub fn hygiene(layout: &Layout, stale_days: Option<i64>) -> Result<String> {
     let mut out = String::new();
     writeln!(out, "=== vissue hygiene ===")?;
+    writeln!(
+        out,
+        "[note] agents write through vissue / MCP; never Write or StrReplace issues.org"
+    )?;
 
     // Compare ids, not rendered rows: `id_length` is configurable, so one id
     // can be a prefix of another and a row match would pair the wrong issues.
@@ -366,6 +370,10 @@ mod tests {
         doc.write().unwrap();
 
         let text = hygiene(&layout, None).unwrap();
+        assert!(
+            text.contains("never Write or StrReplace issues.org"),
+            "{text}"
+        );
         assert!(text.contains("STARTED but not ready"), "{text}");
         assert!(text.contains("started_not_ready=1"), "{text}");
         assert!(text.contains("[ok] check passed"), "{text}");

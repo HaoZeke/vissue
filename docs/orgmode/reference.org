@@ -271,7 +271,9 @@ changes the picker list.
 
 =vissue-mcp= speaks the Model Context Protocol over stdio and calls the
 library in process. It resolves its root from =VISSUE_ROOT= and
-=VISSUE_PREFIX=. Tools mirror the CLI verbs.
+=VISSUE_PREFIX=. Tools mirror the CLI verbs. An agent never =Write=s or
+=StrReplace=s an =issues.org=; these tools and the =vissue= command are
+the writers.
 
 Read one issue or many: =vissue_list=, =vissue_ready=, =vissue_show=,
 =vissue_count=, =vissue_search=, =vissue_claims=, =vissue_agenda=,

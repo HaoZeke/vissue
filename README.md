@@ -26,6 +26,8 @@ caches a parse and pushes change notifications; crashing it loses nothing, and
 every verb still works with it down. Every mutation rewrites one file under a
 lock, so the tracker diffs, merges, and greps like the rest of the repository
 it lives in. A CLI and a Model Context Protocol server share the same library.
+Agents must never `Write` or `StrReplace` an `issues.org`; those two surfaces
+are the writers. A raw edit is a second writer and does not take the lock.
 
 The store is an Org file [1]. The graph has several justifications, and
 they are not interchangeable. `:PARENT:` plus `:TYPE:` and tags

@@ -94,6 +94,15 @@ test "$publish_line" -lt "$tagflow_line"
 # The scope that the bootstrap actually needs, which is what bit us.
 grep -q 'publish-new' RELEASING.md
 
+# Agents are not a second writer. The skill, the CLI docs, and hygiene
+# all say so, because a raw issues.org edit races the lock.
+grep -q 'never `Write` or `StrReplace`' README.md
+grep -q 'never `Write` or `StrReplace`' CONTRIBUTING.md
+grep -q 'never =Write=s or' docs/orgmode/reference.org
+grep -q 'pre-commit-issues-org.sh' CONTRIBUTING.md
+test -s scripts/pre-commit-issues-org.sh
+grep -q 'VISSUE_ALLOW_ORG_EDIT' scripts/pre-commit-issues-org.sh
+
 # The documentation site ships as Org sources plus a reproducible build, and
 # the generated CLI assets have to exist for a packager to install them.
 for path in docs/build.sh docs/orgmode/index.org docs/orgmode/getting-started.org \

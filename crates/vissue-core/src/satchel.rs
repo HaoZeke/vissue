@@ -288,18 +288,20 @@ pub fn seal(dir: &Path) -> Result<Report> {
 /// the receiver learns it from the check rather than from opening one.
 fn shortfall(dir: &Path, satchel: &Satchel) -> Vec<String> {
     let enclosed = enclosed_deeds(dir);
+    let mut out = Vec::new();
     let short = satchel
         .needs
         .iter()
         .filter(|acc| !enclosed.contains(*acc))
         .count();
-    if short == 0 {
-        return Vec::new();
+    if short > 0 {
+        out.push(format!(
+            "{short} of {} deed accessions are named and not enclosed",
+            satchel.needs.len()
+        ));
     }
-    vec![format!(
-        "{short} of {} deed accessions are named and not enclosed",
-        satchel.needs.len()
-    )]
+    out.extend(provenance_note(dir, &enclosed));
+    out
 }
 
 /// What this check did and did not establish about who packed the satchel.
@@ -343,6 +345,46 @@ fn atom_lines(dir: &Path) -> usize {
 }
 
 /// Which accessions actually have a directory under the payload.
+/// What the enclosed deeds still need checking for, and by what.
+///
+/// A satchel check is a check of the bag against its own manifest. It catches
+/// a payload that was corrupted or truncated and it cannot, even in principle,
+/// say whether a deed inside predates somebody asking for it: a sender who
+/// mints a deed the morning of the handover writes a manifest that agrees with
+/// it perfectly.
+///
+/// The deed store answers that, with the inclusion proof each deed travels
+/// with. Reading one is the deed store's business and not this crate's, so
+/// what belongs here is the fact that the question is open and the name of the
+/// verb that closes it. A receiver told only "the bag checks out" reads that
+/// as more than it says.
+fn provenance_note(dir: &Path, enclosed: &BTreeSet<String>) -> Option<String> {
+    if enclosed.is_empty() {
+        return None;
+    }
+    let deeds = dir.join("data").join("deeds");
+    let bare: Vec<&String> = enclosed
+        .iter()
+        .filter(|acc| !deeds.join(acc).join("proof.txt").is_file())
+        .collect();
+    if bare.is_empty() {
+        return Some(format!(
+            "{} deeds arrived carrying a proof this check does not read: `deedar check {}` says              whether the sender's log held them before the handover",
+            enclosed.len(),
+            dir.display()
+        ));
+    }
+    Some(format!(
+        "{} of {} enclosed deeds carry no proof, so nothing says they were logged before they          were handed over: {}",
+        bare.len(),
+        enclosed.len(),
+        bare.iter()
+            .map(|acc| acc.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
 fn enclosed_deeds(dir: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let Ok(entries) = std::fs::read_dir(dir.join("data").join("deeds")) else {
@@ -755,6 +797,81 @@ mod tests {
         let said = signed.notes.join(" ");
         assert!(said.contains("did not verify"), "{said}");
         assert!(said.contains("vouch check"), "{said}");
+    }
+
+    /// A deed that arrived is a deed nothing here has checked the provenance
+    /// of, and the check says so rather than counting it as trust.
+    ///
+    /// The failure this guards is the same one as the signature note, one
+    /// question further along: a reader who is told the bag matches its
+    /// manifest and that three deeds arrived hears that the deeds are good.
+    /// A manifest agrees just as well with a deed minted the morning of the
+    /// handover.
+    #[test]
+    fn an_enclosed_deed_is_not_a_checked_deed() {
+        let (_dir, layout) = tracker();
+        made(&layout, "first", CreateOpts::default());
+        let out = tempfile::tempdir().expect("out");
+        pack(
+            &layout,
+            &Slice {
+                projects: vec!["sample".into()],
+                issues: Vec::new(),
+            },
+            out.path(),
+        )
+        .expect("packs");
+
+        // A bag with no deeds says nothing about deeds.
+        let bare = verify(out.path()).expect("checks out");
+        assert!(
+            !bare.notes.join(" ").contains("deeds arrived"),
+            "{:?}",
+            bare.notes
+        );
+
+        // The deed store's half arrives: one deed with the proof an export
+        // writes, one without.
+        let deeds = out.path().join("data").join("deeds");
+        for (accession, proof) in [
+            ("deed-file-proven", true),
+            ("deed-file-bare", false),
+        ] {
+            let held = deeds.join(accession);
+            std::fs::create_dir_all(&held).expect("dirs");
+            std::fs::write(held.join("deed.bin"), b"bytes").expect("bytes");
+            if proof {
+                std::fs::write(held.join("proof.txt"), "id=deed-file-proven
+").expect("proof");
+            }
+        }
+        seal(out.path()).expect("seals");
+
+        let mixed = verify(out.path()).expect("checks out");
+        let said = mixed.notes.join(" ");
+        assert!(said.contains("deed-file-bare"), "{said}");
+        assert!(
+            said.contains("nothing says they were logged"),
+            "a deed with no proof passed unremarked: {said}"
+        );
+        assert!(
+            !said.contains("deed-file-proven"),
+            "a deed carrying a proof was named as missing one: {said}"
+        );
+
+        // With every deed carrying one, the note names the verb that reads
+        // them rather than implying this check did.
+        std::fs::write(
+            deeds.join("deed-file-bare").join("proof.txt"),
+            "id=deed-file-bare
+",
+        )
+        .expect("proof");
+        seal(out.path()).expect("seals");
+        let whole = verify(out.path()).expect("checks out");
+        let said = whole.notes.join(" ");
+        assert!(said.contains("2 deeds arrived"), "{said}");
+        assert!(said.contains("deedar check"), "{said}");
     }
 
     /// A slice that names nothing is not a slice, and an issue that is not

@@ -78,6 +78,9 @@ pub struct CreateOpts<'a> {
     /// after the lock is held, so a peer's create is either wholly before or
     /// wholly after this one.
     pub extra_id_paths: &'a [PathBuf],
+    /// Keep this id instead of minting one. It must be `{project}-` plus a
+    /// suffix of `0-9a-z`, and it must be free in this file and in the twins.
+    pub id: Option<&'a str>,
 }
 
 /// Append a new TODO issue to the project's file and return the status text.
@@ -145,7 +148,15 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
                 taken.extend(doc.known_ids());
             }
         }
-        let id = generate_id(&project, title, &taken, cfg.issues.id_length)?;
+        let id = if let Some(want) = opts.id {
+            validate_explicit_id(&project, want)?;
+            if taken.iter().any(|seen| seen == want) {
+                return Err(anyhow!("--id {want} already exists").into());
+            }
+            want.to_string()
+        } else {
+            generate_id(&project, title, &taken, cfg.issues.id_length)?
+        };
 
         let mut props = BTreeMap::new();
         props.insert("ID".into(), id.clone());
@@ -230,6 +241,26 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
             ))
         }
     })
+}
+
+/// An explicit create id is `{project}-` plus one or more `0-9a-z`.
+///
+/// # Errors
+///
+/// Returns an error when the id is not in that form.
+pub(crate) fn validate_explicit_id(project: &str, id: &str) -> Result<()> {
+    let prefix = format!("{project}-");
+    let Some(suffix) = id.strip_prefix(&prefix) else {
+        return Err(anyhow!("--id {id} is not {project}-<suffix>").into());
+    };
+    if suffix.is_empty()
+        || !suffix
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b.is_ascii_lowercase() && b.is_ascii_alphanumeric()))
+    {
+        return Err(anyhow!("--id {id} suffix must be one or more 0-9a-z").into());
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_org_date(s: &str) -> Result<()> {
@@ -2090,6 +2121,62 @@ mod tests {
             vec!["needs-review", "rust", "perf", "scaling"],
             "{h:?}"
         );
+    }
+
+    #[test]
+    fn create_keeps_an_explicit_id_that_is_free() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        create(
+            &layout,
+            "sample",
+            "imported from the other board",
+            CreateOpts {
+                id: Some("sample-ab12"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(only_id(&layout, "sample"), "sample-ab12");
+    }
+
+    #[test]
+    fn create_rejects_an_explicit_id_that_is_taken() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        let first = create(&layout, "sample", "already here", CreateOpts::default()).unwrap();
+        let id = first.split_whitespace().next().unwrap().to_string();
+        let err = create(
+            &layout,
+            "sample",
+            "second copy",
+            CreateOpts {
+                id: Some(&id),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains(&id),
+            "taken id must be named: {err}"
+        );
+    }
+
+    #[test]
+    fn create_rejects_an_explicit_id_for_another_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = fresh_layout(dir.path());
+        let err = create(
+            &layout,
+            "sample",
+            "wrong prefix",
+            CreateOpts {
+                id: Some("other-ab12"),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("sample-<suffix>"), "{err}");
     }
 
     #[test]

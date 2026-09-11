@@ -109,6 +109,9 @@ enum Command {
         /// Parent id, which must already exist
         #[arg(long)]
         parent: Option<String>,
+        /// Keep this id instead of minting one. Form is `{project}-` plus `0-9a-z`.
+        #[arg(long)]
+        id: Option<String>,
         /// Print only the new id
         #[arg(short, long)]
         quiet: bool,
@@ -1111,6 +1114,7 @@ fn run() -> Result<()> {
             scheduled,
             tags,
             parent,
+            id,
             quiet,
             body,
             body_file,
@@ -1134,6 +1138,7 @@ fn run() -> Result<()> {
                     parent: parent.as_deref(),
                     quiet,
                     body: body_text.as_deref(),
+                    id: id.as_deref(),
                     ..Default::default()
                 },
             )?;

@@ -561,6 +561,7 @@ fn dispatch_create(
             // One layout per server, so there is no twin file to reserve against.
             extra_id_paths: &[],
             extra_ids: &[],
+            id: None,
         },
     )
     .map_err(map_core)?;

@@ -891,10 +891,7 @@ pub fn count_in(
                 if !READY_STATES.contains(&h.state.as_str()) {
                     return false;
                 }
-                if blocker_ids(h)
-                    .iter()
-                    .any(|b| active_blockers.contains(b))
-                {
+                if blocker_ids(h).iter().any(|b| active_blockers.contains(b)) {
                     return false;
                 }
             }

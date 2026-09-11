@@ -6,6 +6,26 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.10.0](https://github.com/HaoZeke/vissue/releases/tag/v0.10.0) - 2026-09-11
+
+### Added
+
+- The README walks create, claim, complete, `--if-gen`, and the event log from an empty directory. Completing a session does not close an issue. The public pages do not name a host vault.
+- `vissue create --id` keeps a caller-supplied id, so a board can be copied
+  onto another tracker without minting a second suffix.
+
+### Changed
+
+- `related` Borda-merges the guess rankers (distance, tags, project, terms). A declared edge still adds 1000, so facts stay above guesses.
+
+### Fixed
+
+- Agents must not Write or StrReplace an issues.org. vissue and the MCP server are the writers; creates already serialize under a lock. Hygiene says so; a pre-commit script flags a staged issues.org.
+- `Layout::resolve` no longer links the private root chooser from public rustdoc, so `cargo doc -D warnings` can finish.
+- `vissue count --ready` compiled on a newer rustc by calling `str::as_str`,
+  which 1.97.1 still marks unstable. The filter already has `&str`.
+
+
 ## [0.9.3](https://github.com/HaoZeke/vissue/releases/tag/v0.9.3) - 2026-09-10
 
 ### Added

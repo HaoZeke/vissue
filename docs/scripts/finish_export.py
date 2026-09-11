@@ -21,6 +21,7 @@ from pathlib import Path
 PAGES = [
     "getting-started",
     "howto",
+    "harness",
     "reference",
     "control",
     "explanation",

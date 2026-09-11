@@ -31,18 +31,21 @@ html_css_files = ["custom.css"]
 
 html_context = {
     "source_type": "github",
-    "source_user": "HaoZeke",
+    "source_user": "leidarljos",
     "source_repo": "vissue",
     "source_version": "main",
     "source_docs_path": "/docs/source/",
 }
 
 html_theme_options = {
-    "accent_color": "teal",
-    "github_url": "https://github.com/HaoZeke/vissue",
+    "accent_color": "gold",
+    "color_mode": "dark",
+    "dark_code": True,
+    "github_url": "https://github.com/leidarljos/vissue",
     "nav_links": [
         {"title": "Get started", "url": "getting-started"},
         {"title": "How-to", "url": "howto"},
+        {"title": "Harness", "url": "harness"},
         {"title": "Reference", "url": "reference"},
         {"title": "Control", "url": "control"},
         {"title": "Explanation", "url": "explanation"},

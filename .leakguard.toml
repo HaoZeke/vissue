@@ -1,0 +1,14 @@
+# This crate is named vissue. The global issue-prefix ban exists to
+# keep that word out of other public trees, not this one.
+allow = [
+    "vissue ",
+    "vissue:",
+    " vissue\n",
+]
+
+# The harness how-to must name the public seat CLIs and their
+# documented config paths. Scoped to that page so the rest of the
+# tree stays scanned.
+path_allow = [
+    "docs/orgmode/harness.org",
+]

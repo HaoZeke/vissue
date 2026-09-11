@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="vissue">
   <title>vissue</title>
-  <rect width="256" height="256" fill="#1d3d58"/>
+  <rect width="256" height="256" fill="#0B0B0A"/>
   <g stroke="#141414" stroke-width="6" stroke-linejoin="miter">
     <polygon points="64,68 96,100 64,132 32,100" fill="#f4f1ea"/>
     <polygon points="128,68 160,100 128,132 96,100" fill="#f4f1ea"/>

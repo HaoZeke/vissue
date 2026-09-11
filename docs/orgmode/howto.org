@@ -2,7 +2,8 @@
 #+options: toc:nil num:nil
 
 One task per section. For the guided path through the basics, read
-[[file:getting-started.org][Getting started]] first.
+[[file:getting-started.org][Getting started]] first. To wire a coding seat, read
+[[file:harness.org][Harness]].
 
 * Send a project to another checkout
 

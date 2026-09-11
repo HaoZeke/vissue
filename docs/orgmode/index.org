@@ -6,77 +6,43 @@
 
    <div class="vi-hero">
      <div class="vi-hero-brand">
-       <img class="vi-hero-mark" src="_static/mark.svg" width="56" height="56" alt="" />
+       <img class="vi-hero-mark" src="_static/mark.svg" width="64" height="64" alt="" />
        <div>
          <p class="vi-hero-name">vissue</p>
+         <p class="vi-hero-tag">The file is the database.</p>
        </div>
      </div>
-     <p class="vi-hero-tagline">A plan is a directed acyclic graph of Org headings. One file per project holds the nodes. The file is the database: no SQLite, no second store.</p>
+     <p class="vi-hero-tagline">A plan is a directed acyclic graph of Org headings.</p>
      <div class="vi-hero-pills">
        <span>Org mode</span>
        <span>Plain text</span>
-       <span>Shared by many workers</span>
        <span>CLI + MCP</span>
+     </div>
+     <div class="vi-hero-actions">
+       <a class="vi-btn vi-btn-gold" href="getting-started.html">Get started</a>
+       <a class="vi-btn vi-btn-ghost" href="reference.html">Reference</a>
      </div>
    </div>
 #+end_export
-
-* What it is
-
-An issue is a top-level Org heading. The file is the database: every command
-parses the files it needs, every mutation rewrites one file under a lock. The
-tracker diffs, merges, and greps like the repository it lives in, and a
-command-line tool, a Model Context Protocol server, and Emacs all read the
-same bytes. A session graph is not this store: leftover work reaches the
-ledger only through an explicit =vissue= write.
-
-#+begin_src text
-<root>/Software/<project>/issues.org
-#+end_src
-
-Four properties carry the plan. =:PARENT:= groups work under it. =:BLOCKED_BY:=
-is the partial order. =ready= is the frontier anything can pick up. =claim= is
-the lock that stops two workers taking the same node.
-
-* Where to go
-
-- [[file:getting-started.org][Getting started]] takes an empty directory to a tracked
-  backlog two workers share. Start here.
-- [[file:howto.org][How-to]] answers a task at a time: filter, share a backlog, watch
-  for changes, fold in work found elsewhere.
-- [[file:reference.org][Reference]] is the command surface, the properties, the
-  configuration, and the export schema.
-- [[file:explanation.org][Explanation]] is why the file is the database, why the order
-  is a partial order, and what the citations do and do not justify.
-- [[file:emacs.org][Emacs]] is the other reader of the same file: the agenda, tag
-  search, and =id:= links, with nothing installed.
-- [[file:org-syntax.org][Org syntax]] is the Org 9.8 manual mapped onto an
-  =issues.org=: what the parser treats as structure, and what it keeps
-  as body.
-- [[file:ecosystem.org][Org ecosystem]] is the ELPA / contrib / MELPA inventory:
-  own, read, preserve, ignore. Protocol 1 is the tracker contract, not
-  parity with org-noter.
-- [[file:control.org][Control]] is the optional Unix socket: framing, methods, and
-  how the board and HUD attach.
 
 * Install
 
 #+begin_src console
 $ cargo install vissue-cli
+$ cargo install vissue-mcp
 $ cargo install vissue-hud   # summonable overlay, optional
-$ cargo install vissue-mcp   # the MCP server, same version
 #+end_src
 
-The workspace publishes seven crates at one version: =vissue-cli=,
-=vissue-mcp=, =vissue-hud=, and the libraries =vissue-core=,
-=vissue-control=, =vissue-serve=, and =vissue-tui=. Tagged releases
-also carry prebuilt archives and a shell installer. Shell completions
-and a manual page come out of the binary itself:
+Seven crates ship at one version. Tagged releases also carry prebuilt
+archives and a shell installer. Completions and the manual page come
+out of the binary:
 
 #+begin_src console
 $ vissue completions zsh > ~/.zfunc/_vissue
 $ vissue man > ~/.local/share/man/man1/vissue.1
 #+end_src
+
+Wire a coding seat through =ljos-mcp= on the [[file:harness.org][Harness]] how-to.
 
 #+begin_export rst
 .. toctree::
@@ -86,6 +52,7 @@ $ vissue man > ~/.local/share/man/man1/vissue.1
 
    getting-started
    howto
+   harness
    reference
    control
    explanation

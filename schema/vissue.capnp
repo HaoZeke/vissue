@@ -145,6 +145,7 @@ const operations :List(Operation) = [
       ( cli = "type", tool = "issue_type", socket = "issue_type", note = "the flag cannot be a Rust field of that name, which is a keyword", toolType = "Option<String>", socketType = "Option<String>" ),
       ( cli = "tags", tool = "tags", socket = "tags", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
       ( cli = "parent", tool = "parent", socket = "parent", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
+      ( cli = "id", tool = "", socket = "", note = "command line only: keep a caller-supplied id instead of minting one; the other surfaces still mint", toolType = "", socketType = "" ),
       ( cli = "body", tool = "body", socket = "body", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
       ( cli = "deadline", tool = "deadline", socket = "deadline", note = "", toolType = "Option<String>", socketType = "Option<String>" ),
       ( cli = "scheduled", tool = "scheduled", socket = "scheduled", note = "", toolType = "Option<String>", socketType = "Option<String>" ),

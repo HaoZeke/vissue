@@ -8,4 +8,5 @@
     <polygon points="160,100 192,132 160,164 128,132" fill="#f4f1ea"/>
     <polygon points="128,132 160,164 128,196 96,164" fill="#0e7a76"/>
   </g>
+  <circle cx="128" cy="164" r="7" fill="#E6A23C"/>
 </svg>

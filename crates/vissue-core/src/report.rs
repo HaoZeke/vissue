@@ -893,7 +893,7 @@ pub fn count_in(
                 }
                 if blocker_ids(h)
                     .iter()
-                    .any(|b| active_blockers.contains(b.as_str()))
+                    .any(|b| active_blockers.contains(b))
                 {
                     return false;
                 }

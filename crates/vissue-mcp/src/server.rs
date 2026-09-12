@@ -1249,7 +1249,12 @@ impl ServerHandler for VissueServer {
             "An issue is addressable at vissue://issue/<id> and a project at \
              vissue://project/<name>. Read those rather than calling a tool when \
              what you want is the text; the tools answer questions the text does \
-             not, like what is ready or what blocks what.",
+             not, like what is ready or what blocks what. The tracker is one of \
+             the seat's stores: when the ljos server is present, read \
+             ljos://protocol first and open work with ljos_sitting, vote with \
+             ljos_vote and settle with ljos_consensus, so the pack's trust rows \
+             and personas weigh the ballots; vissue_consensus alone settles under \
+             the tracker's own configuration.",
         )
     }
 

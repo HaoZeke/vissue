@@ -1,39 +1,15 @@
-//! DeGroot consensus over the ballots on one issue.
+//! DeGroot and Friedkin-Johnsen consensus over the ballots on one issue.
 //!
-//! A tally counts. Counting is the right answer when every voter is worth the
-//! same, and agents are not: a maintainer, a reviewer that has been wrong twice,
-//! and a fresh worker all cast one ballot each, and a plurality reports them as
-//! three equal opinions. `vote` already refuses to call a plurality agreement,
-//! but it has nothing to say about *whose* agreement it is.
-//!
-//! DeGroot's model (1974) is the standard answer and is one line: each agent holds
-//! an opinion, listens to the agents it trusts, and replaces its opinion with the
-//! weighted average of theirs. Written as a matrix, `x(t+1) = W x(t)` with `W`
-//! row-stochastic. Where that iteration settles is the group's position, and it
-//! is not the mean unless the trust is symmetric.
-//!
-//! Three things come out of it that a count cannot give:
-//!
-//! - the limit itself, which weights each ballot by how much the group actually
-//!   listens to the agent that cast it;
-//! - social power, the left Perron vector `π` of `W`, which says how much each
-//!   agent moved the result: the limit is `πᵀ x(0)`;
-//! - the failure to reach one. `W` converges to agreement only when the trust
-//!   graph has a single closed group every agent can reach (Berger, 1981). Two teams
-//!   that cite only each other never converge, and that is a fact about the team
-//!   worth reporting rather than a number worth averaging.
-//!
-//! The opinion here is a distribution over the choices already on the ballots, so
-//! nothing new has to be cast: an agent that voted `ship` starts at one on
-//! `ship`, and the limit is how much of the group's weight ends up on each
-//! option. With no trust configured every agent listens to every other equally,
-//! `W` is doubly stochastic, `π` is uniform, and the consensus is the tally as a
-//! fraction. Configuration only ever moves weight away from that.
-//!
-//! M. H. DeGroot, "Reaching a Consensus", J. Am. Stat. Assoc. 69(345), 1974.
-//!
-//! R. A. Berger, "A necessary and sufficient condition for reaching a consensus
-//! using DeGroot's method", J. Am. Stat. Assoc. 76(374), 1981.
+//! Each agent's opinion is a distribution over the choices on the ballots,
+//! one-hot at the start. The step is `x(t+1) = Λ W x(t) + (I - Λ) x(0)` with
+//! `W` the row-stochastic trust matrix from `[consensus.trust]` and `Λ` the
+//! diagonal of susceptibilities. `Λ = I` is DeGroot (doi:10.1080/01621459.1974.10480137):
+//! the group agrees exactly when the trust graph has one closed, aperiodic
+//! group every agent reaches (Berger, doi:10.1080/01621459.1981.10477662), and
+//! the limit weights each ballot by the left Perron vector of `W`. Below one it
+//! is Friedkin-Johnsen (doi:10.1080/0022250X.1990.9990069): the run always
+//! settles, on agents that still differ. With no rows configured `W` is
+//! doubly stochastic and the consensus is the tally as a fraction.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
@@ -69,12 +45,8 @@ pub enum Settling {
     /// is what a pair that listen only to each other and not at all to
     /// themselves produce.
     Oscillating,
-    /// The agents settled while still holding different opinions, because each
-    /// stayed partly anchored to the ballot it cast.
-    ///
-    /// Not a failure and not the same thing as a split. Under Friedkin and
-    /// Johnsen the persistent disagreement *is* the result: reporting one
-    /// number for the group would be reporting a position none of them holds.
+    /// Settled while still holding different opinions: the anchored case.
+    /// Not a split, and not one number for the group.
     Anchored,
 }
 
@@ -93,10 +65,6 @@ pub struct AgentLimit {
     /// weighting to report.
     pub power: Option<f64>,
     /// How far this agent was allowed to move off its own ballot.
-    ///
-    /// Per agent rather than on the outcome, because Friedkin and Johnsen's
-    /// susceptibility is a diagonal: two agents in one run can hold different
-    /// values, and the row is where a reader looks to see which.
     pub susceptibility: f64,
 }
 
@@ -124,20 +92,14 @@ pub struct Outcome {
     /// below one is Friedkin and Johnsen. A named agent carries its own on
     /// [`AgentLimit::susceptibility`].
     pub susceptibility: f64,
-    /// The largest gap left between any two agents on any one choice.
-    ///
-    /// Zero within tolerance when they agreed. Under an anchor it is the
-    /// disagreement the group keeps, which is the quantity worth reading.
+    /// The largest gap left between any two agents on any one choice; the
+    /// disagreement an anchored group keeps.
     pub spread: f64,
 }
 
 impl Outcome {
-    /// The winning choice and its share, when the group agreed and one choice
-    /// leads.
-    ///
-    /// `None` on a split, on an oscillation, and on an exact tie inside a
-    /// consensus, because reporting the first of two equal options as the
-    /// group's position is how a coin toss gets recorded as agreement.
+    /// The winning choice and its share when the group agreed and one choice
+    /// leads; `None` on a split, an oscillation, or a tie.
     #[must_use]
     pub fn leader(&self) -> Option<(&str, f64)> {
         let consensus = self.consensus.as_ref()?;
@@ -152,36 +114,18 @@ impl Outcome {
 }
 
 impl Outcome {
-    /// Whether a gate over this issue should pass.
-    ///
-    /// True only when the group agreed and one choice leads. A plurality, a
-    /// tie, a split and an oscillation are all cases where acting on the number
-    /// would be acting on agreement that is not there, which is what the verb
-    /// exists to make visible.
+    /// Whether a gate over this issue passes: agreed, and one choice leads.
     #[must_use]
     pub fn settled(&self) -> bool {
         self.settling == Settling::Agreed && self.leader().is_some()
     }
 }
 
-/// Two shares this close are a tie rather than a lead.
-///
-/// Coarser than the settling tolerance on purpose: the question is whether a
-/// reader would call the result a win, and a lead in the twelfth decimal is an
-/// artefact of the arithmetic rather than a position the group holds.
+/// Two shares this close are a tie; coarser than the settling tolerance.
 const TIE_EPS: f64 = 1e-6;
 
-/// Settle `ballots` under `cfg`.
-///
-/// DeGroot when `cfg.susceptibility` is one, which is the default: every agent
-/// gives up its own starting position and the group converges on a single
-/// number. Below one it is Friedkin and Johnsen's generalisation, `x(t+1) = λ W
-/// x(t) + (1 - λ) x(0)`, where each agent stays partly anchored to the ballot it
-/// cast and what settles is a profile of persistent disagreement.
-///
-/// Returns an empty outcome when nobody has voted; a single ballot settles on
-/// itself in one round, which the caller reports as the one opinion it is rather
-/// than as agreement.
+/// Settle `ballots` under `cfg`: DeGroot at susceptibility one, Friedkin-Johnsen
+/// below it. Empty when nobody voted; one ballot settles on itself.
 #[must_use]
 pub fn settle(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
     let agents: Vec<&Ballot> = {
@@ -224,10 +168,7 @@ pub fn settle(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
         })
         .collect();
 
-    // One-hot: an agent that voted `ship` puts all of its opinion on `ship`. The
-    // choice set was collected from these same ballots, so the position is
-    // always there; written as a match rather than an unwrap so the function
-    // has no panicking path at all.
+    // One-hot on the choice cast; a match so there is no panicking path.
     let mut opinion = vec![vec![0.0f64; m]; n];
     for (i, ballot) in agents.iter().enumerate() {
         if let Some(at) = choices.iter().position(|c| *c == ballot.choice) {
@@ -235,19 +176,8 @@ pub fn settle(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
         }
     }
 
-    // An anchor makes the iteration a contraction whatever the trust graph
-    // looks like, so it always settles, and it settles on agents that still
-    // differ. That is the model working rather than failing, so the structural
-    // question below is only asked of the unanchored case.
-    //
-    // Without an anchor the trust graph alone decides whether there is a
-    // consensus to reach, and the iteration only works out what it is. Deciding
-    // it from the iteration instead means asking whether a number stopped
-    // moving, and a chain that mixes slowly stops moving long before its agents
-    // agree, which reads as a split that is not there.
-    // One agent keeping part of its own ballot is enough to make the whole run
-    // a contraction, so the structural question below belongs to the case where
-    // nobody does.
+    // Any anchor makes the step a contraction, so the structural question is
+    // asked only of the unanchored run; a slow chain must not read as a split.
     let anchored = pull.iter().any(|value| *value < 1.0);
     let settling = if anchored {
         Settling::Anchored
@@ -308,12 +238,8 @@ pub fn of_issue(layout: &crate::config::Layout, id: &str) -> crate::error::Resul
     Ok(settle(&ballots, &cfg))
 }
 
-/// What each child of `plan` settled on.
-///
-/// Every child is read on its own, and the rows are left as rows. See the
-/// design note: no weighting over children can be picked without a judgement
-/// the tracker has no basis for, a split child has no position to fold in, and
-/// an unvoted child is absent rather than neutral.
+/// What each child of `plan` settled on, one row per child; nothing is folded
+/// across children.
 ///
 /// # Errors
 ///
@@ -354,18 +280,10 @@ pub fn of_plan(
     })
 }
 
-/// Build the row-stochastic influence matrix over `names`.
-///
-/// A configured row names the agents this one listens to, in whatever units the
-/// author found natural; only the ratios matter, because the row is normalised.
-/// Weight on an agent that did not vote is dropped: it has no opinion to average,
-/// and keeping it would quietly scale everyone else down.
-///
-/// The agent's weight on itself is `self_weight` unless its own row names it, in
-/// which case that value is used as written and the whole row is normalised
-/// together. An agent with no row, or whose row named nobody who voted, listens
-/// to itself with `self_weight` and splits the rest equally: that is the prior
-/// that makes the no-configuration case reduce to the tally.
+/// The row-stochastic influence matrix over `names`. A configured row is
+/// normalised as written, with `self_weight` on the diagonal unless the row
+/// names it; weight on a non-voter is dropped. An agent with no usable row
+/// keeps `self_weight` and splits the rest equally.
 fn influence(names: &[&str], cfg: &ConsensusSection) -> (Vec<Vec<f64>>, TrustSource) {
     let n = names.len();
     let mut weights = vec![vec![0.0f64; n]; n];
@@ -422,13 +340,8 @@ fn normalise(row: &mut [f64], total: f64) {
     }
 }
 
-/// What the trust graph alone determines about the outcome.
-///
-/// DeGroot's iteration converges to agreement exactly when the graph holds one
-/// closed group that every agent can reach, and that group is aperiodic (Berger,
-/// 1981). All three are properties of which weights are positive, not of their
-/// sizes, so they are decided here once rather than inferred from a number that
-/// stopped moving.
+/// What the trust graph alone determines: agreement iff one closed, aperiodic
+/// group every agent reaches (Berger, doi:10.1080/01621459.1981.10477662).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Structure {
     /// One closed group, aperiodic: every agent converges on it.
@@ -483,14 +396,8 @@ fn structure(weights: &[Vec<f64>]) -> Structure {
     }
 }
 
-/// The period of one strongly connected component: the greatest common divisor
-/// of its cycle lengths.
-///
-/// Read off a breadth-first layering rather than by enumerating cycles: for
-/// every edge inside the component, `level(u) + 1 - level(v)` is the length of a
-/// cycle through the tree, and the gcd of those is the period. A component
-/// holding a self-loop has period one, which is why a positive `self_weight`
-/// makes the default case converge.
+/// The period of one strongly connected component: the gcd over its edges of
+/// `level(u) + 1 - level(v)` on a breadth-first layering.
 fn period(
     graph: &DiGraph<usize, ()>,
     component: &[NodeIndex],
@@ -540,20 +447,9 @@ fn gcd(a: i64, b: i64) -> i64 {
     a
 }
 
-/// Iterate the opinions and return the rounds it took.
-///
-/// The step is `x_i(t+1) = λ_i (W x(t))_i + (1 - λ_i) x_i(0)`, with `λ` a
-/// diagonal rather than a scalar so two agents in one run can be differently
-/// movable. At `λ_i = 1` the anchor term vanishes for that agent and its row is
-/// DeGroot; below one it keeps pulling back toward the ballot it cast, which is
-/// what makes the step a contraction and the settling certain.
-///
-/// What counts as done depends on what the run can do. An unanchored convergent
-/// graph is run until the agents agree, because that is the quantity being
-/// reported. A split graph never will, and an anchored run never should, so
-/// both are run to a fixed point instead. A periodic unanchored graph has no
-/// limit at all, so it is not run: the opinions each agent holds are the ones it
-/// started with.
+/// Iterate `x_i(t+1) = λ_i (W x(t))_i + (1 - λ_i) x_i(0)` and return the
+/// rounds. A convergent unanchored graph runs until the agents agree; a split
+/// or anchored one runs to a fixed point; a periodic one is not run.
 fn iterate(
     opinion: &mut Vec<Vec<f64>>,
     weights: &[Vec<f64>],
@@ -607,13 +503,8 @@ fn spread(opinion: &[Vec<f64>], m: usize) -> f64 {
     worst
 }
 
-/// The left Perron vector of `weights`: how much each agent's starting opinion
-/// accounts for in the limit.
-///
-/// Power iteration from uniform, which is what the model itself does with the
-/// rows transposed. Reported only when the group agreed, because a matrix with
-/// more than one closed group has more than one such vector and none of them is
-/// the answer.
+/// The left Perron vector of `weights`, by power iteration: each agent's share
+/// of the limit. Defined only when the group agreed.
 fn social_power(weights: &[Vec<f64>], cfg: &ConsensusSection) -> Vec<f64> {
     let n = weights.len();
     let mut power = vec![1.0 / (n as f64); n];
@@ -694,10 +585,7 @@ mod tests {
         outcome.consensus.as_ref().expect("consensus")[at]
     }
 
-    /// With nothing configured every agent listens to every other equally, so the
-    /// matrix is doubly stochastic and the limit is the mean: the tally as a
-    /// fraction. This is the property that makes the verb safe to run on a
-    /// tracker nobody has configured.
+    /// Nothing configured: the limit is the tally as a fraction.
     #[test]
     fn without_configuration_the_consensus_is_the_tally_as_a_fraction() {
         let cfg = ConsensusSection::default();
@@ -878,11 +766,7 @@ mod tests {
         );
     }
 
-    /// A group that mixes slowly still agrees. Deciding that from the size of
-    /// the last step called it a split, because an agent that weights itself
-    /// heavily stops moving long before it has finished moving, and the whole
-    /// point of the structural test is that the answer does not depend on how
-    /// far along the arithmetic happens to be.
+    /// A group that mixes slowly still agrees.
     #[test]
     fn a_slowly_mixing_group_still_reaches_a_consensus() {
         let cfg = ConsensusSection {
@@ -998,10 +882,7 @@ mod tests {
         }
     }
 
-    /// The susceptibility is a diagonal. An agent named in the configuration
-    /// uses its own value and every other agent uses the default, which is the
-    /// case the model exists to express: a maintainer and a first-time reviewer
-    /// are not equally movable.
+    /// The susceptibility is a diagonal: a named agent uses its own value.
     #[test]
     fn a_named_agent_carries_its_own_susceptibility() {
         let mut cfg = ConsensusSection {

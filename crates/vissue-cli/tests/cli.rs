@@ -2061,6 +2061,18 @@ fn the_consensus_weighs_the_ballots_the_tally_counts() {
     let tally = stdout(&own("alice", &["vote", &id]));
     assert!(tally.contains("consensus: ship (2 of 3)"), "{tally}");
 
+    let rows: serde_json::Value =
+        serde_json::from_str(&stdout(&own("alice", &["vote", &id, "--json"]))).unwrap();
+    let rows = rows.as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[2]["agent"], "carol");
+    assert_eq!(rows[2]["choice"], "hold");
+    assert!(
+        !own("alice", &["vote", &id, "--json", "--for", "ship"])
+            .status
+            .success()
+    );
+
     let weighed = stdout(&own("alice", &["consensus", &id]));
     assert!(weighed.contains("holds: hold"), "{weighed}");
     assert!(

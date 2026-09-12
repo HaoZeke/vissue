@@ -227,6 +227,9 @@ enum Command {
         /// What to vote for. Omit to read the tally without casting.
         #[arg(long = "for", value_name = "CHOICE")]
         choice: Option<String>,
+        /// The ballots as JSON rows of `agent`, `choice`, `stamp`; reads only.
+        #[arg(long, conflicts_with = "choice")]
+        json: bool,
     },
     /// Cite, drop, or list the deeds this issue's work produced.
     ///
@@ -1317,10 +1320,20 @@ fn run() -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Command::Vote { id, choice } => {
+        Command::Vote { id, choice, json } => {
             let found = layout_for_id(&router, &id)?;
-            let who = vissue_core::config::identity(&found);
-            emit!("{}", ops::vote(&found, &id, choice.as_deref(), &who)?)
+            if json {
+                let rows: Vec<serde_json::Value> = ops::ballots(&found, &id)?
+                    .iter()
+                    .map(|b| {
+                        serde_json::json!({"agent": b.agent, "choice": b.choice, "stamp": b.stamp})
+                    })
+                    .collect();
+                emit!("{}", serde_json::Value::Array(rows))
+            } else {
+                let who = vissue_core::config::identity(&found);
+                emit!("{}", ops::vote(&found, &id, choice.as_deref(), &who)?)
+            }
         }
         Command::Append { id, text, file } => {
             let body = match (text, file) {

@@ -6,6 +6,17 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.12.0](https://github.com/HaoZeke/vissue/releases/tag/v0.12.0) - 2026-09-12
+
+### Added
+
+- `consensus --susceptibility-of JSON` lays a per-agent susceptibility over `[consensus.susceptibility_of]`, so a persona's own anchor reaches the settle from outside the config. ([#susceptibility-of](https://github.com/HaoZeke/vissue/issues/susceptibility-of))
+
+### Changed
+
+- Every flag prints help. The project, state, priority, type, parent, depth, limit and wait flags said nothing; an agent reading `--help` had to guess the state names and the priority letters. ([#flag-help](https://github.com/HaoZeke/vissue/issues/flag-help))
+
+
 ## [0.11.0](https://github.com/HaoZeke/vissue/releases/tag/v0.11.0) - 2026-09-12
 
 ### Added

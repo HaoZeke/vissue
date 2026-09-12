@@ -327,6 +327,7 @@ fn provenance_note(dir: &Path, enclosed: &BTreeSet<String>) -> Option<String> {
     ))
 }
 
+/// Which accessions have a directory under the payload.
 fn enclosed_deeds(dir: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let Ok(entries) = std::fs::read_dir(dir.join("data").join("deeds")) else {

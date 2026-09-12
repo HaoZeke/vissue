@@ -6,12 +6,6 @@
 //! seat's own `vissue/config.toml`, and otherwise the working directory.
 //! `prefix` comes from the caller, `VISSUE_PREFIX`, `<root>/vissue.toml`, or
 //! the `Software` default.
-//!
-//! The seat file is what lets the bare command answer from anywhere. Without
-//! it the only way to reach one tracker from outside its directory is an
-//! environment variable, which every shell and every launcher has to be told
-//! about separately, and a seat that misses one of them has a command that
-//! works in a terminal and not under an agent.
 
 use anyhow::Context;
 
@@ -86,12 +80,7 @@ impl Layout {
         Ok(layout)
     }
 
-    /// Refuse a guessed root that holds no tracker.
-    ///
-    /// A reading verb answering "none" is indistinguishable from a tracker with
-    /// nothing in it, and the two mean opposite things: one is an answer and
-    /// the other is a caller standing in the wrong directory. A root somebody
-    /// named is trusted, empty or not, because they said which one they meant.
+    /// Refuse a guessed root that holds no tracker; a named root is trusted.
     ///
     /// # Errors
     ///
@@ -129,13 +118,9 @@ impl Layout {
     }
 }
 
-/// Which root the tracker is, and whether it was a guess.
-///
-/// A guess is the working directory taken for want of anything better, and it
-/// is the one case where an empty answer might be a wrong answer, so
-/// [`Layout::require_tracker`] refuses it when it holds no tracker. Everything
-/// else here was named by somebody: the caller, the environment, the directory
-/// they are standing in, or the seat's own file.
+/// Which root the tracker is, and whether it was a guess (the working
+/// directory for want of anything better), which [`Layout::require_tracker`]
+/// refuses when empty.
 fn choose_root(
     named: Option<&Path>,
     from_env: Option<PathBuf>,
@@ -160,17 +145,8 @@ fn choose_root(
     }
 }
 
-/// The seat's own configuration file: which tracker it means when nobody says.
-///
-/// The same file the router reads, because a seat has one configuration file
-/// and not one per feature. Only `root` is read here and every other key is
-/// ignored, which is the opposite of the router's own strictness on purpose:
-/// this runs on the path where a caller has named nothing, and a file it
-/// cannot understand has to leave them with the working-directory message
-/// rather than an error about a key they did not ask about.
-///
-/// Separate from `<root>/vissue.toml`, which configures a tracker somebody has
-/// already found. This one is how they find it.
+/// The seat's own configuration file, the one the router reads: which tracker
+/// it means when nobody says. Only `root` is read here.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 struct SeatConfig {
@@ -178,11 +154,7 @@ struct SeatConfig {
 }
 
 impl SeatConfig {
-    /// The configured root, or nothing when the seat has not named one.
-    ///
-    /// A file that cannot be read or parsed is no answer rather than an error:
-    /// this is the fallback path, and the working directory below it still
-    /// gives the caller the tracker-or-not message they can act on.
+    /// The configured root, or nothing; an unreadable file is nothing too.
     fn read(path: &Path) -> Option<PathBuf> {
         let raw = fs::read_to_string(path).ok()?;
         let parsed: Self = toml::from_str(&raw).ok()?;
@@ -252,14 +224,7 @@ pub struct IssuesSection {
     /// How long a claim may sit on a STARTED issue before hygiene calls it
     /// stale.
     pub stale_claim_days: i64,
-    /// Whether `hygiene` reports work that closed without naming what it made.
-    ///
-    /// Off by default, because plenty of issues produce nothing a deed store
-    /// would hold: a decision, a review, a question answered. On a tracker
-    /// where the next unit is expected to open the last one's product, work
-    /// that closed citing nothing is a hole in the handoff, and this is what
-    /// makes that visible instead of leaving it to be discovered by whoever
-    /// needed it.
+    /// Whether `hygiene` reports work that closed citing no deed. Off by default.
     pub expect_deeds: bool,
 }
 
@@ -303,14 +268,9 @@ impl IssuesOverride {
     }
 }
 
-/// Who listens to whom, and how hard the consensus iteration tries.
-///
-/// The trust rows are the influence graph DeGroot averages over. Each row names
-/// the agents one agent listens to, in whatever units the author finds natural:
-/// only the ratios matter, because [`crate::consensus`] normalises the row. An
-/// agent with no row listens to itself with `self_weight` and splits the rest
-/// equally over the others, which makes an unconfigured tracker report the tally
-/// as a fraction rather than something surprising.
+/// Who listens to whom, and how hard the consensus iteration tries. Rows are
+/// normalised by [`crate::consensus`]; an agent with no row keeps
+/// `self_weight` and splits the rest equally.
 ///
 /// ```toml
 /// [consensus]
@@ -328,30 +288,14 @@ impl IssuesOverride {
 pub struct ConsensusSection {
     /// Weight an agent puts on its own opinion when its row does not name it.
     pub self_weight: f64,
-    /// How far an agent moves off the ballot it cast, in `[0, 1]`.
-    ///
-    /// One is DeGroot: an agent keeps nothing of its own starting position and
-    /// the group converges on a single number. Below one is Friedkin and
-    /// Johnsen's generalisation, where each agent stays partly anchored to the
-    /// ballot it actually cast, and what the iteration settles on is a profile
-    /// of persistent disagreement rather than one shared position.
-    ///
-    /// One by default, so a tracker that configures nothing keeps the reduction
-    /// to the tally. Below one is the honest setting where reviewers are not
-    /// expected to abandon their own reading, and it also removes the periodic
-    /// case: any anchor at all makes the iteration a contraction.
+    /// How far an agent moves off the ballot it cast, in `[0, 1]`: one is
+    /// DeGroot (the default), below one is Friedkin-Johnsen.
     pub susceptibility: f64,
     /// Largest disagreement that still counts as settled.
     pub tolerance: f64,
     /// Rounds to try before calling the trust graph periodic.
     pub max_iterations: usize,
-    /// Susceptibility for one named agent, where it differs from the default.
-    ///
-    /// Friedkin and Johnsen's susceptibility is a diagonal rather than one
-    /// number: a maintainer who has read the code for years and a reviewer
-    /// seeing it for the first time are not equally movable, and saying so is
-    /// the difference between the model and an average. An agent named here
-    /// uses this value; every other agent uses [`Self::susceptibility`].
+    /// Susceptibility for one named agent; others use [`Self::susceptibility`].
     pub susceptibility_of: BTreeMap<String, f64>,
     /// Trust rows, keyed by the identity that holds the opinion.
     pub trust: BTreeMap<String, BTreeMap<String, f64>>,
@@ -386,11 +330,8 @@ struct ConsensusOverride {
 }
 
 impl ConsensusOverride {
-    /// Apply this layer, refusing values the iteration cannot use.
-    ///
-    /// Refused rather than clamped: a `self_weight` of 2 is a typo, and clamping
-    /// it to 1 would hand back a consensus in which nobody listened to anybody
-    /// and say nothing about why.
+    /// Apply this layer, refusing rather than clamping values the iteration
+    /// cannot use.
     fn apply_to(&self, base: &mut ConsensusSection, whence: &Path) -> Result<()> {
         if let Some(value) = self.self_weight {
             if !(0.0..=1.0).contains(&value) {

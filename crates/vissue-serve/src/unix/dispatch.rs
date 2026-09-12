@@ -122,21 +122,10 @@ pub fn dispatch_ex(state: &OwnerState, session: &mut Session, req: &JsonRpcReque
     }
 }
 
-/// Rebuild the catalog from disk and hand back the revision it now carries.
-///
-/// Mutations go through `ops`, which write the org files directly. The
-/// catalog learns about a write from the watcher, which polls on its own
-/// cadence, so a client that writes and then reads over the same connection
-/// reads a catalog that predates its own write: `issue/get` on the id
-/// `issue/create` just handed back answers "not found". The write path
-/// therefore refreshes before it answers, and the watcher keeps its job of
-/// picking up edits made outside this process.
-///
-/// A full reload, rather than the watcher's partial path, because `refile`
-/// touches two projects and the handlers do not report which ones they wrote.
-/// If the catalog cannot be read the previous revision stands: the write
-/// already succeeded, and reporting it as failed would be worse than
-/// answering from a cache the watcher is about to replace.
+/// Rebuild the catalog from disk after a write, so a read on the same
+/// connection sees it, and hand back the revision. A full reload, since
+/// `refile` touches two projects; an unreadable catalog keeps the previous
+/// revision.
 fn refresh_after_write(state: &OwnerState) -> u64 {
     let Ok(recs) = load_recs(&state.layout) else {
         return catalog_revision(state);
@@ -374,12 +363,8 @@ fn dispatch_related(state: &OwnerState, params: Option<&Value>) -> Result<Value,
     })
 }
 
-/// `issue/deed`: cite, drop, or read the deeds an issue produced.
-///
-/// A mutation even when both lists are empty, as far as the dispatch table is
-/// concerned, because the request that carries them is the same one. The core
-/// verb reads without rewriting in that case, so an empty call still costs
-/// nothing but a parse.
+/// `issue/deed`: cite, drop, or read the deeds an issue produced. In the
+/// mutating table even for a read, since it is one request.
 fn dispatch_deed(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
     let params: DeedParams = decode(params)?;
     let report =
@@ -401,12 +386,8 @@ fn dispatch_recall(state: &OwnerState, params: Option<&Value>) -> Result<Value, 
     })
 }
 
-/// `issue/consensus`: DeGroot over the issue's ballots, as structure.
-///
-/// Off the files rather than the cached catalog: the trust rows come from the
-/// configuration, which the catalog does not hold, and a consensus computed
-/// against a stale copy of either would be reported with the same confidence as
-/// a fresh one.
+/// `issue/consensus`: the consensus over the issue's ballots, as structure,
+/// off the files rather than the catalog.
 fn dispatch_consensus(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
     let params: ConsensusParams = decode(params)?;
     if params.children {
@@ -644,13 +625,7 @@ fn dispatch_vote(
     mut_result(state, report, issue)
 }
 
-/// The five verbs that used to exist only on the command line.
-///
-/// A client that had to reach for the command line for `append` was writing the
-/// same files behind the server's back. The locks make that safe, so this is not a
-/// correctness fix; it is what lets the socket be a complete surface rather than
-/// most of one, and a caller can now do everything over one connection and see the
-/// change stream for all of it.
+/// The remaining mutating verbs, so the socket is a complete surface.
 fn dispatch_append(
     state: &OwnerState,
     session: &Session,
@@ -729,12 +704,7 @@ fn dispatch_normalize(
     mut_result(state, report, None)
 }
 
-/// The reads that had no method, so a socket client had to shell out for them.
-///
-/// One layout per server, so each calls the single-layout core function directly
-/// rather than the routed helper the command line needs. Every one returns text,
-/// because that is what the report functions produce and inventing a structure here
-/// would be a second contract to keep in step with the first.
+/// The text reads, one layout per server, each the single-layout core function.
 fn text_result(report: Result<String, vissue_core::error::Error>) -> Result<Value, JsonRpcError> {
     Ok(json!({"report": report.map_err(map_core)?}))
 }
@@ -789,13 +759,7 @@ fn dispatch_export(state: &OwnerState, params: Option<&Value>) -> Result<Value, 
     text_result(report::export(&state.layout, params.project.as_deref()))
 }
 
-/// Grouped per project, the way the command line groups it.
-///
-/// `report::graph` over a whole layout emits every node and then every edge, while
-/// the command line emits a project's nodes and edges together, because it builds one
-/// document out of per-project bodies. Both are valid dot and they are not the same
-/// bytes, and two surfaces answering one question differently is the kind of
-/// divergence nobody notices until they diff it.
+/// Grouped per project, byte for byte what the command line emits.
 fn dispatch_graph(state: &OwnerState, params: Option<&Value>) -> Result<Value, JsonRpcError> {
     let params: ProjectFilterParams = decode(params)?;
     if params.project.is_some() {
@@ -851,16 +815,8 @@ fn dispatch_waiting_on(state: &OwnerState, params: Option<&Value>) -> Result<Val
     text_result(vissue_core::agent::waiting_on(&state.layout, &params.id))
 }
 
-/// Freshness of a mirror file, which is what `mirror --check` answers.
-///
-/// The first version of this returned the corpus digest, because a digest was to
-/// hand and needed no path. That answered a question nobody asked under a name that
-/// promises another: a caller asking whether its mirror is current would have been
-/// told a hash and had no way to tell the difference.
-///
-/// Rendering a mirror is deliberately not here. It writes a file, and a file written
-/// by the server lands on the server's disk rather than the caller's, so a remote
-/// client would get a success and no file.
+/// Freshness of a mirror file, as `mirror --check` answers it. Rendering is
+/// not offered: a file the server writes lands on the server's disk.
 fn dispatch_mirror_check(
     state: &OwnerState,
     params: Option<&Value>,

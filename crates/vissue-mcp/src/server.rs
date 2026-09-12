@@ -14,12 +14,7 @@ use vissue_core::router::Router;
 use vissue_core::views::{IssueDetail, IssueRow};
 use vissue_core::{agent, events, report};
 
-/// A structured answer, or the error as the protocol carries one.
-///
-/// Four tools return data rather than prose, and a client that has to parse a
-/// pretty-printed string back into the object it already was is doing work the
-/// protocol has a field for. `Json` fills `structuredContent` and leaves the
-/// serialized text beside it, so a caller that reads either still works.
+/// A structured answer (`structuredContent` plus its text), or the protocol's error.
 fn structured<T, E: std::fmt::Display>(result: Result<T, E>) -> Result<Json<T>, McpError> {
     result
         .map(Json)
@@ -79,13 +74,8 @@ impl VissueServer {
         Ok(self.router.find_by_id(id)?.layout)
     }
 
-    /// A known id routes to its own layout. An accession names a product
-    /// rather than a heading, so it has no layout of its own and every tracker
-    /// in reach can cite it.
-    ///
-    /// Only "no such heading" falls through to the accession walk. A duplicate
-    /// id or an unreadable file is a fault in the corpus, and answering it with
-    /// a citation list would report that fault as an empty result.
+    /// A known id routes to its own layout; only "no such heading" falls
+    /// through to the accession walk over every tracker in reach.
     fn backlinks_text(&self, id: &str) -> vissue_core::Result<String> {
         match self.layout_for_id(id) {
             Ok(layout) => report::backlinks(&layout, id),
@@ -1185,9 +1175,6 @@ impl VissueServer {
     }
 
     /// Ids matching what has been typed, by id prefix then by title.
-    ///
-    /// Split out from the protocol handler so the matching can be tested
-    /// without standing up a session.
     fn complete_issue_ids(&self, typed: &str) -> Result<Vec<String>, McpError> {
         let typed = typed.to_ascii_lowercase();
         let mut hit: Vec<String> = Vec::new();
@@ -1266,12 +1253,7 @@ impl ServerHandler for VissueServer {
         )
     }
 
-    /// The projects, which are the resources that exist without being named.
-    ///
-    /// Issues are not listed. There are hundreds and they arrive through a
-    /// template instead: a list a client has to page through to find one id is
-    /// worse than a pattern it can fill in, and the ids come back from every
-    /// tool that answers a question.
+    /// The projects; issues arrive through the template instead of a listing.
     async fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
@@ -1311,19 +1293,8 @@ impl ServerHandler for VissueServer {
         Ok(ListResourceTemplatesResult::with_all_items(vec![template]))
     }
 
-    /// Fill in the id or the project a template or a prompt asks for.
-    ///
-    /// The spec completes resource template and prompt arguments, not tool
-    /// arguments, which is the right shape here anyway: those are the two
-    /// places a caller has to produce a name from nothing. Every tool that
-    /// answers a question hands ids back, so a caller working from an answer
-    /// already has them; a caller starting from a blank prompt does not.
-    ///
-    /// Matching on an id is a prefix, then anywhere in the title, because a
-    /// person completing an issue remembers what it was about more often than
-    /// what it was called. Capped at the hundred the spec allows, with
-    /// `has_more` set so a client can say the list is a window rather than the
-    /// answer.
+    /// Complete the id or project a template or prompt asks for: id prefix,
+    /// then title; capped at the spec's hundred with `has_more` set.
     async fn complete(
         &self,
         request: CompleteRequestParams,
@@ -1394,10 +1365,6 @@ mod tests {
     use vissue_core::config::DEFAULT_PREFIX;
 
     /// The tools an agent uses to work a node: recall before, deed after.
-    ///
-    /// Over the tool surface rather than the library, because this is the one an
-    /// agent actually reaches for, and a working set it cannot ask for is a
-    /// working set it will not use.
     #[tokio::test]
     async fn the_working_set_reaches_the_tool_surface() {
         let dir = tempfile::tempdir().unwrap();
@@ -1526,9 +1493,6 @@ mod tests {
     }
 
     /// The tools that write, exercised in the order an agent uses them.
-    ///
-    /// The read-only surface is covered above; the create/update/claim/note
-    /// path was not, and it is the half that changes the corpus.
     #[tokio::test]
     async fn the_write_tools_carry_their_arguments_through_to_the_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -1668,17 +1632,8 @@ mod tests {
         assert!(format!("{err:?}").contains("pdf"), "{err:?}");
     }
 
-    /// Every tool says whether it reads or writes, and a new one cannot ship
-    /// without saying.
-    ///
-    /// The hints are what a client uses to decide whether a call is safe to
-    /// make on its own, retry, or batch. A surface where the tool that lists
-    /// projects and the tool that rewrites every file look alike gives a
-    /// caller nothing to reason with, and forty-six unannotated tools is a
-    /// surface that says nothing forty-six times.
-    ///
-    /// The read-only set is written out rather than derived, so adding a tool
-    /// fails here until somebody decides which side it is on.
+    /// Every tool says whether it reads or writes; the read-only set is
+    /// written out, so a new tool fails here until placed.
     #[test]
     fn every_tool_declares_what_it_does_to_the_tracker() {
         const READS: &[&str] = &[
@@ -1784,11 +1739,6 @@ mod tests {
     }
 
     /// The template's id completes from the corpus, by id and by title.
-    ///
-    /// A caller working from any tool's answer already has ids. A caller
-    /// starting from the template has nothing, which is the case this exists
-    /// for, and remembering what an issue was about is more common than
-    /// remembering its suffix.
     #[tokio::test]
     async fn the_issue_template_completes_its_id() {
         let root =
@@ -1812,12 +1762,7 @@ mod tests {
         );
     }
 
-    /// The tools that answer with data publish the shape of it.
-    ///
-    /// A schema is what lets a caller check a reply rather than hope, and it
-    /// is derived from the type that is returned, so this also fails if the
-    /// core stops deriving it and the tool silently goes back to handing over
-    /// a string.
+    /// The tools that answer with data publish an output schema.
     #[test]
     fn the_tools_that_return_data_publish_its_shape() {
         const SHAPED: &[&str] = &[

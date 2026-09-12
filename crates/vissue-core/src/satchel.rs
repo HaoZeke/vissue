@@ -1,32 +1,9 @@
-//! A slice of the seat, packed so somebody else can open it.
-//!
-//! "Give the new person project X and tasks Y" is not one of the questions any
-//! of these tools answers. The tracker knows the work, the deed store knows
-//! what the work produced, and the pack knows what was learned; handing over a
-//! piece of that means taking a slice across all three and making it stand on
-//! its own somewhere else.
-//!
-//! What a slice has to carry, beyond the issues somebody named:
-//!
-//! - what they stand on. An issue whose blockers are absent is a task with no
-//!   account of why it is not done, so the closure walks blockers.
-//! - what plan they belong to. A child with no parent is a task with no reason.
-//! - what the work produced, by accession. The deeds themselves come from the
-//!   deed store, which is the only thing that can vouch for them; this names
-//!   them and the receiver fetches or refuses.
-//!
-//! The shape is BagIt (RFC 8493): a `data/` payload, a manifest of every file
-//! in it with a digest, and a `bag-info.txt` saying who packed it and when. A
-//! receiver checks the manifest before reading anything, which is the property
-//! a tarball does not have. `satchel.json` beside the payload is the
-//! self-description RO-Crate argues a package needs
-//! (doi:10.3233/DS-210053): the parts alone do not say what the whole was
-//! meant to be, or which of the parts were asked for rather than pulled in.
-//!
-//! This packs what the tracker holds. Deed bytes are the deed store's to
-//! export and atoms are the pack's, and `needs` is the list the deed store
-//! takes, so the three halves compose on pipes without this crate depending on
-//! either of them:
+//! A slice of the tracker packed as a BagIt bag (RFC 8493) with a
+//! `satchel.json` self-description (RO-Crate, doi:10.3233/DS-210053): the
+//! issues named, the blockers they stand on, the plans they sit under, and
+//! the deed accessions their work produced as `needs`. Deed bytes are the deed
+//! store's to export and atoms the pack's; the accession is what lets the
+//! three compose on pipes.
 //!
 //! ```console
 //! $ vissue satchel --out bag --project x --issue y
@@ -34,10 +11,6 @@
 //! $ jq -r '.needs[]' bag/data/satchel.json | deedar export --into bag/data/deeds -
 //! $ vissue satchel --seal bag && vissue satchel --verify bag
 //! ```
-//!
-//! The accession is what makes that work. It is the one identifier crossing
-//! all three stores, so each of them can name what it needs from the others
-//! without reading their formats.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -118,12 +91,8 @@ impl Report {
     }
 }
 
-/// Pack a slice of the tracker into `dest`.
-///
-/// The closure is the issues named, plus every blocker they stand on and every
-/// parent they sit under, walked to a fixed point. Children are not pulled in:
-/// handing over a plan means handing over the plan, and a parent's other
-/// children are other people's work.
+/// Pack a slice of the tracker into `dest`: the issues named, their blockers
+/// and parents to a fixed point; children are not pulled in.
 ///
 /// # Errors
 ///
@@ -243,13 +212,8 @@ pub fn pack(layout: &Layout, asked: &Slice, dest: &Path) -> Result<Report> {
     })
 }
 
-/// Re-manifest a satchel over everything now in its payload.
-///
-/// Packing writes what the tracker holds, and the deed store fills in the
-/// deeds afterwards, so the manifest written at pack time covers less than the
-/// satchel ends up carrying. Sealing is the step that says the payload is
-/// complete: after it, `verify` accounts for every file, and a file added
-/// later shows up as unlisted.
+/// Re-manifest a satchel over everything now in its payload, after the deed
+/// store and the pack have filled it.
 ///
 /// # Errors
 ///
@@ -281,11 +245,7 @@ pub fn seal(dir: &Path) -> Result<Report> {
     })
 }
 
-/// What the description names and the payload does not hold.
-///
-/// A satchel that names a deed and does not carry it is not broken, because
-/// the deed store may not have been asked yet. It is worth saying out loud, so
-/// the receiver learns it from the check rather than from opening one.
+/// Accessions the description names and the payload does not hold.
 fn shortfall(dir: &Path, satchel: &Satchel) -> Vec<String> {
     let enclosed = enclosed_deeds(dir);
     let mut out = Vec::new();
@@ -304,17 +264,8 @@ fn shortfall(dir: &Path, satchel: &Satchel) -> Vec<String> {
     out
 }
 
-/// What this check did and did not establish about who packed the satchel.
-///
-/// The payload matching the manifest says the bag arrived as it was written.
-/// It says nothing about who wrote it, because a receiver recomputing digests
-/// from the bag they were handed is checking the bag against itself. That
-/// second question needs the signature over the manifest, and the keys a
-/// reader accepts live in their deed store rather than here, so this names
-/// what is left rather than answering it.
-///
-/// Saying so is the point. A check that reports "ok" for the first question
-/// and stays quiet about the second invites the reader to hear both.
+/// What the manifest check leaves open: who packed it, which the signature
+/// over the manifest answers in the deed store.
 fn signature_note(dir: &Path) -> String {
     let manifest = dir.join("manifest-sha256.txt");
     let signature = manifest.with_extension("txt.sig");
@@ -344,12 +295,8 @@ fn atom_lines(dir: &Path) -> usize {
         .sum()
 }
 
-/// Which accessions actually have a directory under the payload.
-/// What the enclosed deeds still need checking for, and by what.
-///
-/// A manifest check says the bag arrived as written, not that a deed predates
-/// the asking. The deed store answers that from the receipt beside each deed;
-/// this crate names the verb rather than reading the receipt.
+/// What the enclosed deeds still need checking for, and by what: the receipts
+/// are the deed store's to read.
 fn provenance_note(dir: &Path, enclosed: &BTreeSet<String>) -> Option<String> {
     if enclosed.is_empty() {
         return None;
@@ -395,12 +342,8 @@ fn enclosed_deeds(dir: &Path) -> BTreeSet<String> {
     out
 }
 
-/// Check a satchel: every file the manifest names is present and hashes right,
-/// and nothing in the payload is unaccounted for.
-///
-/// The second half is the one that matters. A manifest that only proves what
-/// it lists would let a packer add a file nobody agreed to, which is how a
-/// bundle becomes a delivery mechanism.
+/// Check a satchel: every file the manifest names is present and hashes
+/// right, and nothing in the payload is unlisted.
 ///
 /// # Errors
 ///
@@ -754,11 +697,6 @@ mod tests {
     }
 
     /// A clean check says what it established and what it did not.
-    ///
-    /// The failure this guards is a reader running one command, seeing that
-    /// the payload matches, and hearing that the bag is trustworthy. Matching
-    /// a manifest a stranger could have written establishes nothing about who
-    /// wrote it.
     #[test]
     fn checking_a_satchel_says_what_it_did_not_check() {
         let (_dir, layout) = tracker();

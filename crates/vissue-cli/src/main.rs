@@ -1873,6 +1873,15 @@ fn for_each_visible_in(
         for dir in dirs {
             f(&recs, dir)?;
         }
+        // Not dropped. This is the command line: the answer has been written
+        // and the process is about to end, and the operating system reclaims
+        // the corpus faster than the allocator can walk it. The profile of a
+        // listing over ten thousand issues put forty percent of its time in
+        // freeing headings that were parsed on worker threads and released on
+        // this one, which is the allocator's slow path, for memory nobody was
+        // going to reuse. The library keeps dropping; only the process that
+        // exits next skips it.
+        std::mem::forget(recs);
     }
     Ok(())
 }

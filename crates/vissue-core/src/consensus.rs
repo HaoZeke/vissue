@@ -233,9 +233,63 @@ pub fn settle(ballots: &[Ballot], cfg: &ConsensusSection) -> Outcome {
 /// Returns an error if `id` is not in the corpus, the corpus cannot be read, or
 /// the configuration names a weight the iteration cannot use.
 pub fn of_issue(layout: &crate::config::Layout, id: &str) -> crate::error::Result<Outcome> {
+    of_issue_with(layout, id, &[])
+}
+
+/// [`of_issue`] with `rows` laid over the configured trust, pair by pair.
+///
+/// # Errors
+///
+/// As [`of_issue`].
+pub fn of_issue_with(
+    layout: &crate::config::Layout,
+    id: &str,
+    rows: &[(String, String, f64)],
+) -> crate::error::Result<Outcome> {
     let ballots = crate::ops::ballots(layout, id)?;
-    let cfg = crate::config::VissueConfig::load(layout)?.consensus;
+    let mut cfg = crate::config::VissueConfig::load(layout)?.consensus;
+    for (from, to, weight) in rows {
+        cfg.trust
+            .entry(from.clone())
+            .or_default()
+            .insert(to.clone(), *weight);
+    }
     Ok(settle(&ballots, &cfg))
+}
+
+/// Trust rows as `[[from, to, weight], ...]` or `[{from, to, weight}, ...]`.
+///
+/// # Errors
+///
+/// Returns an error when the text is not one of those two shapes, or a weight
+/// is not a positive number.
+pub fn trust_rows(raw: &str) -> crate::error::Result<Vec<(String, String, f64)>> {
+    let bad = |what: &str| crate::error::Error::from(anyhow::anyhow!("trust: {what}"));
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| bad(&format!("not JSON: {e}")))?;
+    let rows = value.as_array().ok_or_else(|| bad("expected an array"))?;
+    rows.iter()
+        .map(|row| {
+            let (from, to, weight) = if let Some(items) = row.as_array() {
+                match items.as_slice() {
+                    [f, t, w] => (f.as_str(), t.as_str(), w.as_f64()),
+                    _ => return Err(bad("a tuple is [from, to, weight]")),
+                }
+            } else {
+                (
+                    row.get("from").and_then(serde_json::Value::as_str),
+                    row.get("to").and_then(serde_json::Value::as_str),
+                    row.get("weight").and_then(serde_json::Value::as_f64),
+                )
+            };
+            match (from, to, weight) {
+                (Some(f), Some(t), Some(w)) if w > 0.0 && !f.is_empty() && !t.is_empty() => {
+                    Ok((f.to_string(), t.to_string(), w))
+                }
+                _ => Err(bad("a row needs from, to and a positive weight")),
+            }
+        })
+        .collect()
 }
 
 /// What each child of `plan` settled on, one row per child; nothing is folded
@@ -583,6 +637,21 @@ mod tests {
             .position(|c| c == choice)
             .expect("choice");
         outcome.consensus.as_ref().expect("consensus")[at]
+    }
+
+    /// Rows laid over the configuration parse from either JSON shape and are
+    /// refused when malformed.
+    #[test]
+    fn trust_rows_take_tuples_or_objects() {
+        let rows = trust_rows(r#"[["a","b",2.0],{"from":"b","to":"a","weight":1}]"#).unwrap();
+        assert_eq!(
+            rows,
+            vec![("a".into(), "b".into(), 2.0), ("b".into(), "a".into(), 1.0)]
+        );
+        assert!(trust_rows("{}").is_err());
+        assert!(trust_rows(r#"[["a","b"]]"#).is_err());
+        assert!(trust_rows(r#"[["a","b",0]]"#).is_err());
+        assert!(trust_rows("not json").is_err());
     }
 
     /// Nothing configured: the limit is the tally as a fraction.

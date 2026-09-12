@@ -1975,6 +1975,23 @@ fn the_consensus_weighs_the_ballots_the_tally_counts() {
 
     let weighed = stdout(&own("alice", &["consensus", &id]));
     assert!(weighed.contains("holds: hold"), "{weighed}");
+
+    // Rows passed in lie over the file's rows, pair by pair.
+    let overruled = stdout(&own(
+        "alice",
+        &[
+            "consensus",
+            &id,
+            "--trust",
+            r#"[["alice","carol",0.01],["bob","carol",0.01],["carol","alice",4],["carol","carol",0.5]]"#,
+        ],
+    ));
+    assert!(overruled.contains("holds: ship"), "{overruled}");
+    assert!(
+        !own("alice", &["consensus", &id, "--trust", "[[1]]"])
+            .status
+            .success()
+    );
     assert!(
         weighed.contains("the count leads with ship"),
         "the difference is the reason to run it: {weighed}"

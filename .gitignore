@@ -40,3 +40,4 @@ docs/build/
 .venv-docs/
 docs/source/*.rst
 !docs/source/conf.py
+.fastembed_cache/

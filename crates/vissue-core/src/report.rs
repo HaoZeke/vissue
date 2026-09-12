@@ -427,8 +427,17 @@ pub fn recall_deeds(layout: &Layout, id: &str, depth: usize) -> Result<String> {
 /// Returns an error if the corpus cannot be read, `id` is not in it, or the
 /// configuration names a weight the iteration cannot use.
 pub fn consensus(layout: &Layout, id: &str) -> Result<String> {
+    consensus_with(layout, id, &[])
+}
+
+/// [`consensus`] with trust rows laid over the configuration.
+///
+/// # Errors
+///
+/// As [`consensus`].
+pub fn consensus_with(layout: &Layout, id: &str, rows: &[(String, String, f64)]) -> Result<String> {
     let ballots = crate::ops::ballots(layout, id)?;
-    let outcome = crate::consensus::of_issue(layout, id)?;
+    let outcome = crate::consensus::of_issue_with(layout, id, rows)?;
     Ok(consensus_text(id, &ballots, &outcome))
 }
 

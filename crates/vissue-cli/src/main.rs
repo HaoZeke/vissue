@@ -280,6 +280,9 @@ enum Command {
         /// Emit a JSON object instead of text
         #[arg(long)]
         json: bool,
+        /// Trust rows laid over `[consensus.trust]`: `[[from, to, weight], ...]`.
+        #[arg(long, value_name = "JSON")]
+        trust: Option<String>,
     },
     /// Add a dated note to the top of an issue's logbook; state and claim untouched.
     Note {
@@ -1257,8 +1260,16 @@ fn run() -> Result<()> {
             children,
             gate,
             json,
+            trust,
         } => {
             let found = layout_for_id(&router, &id)?;
+            let rows = match trust.as_deref() {
+                Some(raw) => vissue_core::consensus::trust_rows(raw)?,
+                None => Vec::new(),
+            };
+            if children && !rows.is_empty() {
+                bail!("--trust applies to one issue's ballots; drop --children");
+            }
             // The report prints either way. A gate that swallowed the reason it
             // failed would send a reader back to run the command again without
             // it, which is what `mirror --check` already avoids.
@@ -1271,11 +1282,11 @@ fn run() -> Result<()> {
                 )?;
                 roll.settled()
             } else {
-                let outcome = vissue_core::consensus::of_issue(&found, &id)?;
+                let outcome = vissue_core::consensus::of_issue_with(&found, &id, &rows)?;
                 emit_shape(
                     json,
                     || vissue_core::Result::Ok(outcome.clone()),
-                    || report::consensus(&found, &id),
+                    || report::consensus_with(&found, &id, &rows),
                 )?;
                 outcome.settled()
             };

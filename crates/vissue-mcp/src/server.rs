@@ -123,7 +123,7 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "List the projects that hold an issues.org under the tracker root.",
+        description = "Call this first when you do not know which project a piece of work belongs to: the projects that hold an issues.org under the tracker root.",
         annotations(
             title = "List projects",
             read_only_hint = true,
@@ -140,7 +140,7 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "List issues, optionally filtered by project and state.",
+        description = "Call this to see a project's board: its issues, optionally filtered by project and state (TODO, STARTED, BLOCKED, DONE, CANCELLED). For what can be worked on now, vissue_ready.",
         annotations(title = "List issues", read_only_hint = true, open_world_hint = false)
     )]
     async fn vissue_list(
@@ -156,7 +156,7 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "List actionable issues: TODO or STARTED with no open blocker.",
+        description = "Call this when choosing what to work on: the issues that are TODO or STARTED with no open blocker. Then claim one before touching it.",
         annotations(
             title = "Actionable issues",
             read_only_hint = true,
@@ -176,7 +176,7 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Show one issue's metadata and file range. Never returns body prose.",
+        description = "Call this to read one issue's state, priority, claim, parent and file range; the body prose is at the resource vissue://issue/<id>, so read that when you want the text.",
         annotations(
             title = "Show an issue",
             read_only_hint = true,
@@ -194,7 +194,7 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Create an issue in a project's issues.org.",
+        description = "Call this before starting any work that has no issue yet: every piece of work has an issue before it has a claim. Creates it in the project's issues.org and returns the id.",
         annotations(
             title = "Create an issue",
             read_only_hint = false,
@@ -277,7 +277,7 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Update an issue's state, priority, or blocker edges.",
+        description = "Call this when an issue's state, priority or blockers change, and to close it (state DONE or CANCELLED) once the work is accepted; completing a session node elsewhere does not close the ticket.",
         annotations(
             title = "Update an issue",
             read_only_hint = false,
@@ -314,7 +314,7 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Claim an issue: move it to STARTED and stamp the claiming identity.",
+        description = "Call this before working on an issue: moves it to STARTED and stamps your identity, so two agents do not take the same work. When the seat is present, ljos_sitting does this and the rest of the opening.",
         annotations(
             title = "Claim an issue",
             read_only_hint = false,
@@ -355,7 +355,7 @@ impl VissueServer {
     }
 
     #[tool(
-        description = "Add a dated note to an issue's logbook without touching state or claim.",
+        description = "Call this as work progresses: one dated line in the issue's logbook, state and claim untouched. A finished report goes to vissue_append.",
         annotations(
             title = "Add a logbook note",
             read_only_hint = false,

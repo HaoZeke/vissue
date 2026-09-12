@@ -1304,7 +1304,9 @@ fn run() -> Result<()> {
                 None => Vec::new(),
             };
             if children && (!rows.is_empty() || !anchors.is_empty()) {
-                bail!("--trust and --susceptibility-of apply to one issue's ballots; drop --children");
+                bail!(
+                    "--trust and --susceptibility-of apply to one issue's ballots; drop --children"
+                );
             }
             // The report prints either way. A gate that swallowed the reason it
             // failed would send a reader back to run the command again without

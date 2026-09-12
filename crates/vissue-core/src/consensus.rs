@@ -286,7 +286,9 @@ pub fn anchor_rows(raw: &str) -> crate::error::Result<Vec<(String, f64)>> {
     let bad = |what: &str| crate::error::Error::from(anyhow::anyhow!("susceptibility-of: {what}"));
     let value: serde_json::Value =
         serde_json::from_str(raw).map_err(|e| bad(&format!("not JSON: {e}")))?;
-    let map = value.as_object().ok_or_else(|| bad("expected an object of agent to number"))?;
+    let map = value
+        .as_object()
+        .ok_or_else(|| bad("expected an object of agent to number"))?;
     map.iter()
         .map(|(agent, v)| match v.as_f64() {
             Some(s) if (0.0..=1.0).contains(&s) => Ok((agent.clone(), s)),

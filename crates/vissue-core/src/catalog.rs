@@ -230,11 +230,7 @@ pub fn issues_rows_from(issues: &[IssueRec], q: ListQuery) -> Result<Vec<IssueRo
     } else {
         HashSet::new()
     };
-    // Built once for the whole call rather than walked per issue. The ordered
-    // check needs the parent of an issue and then that parent's other children,
-    // and finding each by scanning made `ready` quadratic in the corpus on any
-    // tracker whose issues have parents, which is every tracker with a plan in
-    // it. `ready` is the verb an agent polls.
+    // Built once for the whole call; per-issue scans make `ready` quadratic.
     let ordering = q.ready.then(|| OrderingIndex::new(issues));
 
     let mut rows: Vec<(char, String, String, IssueRow)> = Vec::new();
@@ -526,11 +522,7 @@ pub(crate) fn secret_marker(excerpt: &str) -> Option<&'static str> {
             return Some("a credential keyword");
         }
     }
-    // `key = value` shapes: an assignment whose name reads like a credential
-    // and whose value holds no space, which prose after a colon usually does.
-    // Judged on the name, not on how random the value looks: a guard should
-    // suppress a placeholder in an `api_key =` line rather than reason about
-    // whether this particular one is live.
+    // `key = value` shapes, judged on the name, with a value holding no space.
     for line in lower.lines() {
         let Some((name, value)) = line.split_once(['=', ':']) else {
             continue;

@@ -152,14 +152,8 @@ pub fn with_issues_locks<R, F>(paths: &[&Path], f: F) -> Result<R>
 where
     F: FnOnce() -> Result<R>,
 {
-    // Deduplicated by the file each path resolves to, not by how it was spelled.
-    //
-    // The process mutex is keyed on the canonical path, so two spellings of one
-    // file hand back the same non-reentrant mutex; locking it twice in this loop
-    // is a self-deadlock, and the second advisory lock on the same file from a
-    // second descriptor blocks as well. Two configured roots that are links to
-    // one tree, or the same root written two ways, are enough to reach it, and a
-    // mint now locks every twin file rather than one.
+    // Deduplicated by the file each path resolves to: the process mutex is
+    // keyed on the canonical path and is not reentrant.
     let mut seen: Vec<PathBuf> = Vec::new();
     let mut keys: Vec<PathBuf> = Vec::new();
     let mut ordered: Vec<PathBuf> = paths.iter().map(|p| (*p).to_path_buf()).collect();
@@ -492,12 +486,8 @@ fn is_vissue_headline(lines: &[&str], i: usize, keywords: &[String]) -> bool {
     peek_heading_id(lines, i).is_none_or(|id| !crate::org::is_gcal_event_id(id))
 }
 
-/// The `:ID:` of the heading at `start`, borrowed from the line it sits on.
-///
-/// Called once per line by [`is_vissue_headline`], which runs in several
-/// passes, so every heading's drawer is walked more than once. Returning an
-/// owned `String` meant an allocation each time to answer one question about
-/// the shape of the id.
+/// The `:ID:` of the heading at `start`, borrowed from the line it sits on;
+/// [`is_vissue_headline`] calls this once per line.
 fn peek_heading_id<'a>(lines: &[&'a str], start: usize) -> Option<&'a str> {
     let mut i = start + 1;
     while i < lines.len() && !parse_planning_line(lines[i]).is_empty() {
@@ -1071,17 +1061,9 @@ fn org_id_property_value(line: &str) -> Option<&str> {
     if value.is_empty() { None } else { Some(value) }
 }
 
-/// The ids a file defines, which are the ones org would read.
-///
-/// A property drawer counts where org lets one start: under a headline, under
-/// that headline's planning line, or beside the other drawers clustered
-/// there. A `:PROPERTIES:` block further down the entry is an ordinary drawer
-/// and the `:ID:` inside it is prose.
-///
-/// The distinction is the difference between a working `check` and a silent
-/// one. Agents write their reports into issue bodies, those reports quote org,
-/// and taking every `:ID:` line makes quoted text define an id: a `:PARENT:`
-/// pointing at nothing resolves against a report that merely mentions it.
+/// The ids a file defines, as org reads them: a property drawer counts under
+/// a headline, its planning line, or beside the drawers clustered there; a
+/// `:PROPERTIES:` block further down is prose.
 pub(crate) fn org_ids(content: &str) -> impl Iterator<Item = &str> {
     // The top of a file is a drawer site: org reads a file-level drawer there.
     let mut at_drawer_site = true;

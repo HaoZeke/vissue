@@ -261,11 +261,8 @@ impl IssueDoc {
         // handful of `#+TODO:` lines in it, and the content is already split.
         let keyword_lines: Vec<&str> = settings.lines().chain(lines.iter().copied()).collect();
         let keywords = todo_keywords_from_lines(&keyword_lines);
-        // Once for the file, then indexed. The test walks a heading's whole
-        // property drawer looking for an id, and it used to run in four
-        // separate passes over every line: finding the first heading, the
-        // heading loop, and the scan for what sits between two headings. It
-        // reads no nesting state, so one pass answers for all of them.
+        // Once for the file, then indexed: one pass answers for the first
+        // heading, the heading loop, and the scan between two headings.
         let headline_at: Vec<bool> = (0..lines.len())
             .map(|i| is_vissue_headline(&lines, i, &keywords))
             .collect();

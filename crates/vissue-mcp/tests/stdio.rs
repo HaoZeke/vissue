@@ -240,7 +240,7 @@ fn a_write_tool_changes_the_tracker_over_the_pipe() {
         .expect("org");
     assert!(org.contains("took the pipe"), "{org}");
 
-    // The tracker still reads back, which markdown in a body used to prevent.
+    // Markdown in a body leaves the tracker readable.
     let check = server.call_text("vissue_check", json!({})).expect("check");
     assert!(check.contains("0 error(s)"), "{check}");
 }

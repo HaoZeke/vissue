@@ -1670,12 +1670,8 @@ fn clearing_the_last_blocker_returns_a_blocked_issue_to_todo() {
     assert_eq!(detail.state, "TODO");
 }
 
-/// A markdown body must not split the issue in two.
-///
-/// An asterisk in the first column opens an org headline. A body carrying a
-/// bullet list used to be written straight through, so the next read saw a
-/// heading with no `:ID:`, stopped parsing the file, and dropped every issue
-/// in that project out of `list`.
+/// A markdown body must not split the issue in two: an asterisk in the first
+/// column opens an org headline.
 #[test]
 fn a_body_with_markdown_bullets_does_not_break_the_file() {
     let (_dir, layout) = writable_copy();

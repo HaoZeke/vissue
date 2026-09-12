@@ -292,6 +292,10 @@ enum Command {
         /// Trust rows laid over `[consensus.trust]`: `[[from, to, weight], ...]`.
         #[arg(long, value_name = "JSON")]
         trust: Option<String>,
+        /// Per-agent susceptibility laid over `[consensus.susceptibility_of]`:
+        /// `{"agent": s}` with s in [0, 1]; 0 holds the agent to its ballot.
+        #[arg(long, value_name = "JSON")]
+        susceptibility_of: Option<String>,
     },
     /// Add a dated note to the top of an issue's logbook; state and claim untouched.
     Note {
@@ -1288,14 +1292,19 @@ fn run() -> Result<()> {
             gate,
             json,
             trust,
+            susceptibility_of,
         } => {
             let found = layout_for_id(&router, &id)?;
             let rows = match trust.as_deref() {
                 Some(raw) => vissue_core::consensus::trust_rows(raw)?,
                 None => Vec::new(),
             };
-            if children && !rows.is_empty() {
-                bail!("--trust applies to one issue's ballots; drop --children");
+            let anchors = match susceptibility_of.as_deref() {
+                Some(raw) => vissue_core::consensus::anchor_rows(raw)?,
+                None => Vec::new(),
+            };
+            if children && (!rows.is_empty() || !anchors.is_empty()) {
+                bail!("--trust and --susceptibility-of apply to one issue's ballots; drop --children");
             }
             // The report prints either way. A gate that swallowed the reason it
             // failed would send a reader back to run the command again without
@@ -1309,11 +1318,12 @@ fn run() -> Result<()> {
                 )?;
                 roll.settled()
             } else {
-                let outcome = vissue_core::consensus::of_issue_with(&found, &id, &rows)?;
+                let outcome =
+                    vissue_core::consensus::of_issue_anchored(&found, &id, &rows, &anchors)?;
                 emit_shape(
                     json,
                     || vissue_core::Result::Ok(outcome.clone()),
-                    || report::consensus_with(&found, &id, &rows),
+                    || report::consensus_anchored(&found, &id, &rows, &anchors),
                 )?;
                 outcome.settled()
             };

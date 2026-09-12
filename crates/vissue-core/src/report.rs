@@ -436,8 +436,23 @@ pub fn consensus(layout: &Layout, id: &str) -> Result<String> {
 ///
 /// As [`consensus`].
 pub fn consensus_with(layout: &Layout, id: &str, rows: &[(String, String, f64)]) -> Result<String> {
+    consensus_anchored(layout, id, rows, &[])
+}
+
+/// [`consensus_with`] with per-agent susceptibilities laid over the
+/// configuration as well.
+///
+/// # Errors
+///
+/// Returns an error when the issue is not in the corpus.
+pub fn consensus_anchored(
+    layout: &Layout,
+    id: &str,
+    rows: &[(String, String, f64)],
+    anchors: &[(String, f64)],
+) -> Result<String> {
     let ballots = crate::ops::ballots(layout, id)?;
-    let outcome = crate::consensus::of_issue_with(layout, id, rows)?;
+    let outcome = crate::consensus::of_issue_anchored(layout, id, rows, anchors)?;
     Ok(consensus_text(id, &ballots, &outcome))
 }
 

@@ -246,6 +246,23 @@ pub fn of_issue_with(
     id: &str,
     rows: &[(String, String, f64)],
 ) -> crate::error::Result<Outcome> {
+    of_issue_anchored(layout, id, rows, &[])
+}
+
+/// [`of_issue_with`] with per-agent susceptibilities laid over
+/// `[consensus.susceptibility_of]`: a persona's own anchor, in `[0, 1]`,
+/// where 0 never moves off its ballot and 1 is plain DeGroot.
+///
+/// # Errors
+///
+/// Returns an error when the issue is not in the corpus or the config does
+/// not load.
+pub fn of_issue_anchored(
+    layout: &crate::config::Layout,
+    id: &str,
+    rows: &[(String, String, f64)],
+    anchors: &[(String, f64)],
+) -> crate::error::Result<Outcome> {
     let ballots = crate::ops::ballots(layout, id)?;
     let mut cfg = crate::config::VissueConfig::load(layout)?.consensus;
     for (from, to, weight) in rows {
@@ -254,7 +271,28 @@ pub fn of_issue_with(
             .or_default()
             .insert(to.clone(), *weight);
     }
+    for (agent, s) in anchors {
+        cfg.susceptibility_of.insert(agent.clone(), *s);
+    }
     Ok(settle(&ballots, &cfg))
+}
+
+/// Per-agent susceptibilities as `{"agent": s, ...}`, each in `[0, 1]`.
+///
+/// # Errors
+///
+/// Returns an error when the text is not a JSON object of numbers in range.
+pub fn anchor_rows(raw: &str) -> crate::error::Result<Vec<(String, f64)>> {
+    let bad = |what: &str| crate::error::Error::from(anyhow::anyhow!("susceptibility-of: {what}"));
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| bad(&format!("not JSON: {e}")))?;
+    let map = value.as_object().ok_or_else(|| bad("expected an object of agent to number"))?;
+    map.iter()
+        .map(|(agent, v)| match v.as_f64() {
+            Some(s) if (0.0..=1.0).contains(&s) => Ok((agent.clone(), s)),
+            _ => Err(bad(&format!("{agent}: a number in [0, 1]"))),
+        })
+        .collect()
 }
 
 /// Trust rows as `[[from, to, weight], ...]` or `[{from, to, weight}, ...]`.
@@ -621,6 +659,19 @@ pub fn tally(ballots: &[Ballot]) -> BTreeMap<String, Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Anchors parse as an object of agent to a number in [0, 1]; anything
+    /// else is refused with the agent named.
+    #[test]
+    fn anchor_rows_take_an_object_in_range() {
+        let rows = anchor_rows(r#"{"reviewer": 0.3, "author": 1}"#).expect("parses");
+        assert_eq!(
+            rows,
+            vec![("author".to_string(), 1.0), ("reviewer".to_string(), 0.3)]
+        );
+        assert!(anchor_rows(r#"{"reviewer": 1.5}"#).is_err());
+        assert!(anchor_rows(r#"[["reviewer", 0.3]]"#).is_err());
+    }
 
     fn ballot(agent: &str, choice: &str) -> Ballot {
         Ballot {

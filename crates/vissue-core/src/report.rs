@@ -235,14 +235,8 @@ pub fn show(layout: &Layout, id: &str) -> Result<String> {
     Ok(out)
 }
 
-/// What a plan's children hold, child by child.
-///
-/// Deliberately not a number. The design note that settled this is in the
-/// vault; the short version is that no weighting over children can be picked
-/// without a judgement the tracker has no basis for, a child that settled split
-/// has no single position to fold in, and a child nobody voted on is absent
-/// rather than neutral. Rolling those into one figure would hide exactly the
-/// rows a person has to go read.
+/// What a plan's children settled on, child by child; never folded into one
+/// number, since a split child has no position and an unvoted one is absent.
 ///
 /// # Errors
 ///
@@ -317,13 +311,8 @@ pub fn plan_consensus(layout: &Layout, id: &str) -> Result<String> {
 }
 
 /// The working set for one issue: the plan around it, the deeds its declared
-/// inputs produced, and what it has produced itself.
-///
-/// This is the layer between the task graph and the work: the tracker already
-/// records what a node waits on, so what an agent should open before starting is
-/// derivable rather than searchable. Nothing is ranked and nothing is embedded.
-/// A neighbourhood by resemblance is a different question and `related` answers
-/// it.
+/// inputs produced, and its own. Derived from the graph, not ranked; `related`
+/// answers resemblance.
 ///
 /// # Errors
 ///
@@ -404,10 +393,8 @@ pub fn recall(layout: &Layout, id: &str, depth: usize, excerpts: bool) -> Result
     Ok(out)
 }
 
-/// Just the deed accessions [`recall`] found, inputs first, one per line.
-///
-/// The form a shell substitutes: `deedar get $(vissue recall <id> --deeds-only)`
-/// opens the working set without a parser in between.
+/// The deed accessions [`recall`] found, inputs first, one per line, for
+/// `deedar get $(vissue recall <id> --deeds-only)`.
 ///
 /// # Errors
 ///
@@ -432,12 +419,8 @@ pub fn recall_deeds(layout: &Layout, id: &str, depth: usize) -> Result<String> {
     Ok(out)
 }
 
-/// The DeGroot consensus over an issue's ballots, weighted by who the group
-/// listens to.
-///
-/// `vote` counts; this weighs. Both are printed, because the useful thing about
-/// the weighted answer is where it differs from the count, and a reader shown
-/// only one of them cannot tell whether the trust configuration did anything.
+/// The consensus over an issue's ballots under the trust rows, printed beside
+/// the count so a reader sees where the weighting moved it.
 ///
 /// # Errors
 ///
@@ -566,13 +549,8 @@ fn consensus_text(
             }
         }
         Settling::Anchored => {
-            // Under an anchor there is no single position to report, and saying
-            // one would name a position none of them holds. What each agent
-            // landed on, and how far apart they stayed, is the result.
-            // The susceptibility is a diagonal, so it goes on the row when the
-            // agents differ and on the header when they do not. Printing one
-            // number over rows that used several would be the wrong number for
-            // all but one of them.
+            // Anchored: each agent's position and the gap are the result. The
+            // susceptibility goes on the row when agents differ, else the header.
             let uniform = outcome
                 .agents
                 .windows(2)
@@ -642,8 +620,7 @@ fn consensus_text(
     out
 }
 
-/// Case-insensitive substring scan over id, title, properties, and body. Linear
-/// in the corpus, which is the right cost until the issue count climbs.
+/// Case-insensitive substring scan over id, title, properties, and body.
 ///
 /// # Errors
 ///
@@ -775,9 +752,8 @@ pub fn claims(
     Ok(out)
 }
 
-/// Dated open work in the next `days` days, plus anything already overdue.
-/// Dated open work, grouped the way Org does: deadline, then scheduled,
-/// then appointment. Overdue deadlines are first.
+/// Dated open work in the next `days` days plus anything overdue, grouped the
+/// way Org does: deadline, then scheduled, then appointment.
 ///
 /// # Errors
 ///
@@ -917,14 +893,8 @@ pub fn export(layout: &Layout, project_filter: Option<&str>) -> Result<String> {
     Ok(out)
 }
 
-/// The same lines as [`export`], grouped by project, from one read.
-///
-/// `export` filters a whole-corpus read down to one project, so digesting
-/// every project separately re-read the corpus once per project: quadratic
-/// in the project count, and six seconds on a tracker with a hundred of
-/// them. The rows are built by the same function, so a project's text here
-/// is byte for byte what `export(layout, Some(project))` returns, and the
-/// digests taken from it do not move.
+/// The same lines as [`export`], grouped by project, from one read; a
+/// project's text is byte for byte what `export(layout, Some(project))` returns.
 ///
 /// # Errors
 ///
@@ -966,11 +936,7 @@ fn export_row(
         "state": h.state,
         "priority": h.priority.to_string(),
         "properties": h.properties,
-        // Typed beside the drawer rather than only inside it, so a consumer of
-        // the export reads the field the socket already hands over typed
-        // instead of splitting a drawer string on whichever separator the
-        // author happened to use. `properties` keeps `:DEEDS:` as well: a
-        // reader that wants the drawer verbatim should still get it.
+        // Typed beside the drawer; `properties` keeps `:DEEDS:` verbatim too.
         "deeds": h.deeds(),
         "org_tags": h.org_tags,
         "tags": h.tags(),

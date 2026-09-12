@@ -881,11 +881,7 @@ fn show_says_so_when_there_is_no_body() {
     assert!(text.contains("(no body"), "{text}");
 }
 
-/// The org export is the whole heading, not a preview of it.
-///
-/// `body_excerpt` caps at 40 lines, which silently drops the tail of any
-/// longer issue. That is fine for a glance and wrong when the issue is being
-/// handed to someone as the thing to work from.
+/// The org export is the whole heading, past the 40-line `body_excerpt` cap.
 #[test]
 fn the_org_export_does_not_truncate_a_long_issue() {
     let (_dir, layout) = writable_copy();
@@ -1462,12 +1458,8 @@ fn check_reports_a_parent_that_names_nothing() {
     );
 }
 
-/// Insert a property line into the raw org text of one issue.
-///
-/// `check` guards against what a person types into the file by hand, and
-/// some of that cannot be produced through `IssueDoc`: the writer renders
-/// DEADLINE as a planning line, and a value it cannot parse does not
-/// survive the round trip.
+/// Insert a property line into the raw org text of one issue, for what
+/// `IssueDoc` cannot produce.
 fn insert_property_line(layout: &Layout, project: &str, id: &str, line: &str) {
     let path = layout.project_issues_path(project);
     let text = fs::read_to_string(&path).unwrap();
@@ -1828,12 +1820,7 @@ fn appending_nothing_is_refused() {
     assert!(vissue_core::ops::append_body_as(&layout, "atlas-zzzz", "text", "w").is_err());
 }
 
-/// Text that is not ASCII survives a write and a read.
-///
-/// The parser works in bytes in places, and slicing a multi-byte character
-/// in half has already cost this file one panic. Accents, an em dash, a
-/// non-Latin script and an emoji all go through a title, which is the field
-/// most likely to be sliced.
+/// Non-ASCII text survives a write and a read through a title.
 #[test]
 fn unicode_survives_the_round_trip() {
     let (_dir, layout) = writable_copy();
@@ -1875,12 +1862,7 @@ fn unicode_survives_the_round_trip() {
     assert_eq!(report::check(&layout).unwrap().errors, 0);
 }
 
-/// A file written by another editor still parses.
-///
-/// Org files are edited by people and by other tools, so vissue reads what
-/// it is given: a missing final newline, and CRLF endings. A write of its
-/// own normalises the endings to LF, which is worth knowing because it
-/// shows up as a whole-file diff the first time.
+/// A file with no final newline or CRLF endings parses; a write normalises to LF.
 #[test]
 fn a_file_from_another_editor_is_read_and_normalised() {
     let (_dir, layout) = writable_copy();
@@ -1919,12 +1901,7 @@ fn a_file_from_another_editor_is_read_and_normalised() {
     assert_eq!(report::check(&layout).unwrap().errors, 0);
 }
 
-/// What another tool wrote is still there after vissue writes.
-///
-/// This is the promise the format rests on: an issues.org is shared with
-/// Emacs and with whatever else a person points at it, so a rewrite that
-/// dropped an unknown property or a preamble keyword would quietly destroy
-/// someone else's data. Nothing tested it.
+/// Unknown properties and preamble keywords survive a rewrite.
 #[test]
 fn a_rewrite_keeps_what_another_tool_put_there() {
     let (_dir, layout) = writable_copy();
@@ -1999,11 +1976,7 @@ fn a_rewrite_keeps_what_another_tool_put_there() {
     );
 }
 
-/// Replace text in a project's raw file, once.
-///
-/// `check` guards against what a person types by hand, and much of that cannot be
-/// produced through `IssueDoc`: a preamble keyword the writer always emits, a
-/// priority cookie outside the declared range, a second tag from an exclusive group.
+/// Replace text in a project's raw file, once, for what `IssueDoc` cannot produce.
 fn edit_raw(layout: &Layout, project: &str, from: &str, to: &str) {
     let path = layout.project_issues_path(project);
     let text = fs::read_to_string(&path).unwrap();
@@ -2040,11 +2013,7 @@ fn drop_property_line(layout: &Layout, project: &str, id: &str, key: &str) {
     fs::write(&path, text.replacen(&cut, "", 1)).unwrap();
 }
 
-/// A finding names the project and the reader can act on it.
-///
-/// One assertion per finding rather than a count, because a count says a warning
-/// arrived and not which: several of these fire on the same corpus, and a test that
-/// only counts passes when the wrong one fires.
+/// Each finding names its project; asserted one by one, not as a count.
 fn assert_finds(out: &report::CheckReport, needle: &str) {
     assert!(out.text.contains(needle), "no {needle:?} in:\n{}", out.text);
 }

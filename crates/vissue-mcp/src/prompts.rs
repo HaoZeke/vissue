@@ -1,15 +1,4 @@
-//! The sequences that cross the seat, offered rather than rediscovered.
-//!
-//! Tools are model-controlled and resources are application-controlled;
-//! prompts are the third primitive and the one a person picks. What belongs
-//! here is what a tool description cannot carry: an order, and the reason the
-//! order is what it is.
-//!
-//! Every sequence here starts in the tracker, because the tracker is the
-//! authority for what the work is. The ones that start in a deed store or a
-//! pack belong to those servers, and a prompt here that told an agent how to
-//! check a proof would be this crate claiming to know a format it does not
-//! read.
+//! Prompts: the sequences that start in the tracker.
 
 use rmcp::{
     ErrorData as McpError, handler::server::wrapper::Parameters, model::*, prompt, prompt_router,
@@ -169,12 +158,25 @@ mod tests {
         (dir, server)
     }
 
-    /// Every declared prompt renders, and it renders from the arguments it
-    /// says it takes.
-    ///
-    /// A prompt whose declared arguments and rendering disagree is worse than
-    /// an absent one: the client fills in a form and gets back something that
-    /// ignored it.
+    fn text(message: &PromptMessage) -> &str {
+        &message.content.as_text().expect("a text prompt").text
+    }
+
+    fn ordered(said: &str, verbs: &[&str]) {
+        let at: Vec<usize> = verbs
+            .iter()
+            .map(|v| {
+                said.find(v)
+                    .unwrap_or_else(|| panic!("{v} missing: {said}"))
+            })
+            .collect();
+        assert!(
+            at.windows(2).all(|w| w[0] < w[1]),
+            "{verbs:?} out of order: {said}"
+        );
+    }
+
+    /// Every declared prompt renders, from the arguments it says it takes.
     #[tokio::test]
     async fn every_prompt_renders_from_what_it_declares() {
         let (_dir, server) = server();
@@ -194,9 +196,6 @@ mod tests {
             assert!(!arguments.is_empty(), "{}", prompt.name);
         }
 
-        // Named, so a rename that leaves the router happy still fails here.
-        // As a set: the router lists by name, and what matters is which
-        // prompts are declared rather than the order a listing returns them.
         let mut names: Vec<&str> = declared.iter().map(|p| p.name.as_str()).collect();
         names.sort_unstable();
         assert_eq!(names, ["check_citations", "pack_a_slice", "pick_up_work"]);
@@ -209,9 +208,17 @@ mod tests {
             }))
             .await
             .expect("renders");
-        let said = format!("{:?}", packed[0].content);
+        let said = text(&packed[0]);
         assert!(said.contains("projects keys"), "{said}");
         assert!(said.contains("/tmp/bag"), "{said}");
+        ordered(
+            &said,
+            &[
+                "`vissue_satchel`",
+                "`vissue_satchel_seal`",
+                "`vissue_satchel_verify`",
+            ],
+        );
 
         let work = server
             .pick_up_work_prompt(Parameters(ReadyArgs {
@@ -219,7 +226,12 @@ mod tests {
             }))
             .await
             .expect("renders");
-        assert!(format!("{:?}", work[0].content).contains("project keys"));
+        let said = text(&work[0]);
+        assert!(said.contains("project keys"), "{said}");
+        ordered(
+            &said,
+            &["`vissue_ready`", "`vissue_recall`", "`vissue_deed`"],
+        );
 
         let cites = server
             .check_citations_prompt(Parameters(IssueArgs {
@@ -227,11 +239,12 @@ mod tests {
             }))
             .await
             .expect("renders");
-        assert!(format!("{:?}", cites[0].content).contains("keys-ab12"));
+        let said = text(&cites[0]);
+        assert!(said.contains("keys-ab12"), "{said}");
+        ordered(said, &["`vissue_backlinks`"]);
     }
 
-    /// A slice that names nothing is refused where the caller can still fix
-    /// it, rather than rendering an instruction with a hole in it.
+    /// A slice that names nothing is refused as a bad parameter.
     #[tokio::test]
     async fn a_slice_naming_nothing_is_refused() {
         let (_dir, server) = server();
@@ -243,11 +256,10 @@ mod tests {
             }))
             .await
             .expect_err("an empty slice rendered");
-        assert!(format!("{err:?}").contains("names nothing"), "{err:?}");
+        assert_eq!(err.code, ErrorCode::INVALID_PARAMS);
     }
 
-    /// The default is the one a caller gets when they say nothing, and it is
-    /// stated rather than left to the agent to invent.
+    /// Absent arguments render as their defaults, not as `None`.
     #[tokio::test]
     async fn the_defaults_are_in_the_text() {
         let (_dir, server) = server();
@@ -259,7 +271,7 @@ mod tests {
             }))
             .await
             .expect("renders");
-        let said = format!("{:?}", packed[0].content);
+        let said = text(&packed[0]);
         assert!(said.contains("./satchel"), "{said}");
         assert!(said.contains("issues keys-ab12"), "{said}");
 
@@ -267,6 +279,7 @@ mod tests {
             .pick_up_work_prompt(Parameters(ReadyArgs { project: None }))
             .await
             .expect("renders");
-        assert!(format!("{:?}", work[0].content).contains("every project"));
+        let said = text(&work[0]);
+        assert!(!said.contains("Some(") && !said.contains("None"), "{said}");
     }
 }

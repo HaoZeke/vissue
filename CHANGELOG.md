@@ -6,6 +6,14 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.12.1](https://github.com/leidarljos/vissue/releases/tag/v0.12.1) - 2026-09-12
+
+### Changed
+
+- The MCP server's instructions point at the seat protocol when ljos is present: open work with `ljos_sitting`, vote and settle through ljos so the pack's trust rows and personas apply.
+- The MCP tool descriptions for projects, list, ready, show, create, update, claim and note open with when to call each.
+
+
 ## [0.12.0](https://github.com/leidarljos/vissue/releases/tag/v0.12.0) - 2026-09-12
 
 ### Added

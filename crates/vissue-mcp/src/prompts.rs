@@ -212,7 +212,7 @@ mod tests {
         assert!(said.contains("projects keys"), "{said}");
         assert!(said.contains("/tmp/bag"), "{said}");
         ordered(
-            &said,
+            said,
             &[
                 "`vissue_satchel`",
                 "`vissue_satchel_seal`",
@@ -229,7 +229,7 @@ mod tests {
         let said = text(&work[0]);
         assert!(said.contains("project keys"), "{said}");
         ordered(
-            &said,
+            said,
             &["`vissue_ready`", "`vissue_recall`", "`vissue_deed`"],
         );
 

@@ -459,13 +459,8 @@ fn votes_over_the_socket_are_per_agent() {
     assert!(text.contains("no consensus"), "{text}");
 }
 
-/// Every verb that changes a file is reachable over the socket.
-///
-/// Not for correctness: the advisory lock makes a direct write safe, so a client
-/// mixing the two is not corrupting anything. It is so the socket is a complete
-/// surface rather than most of one. A client that had to shell out for `append`
-/// was writing behind the server's back and its change stream had a hole in it
-/// exactly where that write went.
+/// Every verb that changes a file is reachable over the socket, so a client's
+/// change stream has no hole where a shelled-out write went.
 #[test]
 fn every_mutating_verb_is_reachable_over_the_socket() {
     let h = Harness::new();
@@ -544,13 +539,7 @@ fn every_mutating_verb_is_reachable_over_the_socket() {
     );
 }
 
-/// Every read the schema names answers too, not only every write.
-///
-/// Fourteen read verbs had no method, so a socket client shelled out for `check`,
-/// `graph`, `wait` and the rest. That cost a subprocess rather than correctness,
-/// which is why it outlived the write gap, but `wait` is the case that made it
-/// worth closing: a verb whose whole job is to block until something changes is
-/// exactly what a connection is good at and a subprocess is bad at.
+/// Every read the schema names answers too.
 #[test]
 fn the_reads_the_schema_names_answer_too() {
     let h = Harness::new();
@@ -573,11 +562,7 @@ fn the_reads_the_schema_names_answer_too() {
     );
 }
 
-/// And the ones with something to say, say it.
-///
-/// Reachability is not usefulness: a method that answers `method not found` fails
-/// the check above, and one that answers an empty body passes it while being no use
-/// to the client that called it.
+/// The reads with something to say answer with a non-empty body.
 #[test]
 fn the_new_reads_return_something() {
     let h = Harness::new();
@@ -651,15 +636,8 @@ fn the_new_reads_return_something() {
     );
 }
 
-/// The socket carries every method the schema names.
-///
-/// This is the guard that the five-verb gap could not have survived. `append` had
-/// no socket method for as long as the socket existed, and nothing said so: the
-/// docs tests checked that the reference listed the methods that existed, which is
-/// a different question from whether the methods that should exist do.
-///
-/// Reads the set out of `schema/vissue.capnp` through the encoded constant, so the
-/// schema is the thing being satisfied rather than a list maintained beside it.
+/// The socket carries every method the schema names, read through the
+/// encoded constant.
 #[test]
 fn the_socket_answers_every_method_the_schema_names() {
     let h = Harness::new();
@@ -705,24 +683,10 @@ fn sample_and_violation(socket_type: &str) -> Option<(Value, Value)> {
     })
 }
 
-/// Each method takes the parameters the schema names for it.
-///
-/// The verb check says `issue/append` answers. It does not say the method takes
-/// `text` rather than `body`, and the third spelling of a field is where this drifts
-/// next: the issue being acted on is `id` here and `issue_id` as a tool argument,
-/// which is a real difference a caller has to know and which nothing recorded.
-///
-/// Asked of a running owner rather than read out of the source. A parameter is
-/// present because the method refuses a value of the wrong type for it, and required
-/// because the method refuses the request without it -- both of which are what a
-/// client experiences, where a Rust type spelled in a source line is a claim about
-/// it. Two source scans stood here before, one to find the handler a match arm names
-/// and one to find the type it decodes, and both were rewritten after reporting
-/// working methods as unimplemented.
-///
-/// Nothing here executes: every request is built to fail at decode, and the
-/// `-32602` that comes back is the parameter check refusing it. That is why a
-/// mutating method can be asked this without writing anything.
+/// Each method takes the parameters the schema names for it, asked of a
+/// running owner: a parameter is present when a wrong type is refused and
+/// required when its absence is. Every request fails at decode (`-32602`),
+/// so nothing is written.
 #[test]
 fn each_method_takes_the_parameters_the_schema_names() {
     let h = Harness::new();
@@ -732,11 +696,8 @@ fn each_method_takes_the_parameters_the_schema_names() {
         matches!(client.request(method, params), Err(Error::Rpc(e)) if e.code == -32602)
     };
 
-    // A synthetic value has to be one the method accepts, and a few parameters have
-    // small domains: a priority is A, B or C, and "x" is refused after decoding
-    // rather than during it. Held here as data because it is about these parameters
-    // and not about their types.
-    // An empty method means the value suits the parameter wherever it appears.
+    // Parameters with small domains need a value the method accepts; an empty
+    // method means the value suits the parameter wherever it appears.
     let constrained: &[(&str, &str, Value)] = &[
         ("", "priority", json!("A")),
         ("", "state", json!("TODO")),
@@ -774,11 +735,8 @@ fn each_method_takes_the_parameters_the_schema_names() {
             .map(|(name, good, _, _)| ((*name).to_string(), good.clone()))
             .collect();
 
-        // Without this the method's whole row is vacuous. If the schema does not name
-        // every parameter the method requires, a request built from the schema fails
-        // to decode whatever else is done to it, so every wrong-type check below
-        // would pass by refusing a request that was already being refused. The
-        // decode error names the parameter it wanted.
+        // A well-formed request must decode, or every wrong-type check below is
+        // vacuous.
         match client.request(&op.socket, Value::Object(base.clone())) {
             Err(Error::Rpc(e)) if e.code == -32602 => {
                 wrong.push(format!(
@@ -834,15 +792,8 @@ fn each_method_takes_the_parameters_the_schema_names() {
     );
 }
 
-/// And every method the server dispatches is in the schema.
-///
-/// The mirror of the check above, and the direction that was missing everywhere: a
-/// method the schema omits was invisible to every test, exactly as a verb the schema
-/// omitted used to be.
-///
-/// The one check here that reads source, because it is the one question a handshake
-/// cannot answer: a client can ask whether a named method answers, and no client can
-/// ask for the names it has not been told. The match arms are that list.
+/// Every method the server dispatches is in the schema; read from the match
+/// arms, since no client can ask for names it has not been told.
 #[test]
 fn every_method_the_server_dispatches_is_in_the_schema() {
     let dispatch =
@@ -879,16 +830,8 @@ fn every_method_the_server_dispatches_is_in_the_schema() {
     );
 }
 
-/// Every mutating reply has the same shape.
-///
-/// `mut_result` returns `ok`, `report` and the affected issue, and that was a
-/// convention rather than a contract: a method returning a bare string, or omitting
-/// `ok`, would have passed every other check here. A client switching on `ok` and
-/// printing `report` is the normal way to use this socket, so the shape is worth
-/// asserting once across all of them rather than trusting eleven call sites to agree.
-///
-/// Driven from the schema, so a mutating method added later is covered without
-/// anyone remembering to add it here.
+/// Every mutating reply carries `ok`, `report` and the affected issue; driven
+/// from the schema.
 #[test]
 fn every_mutating_reply_has_the_same_shape() {
     let h = Harness::new();
@@ -950,18 +893,8 @@ fn every_mutating_reply_has_the_same_shape() {
     );
 }
 
-/// What the server advertises is what the schema says it has.
-///
-/// `initialize` returns a capability list, and that is the fourth place the method
-/// set is written down after the dispatch table, the schema and the reference. It is
-/// also the one a client reads to decide what it may call, and it had fallen nineteen
-/// methods behind while the other three agreed with each other. A client inspecting
-/// capabilities would have concluded that `append`, `vote`, `fold` and every read
-/// added beside them did not exist.
-///
-/// Both directions, because either is a lie: advertising a method that is not
-/// dispatched sends a client at something that will answer method-not-found, and
-/// dispatching one that is not advertised hides it from anyone who asks first.
+/// The capability list `initialize` returns is the schema's method set, in
+/// both directions.
 #[test]
 fn capabilities_match_the_schema() {
     use std::collections::BTreeSet;

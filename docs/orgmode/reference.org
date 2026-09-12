@@ -893,14 +893,10 @@ answer look like the ranked one.
 
 * Performance
 
-Measured, not argued. =scripts/bench/synth_tracker.py= writes a deterministic
-tracker of N issues over P projects with blockers, parents and bodies, and
-=scripts/bench/time_cli.sh= times the read verbs over it, reporting the
-minimum of R runs, which is the number least moved by whatever else the
-machine is doing.
-
-Ten thousand issues over twenty projects, 4.4 MB of Org, on a shared 32-core
-node:
+=scripts/bench/synth_tracker.py= writes a deterministic tracker of N issues
+over P projects; =scripts/bench/time_cli.sh= times the read verbs over it and
+reports the minimum of R runs. Ten thousand issues over twenty projects, 4.4 MB
+of Org, on a shared 32-core node:
 
 | verb    | before  | after  |
 |---------+---------+--------|
@@ -910,23 +906,11 @@ node:
 | count   | 527 ms  | 58 ms  |
 | check   | 380 ms  | 81 ms  |
 
-Two things were wrong. Every verb that answers about all visible projects
-looped over them and called a report that takes a layout, and such a report
-loads every project to answer about one: twenty projects were four hundred
-parses of the same twenty files for one listing. The routed listing now loads
-each distinct layout once and filters per project on the loaded corpus, in
-visible order, so the output is the concatenation it always was.
-
-Then the profile put forty percent of what remained in the allocator, freeing
-headings that were parsed on worker threads and released on the main one,
-which is the allocator's cross-thread slow path, for memory the process was
-about to hand back whole. The command line writes its answer and exits without
-walking the corpus. The library keeps dropping; only the process that exits
-next skips it.
-
-What is left in the profile is comparison on property lookups and output
-formatting. A listing now costs less than a validation pass of the same
-corpus.
+Two causes. Every verb over all visible projects loaded the whole tracker once
+per project; it now loads each layout once. The rest was the allocator freeing
+a corpus the process was about to exit with; the command line skips the free,
+the library does not. What remains is comparison on property lookups and
+output formatting.
 
 * Crates
 

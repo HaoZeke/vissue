@@ -239,7 +239,8 @@ const operations :List(Operation) = [
     fields = [
       ( cli = "", tool = "issue_id", socket = "id", note = "the issue being acted on: positional on the command line, and the two remote surfaces spell it differently", toolType = "String", socketType = "String" ),
       ( cli = "for", tool = "choice", socket = "choice", note = "the flag cannot be a Rust field of that name, which is a keyword", toolType = "Option<String>", socketType = "Option<String>" ),
-      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment", toolType = "", socketType = "Option<String>" )
+      ( cli = "", tool = "", socket = "agent", note = "socket only: it overrides the identity the connection was opened with, which the other surfaces take from the environment", toolType = "", socketType = "Option<String>" ),
+      ( cli = "json", tool = "", socket = "", note = "the ballot rows as JSON, reads only; the remote surfaces answer in structure already", toolType = "", socketType = "" )
     ] ),
   ( cli = "deed", socket = "issue/deed", mcp = "vissue_deed", mutates = true, local = false,
     note = "",

@@ -24,11 +24,8 @@ use vissue_core::{agent, events, report};
 
 mod rofi;
 
-/// Write to stdout, surfacing a closed pipe as an error the caller handles.
-///
-/// The `print!` family unwraps the write and aborts the process instead, so
-/// `vissue export | head` ends in a panic and a 101 exit status rather than
-/// the answer the reader asked for.
+/// Write to stdout, surfacing a closed pipe as an error rather than a panic,
+/// so `vissue export | head` exits cleanly.
 macro_rules! emit {
     ($($arg:tt)*) => {
         write_stdout(format_args!($($arg)*))?
@@ -568,12 +565,7 @@ enum Command {
         json: bool,
     },
     /// This binary's own surface as JSON: every subcommand, its aliases, and its
-    /// long flags.
-    ///
-    /// Hidden because it describes the tool rather than the tracker, and a person
-    /// reading `--help` is looking for the second. It exists so the checks that hold
-    /// the command line to `schema/vissue.capnp` can ask the parser what it accepts
-    /// rather than parse what it prints, in one process rather than one per verb.
+    /// long flags. Hidden; the schema checks read it.
     #[command(hide = true)]
     Surface,
     /// Print the resolved binary, root, and prefix.
@@ -743,19 +735,8 @@ fn create_routed(
     Ok(ops::create(&pref.layout, &pref.dir, title, opts)?)
 }
 
-/// The catalog service for one layout, which is what the control socket answers from.
-///
-/// The `--json` modes go through this rather than through the text reports, so the two
-/// surfaces are the same computation and not two that have to be kept in agreement.
-/// The text reports stay as they are: they are what a person reads, and they group by
-/// project because the command line can span layouts.
-/// Emit a read's answer in whichever of its two shapes the caller asked for.
-///
-/// A read that takes `--json` answers the same question twice: the structured value a
-/// caller parses, and the report a person prints. Ten subcommands spelled that choice
-/// out as an `if json` around two emit calls, which is ten places for the two to come
-/// apart. Both go through the same layout and the same service, so the pair is one
-/// computation and this is where the shape is chosen.
+/// Emit a read's answer as JSON from the catalog service, the computation the
+/// control socket answers from, or as the text report.
 ///
 /// # Errors
 ///
@@ -835,11 +816,8 @@ fn reject_destination(
     })
 }
 
-/// Block until something changes, or until one issue settles.
-///
-/// Two waits behind one verb. `--until-terminal` watches one issue for a state nothing
-/// follows, and the plain form watches the corpus generation. Both report through the
-/// exit status as well as stdout, because a poller reads the status.
+/// Block until the corpus generation moves, or with `--until-terminal` until
+/// one issue reaches a terminal state; both report through the exit status.
 fn run_wait(
     router: &Router,
     layout: &Layout,
@@ -878,11 +856,8 @@ fn run_wait(
     Ok(())
 }
 
-/// Render a mirror of the corpus, or judge whether one on disk is still current.
-///
-/// `--check` answers a different question from the rest of the verb and answers it
-/// through the exit status, since a stale mirror is a normal finding rather than a
-/// failure to run.
+/// Render a mirror of the corpus, or with `--check` report through the exit
+/// status whether one on disk is current.
 fn run_mirror(
     layout: &Layout,
     projects: &[String],
@@ -913,15 +888,8 @@ fn run_mirror(
     Ok(())
 }
 
-/// The heads-up display, through rofi or through the iced window.
-///
-/// Two front ends with different capabilities: rofi has no window to toggle, so the
-/// window flags are meaningless there and are consumed rather than silently ignored.
-/// What the HUD subcommand was asked for.
-///
-/// Grouped rather than passed one flag at a time: seven of these are booleans, and a
-/// call site spelling seven booleans in a row is one transposition away from asking
-/// for something else entirely.
+/// What the HUD subcommand was asked for: rofi or the iced window, and the
+/// window flags, which rofi consumes.
 struct HudRequest {
     mode: String,
     offline: bool,
@@ -1079,11 +1047,8 @@ fn run_keys(check: bool, occupancy: bool) -> Result<()> {
     Ok(())
 }
 
-/// Whether a verb reads or writes the tracker.
-///
-/// The two that do not are the ones that describe the program rather than any
-/// corpus, and they have to keep working from anywhere: a shell sourcing
-/// completions is not standing in a tracker and should not have to.
+/// Whether a verb touches the tracker; the two that describe the program run
+/// from anywhere.
 fn reads_the_corpus(command: &Command) -> bool {
     match command {
         Command::Completions { .. } | Command::Man => false,
@@ -1098,10 +1063,8 @@ fn reads_the_corpus(command: &Command) -> bool {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let router = build_router(&cli)?;
-    // A configuration naming other layouts has said where the trackers are, so
-    // the guessed default is no longer the only thing a verb can read. When it
-    // is the only one, it has to be a tracker: answering "none" out of a
-    // directory that holds none is a wrong answer, not a small one.
+    // With no routed layouts the guessed default must be a tracker: "none"
+    // from a directory that holds none is a wrong answer.
     if reads_the_corpus(&cli.command) && router.unique_layouts().len() == 1 {
         router.default_layout().require_tracker()?;
     }
@@ -1931,10 +1894,8 @@ fn count_routed(
     Ok(format!("{n}\n"))
 }
 
-/// The line a report prints when it has nothing to show. It belongs to the
-/// answer, not to a project's share of it: without this, a run over six
-/// projects printed "no live claims" above a list of nine claims, and
-/// `agenda` printed "nothing dated in range" five times above the dated rows.
+/// The line a report prints when it has nothing to show, once for the whole
+/// answer rather than once per project.
 const NO_CLAIMS: &str = "no live claims\n";
 const NOTHING_DATED: &str = "nothing dated in range\n";
 

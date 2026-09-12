@@ -6,6 +6,18 @@ All notable changes to vissue are recorded here. The format follows
 
 <!-- towncrier release notes start -->
 
+## [0.11.0](https://github.com/HaoZeke/vissue/releases/tag/v0.11.0) - 2026-09-12
+
+### Added
+
+- `vissue consensus ID --trust JSON` lays trust rows over `[consensus.trust]` pair by pair, so the seat can settle the tracker's ballots under the rows its pack learned.
+- `vissue vote ID --json` prints the ballot rows (`agent`, `choice`, `stamp`), the shape the consensus crate and the seat read.
+
+### Changed
+
+- Doc comments and test names state what an item does and one reason; the MCP prompt tests assert the order of the verbs a prompt sequences rather than its wording.
+
+
 ## [0.10.0](https://github.com/HaoZeke/vissue/releases/tag/v0.10.0) - 2026-09-11
 
 ### Added

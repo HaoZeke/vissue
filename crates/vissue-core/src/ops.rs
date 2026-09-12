@@ -65,18 +65,8 @@ pub struct CreateOpts<'a> {
     /// Extra ids treated as taken when minting, so a twin file on another
     /// layout cannot share a suffix with this create.
     pub extra_ids: &'a [String],
-    /// Twin files whose ids are read *inside* the lock and treated as taken.
-    ///
-    /// [`Self::extra_ids`] is a snapshot the caller took before calling, which
-    /// is a read outside the lock that guards the write. Two creates for one
-    /// project in two roots each read the other before either writes, hold
-    /// different locks because locks are per file, and can mint one suffix
-    /// twice. `find_by_id` then reports `DuplicateId` and neither issue is
-    /// reachable by id.
-    ///
-    /// Paths given here are locked alongside the file being written and read
-    /// after the lock is held, so a peer's create is either wholly before or
-    /// wholly after this one.
+    /// Twin files whose ids are read inside the lock and treated as taken, so
+    /// two creates in two roots cannot mint one suffix twice.
     pub extra_id_paths: &'a [PathBuf],
     /// Keep this id instead of minting one. It must be `{project}-` plus a
     /// suffix of `0-9a-z`, and it must be free in this file and in the twins.
@@ -129,10 +119,7 @@ pub fn create(layout: &Layout, project: &str, title: &str, opts: CreateOpts<'_>)
         return Err(anyhow!("--parent {p} does not refer to any known id").into());
     }
 
-    // Every file the mint consults is locked, not only the one it writes, so a
-    // twin create in another root cannot land between the read and the write.
-    // with_issues_locks sorts and dedups, so the write path appearing in
-    // extra_id_paths is normal rather than a self-deadlock.
+    // Every file the mint consults is locked; with_issues_locks dedups paths.
     let mut lock_paths: Vec<PathBuf> = vec![path.clone()];
     lock_paths.extend(opts.extra_id_paths.iter().cloned());
     let lock_refs: Vec<&Path> = lock_paths.iter().map(PathBuf::as_path).collect();
@@ -719,11 +706,8 @@ pub fn claim_as(layout: &Layout, id: &str, force: bool, identity: &str) -> Resul
     Ok(report)
 }
 
-/// The line a claim adds when the issue has declared inputs.
-///
-/// A claim is where an agent starts working, and the working set is the next
-/// thing it needs. Off the heading in hand rather than a corpus walk, so taking
-/// a node costs no more than it did; `recall` does the walk when asked.
+/// The line a claim adds when the issue has declared inputs, from the heading
+/// in hand; `recall` does the corpus walk.
 fn standing_on(h: &IssueHeading) -> String {
     let blockers = h.blocked_by().len();
     let bounced = crate::props::get(&h.properties, crate::props::DISCOVERED_FROM).is_some();
@@ -800,15 +784,8 @@ pub fn note(layout: &Layout, id: &str, text: &str) -> Result<String> {
     })
 }
 
-/// Append prose to an issue's body, stamped with the date and identity.
-///
-/// The logbook holds one line per event, so a written report does not fit in
-/// it: [`note`] folds its text to a single line by design. Work that has been
-/// done and needs recording belongs under the heading as prose, which is
-/// where a reader looks for what the issue is about.
-///
-/// The text is kept as given. Lines that would end the issue are indented on
-/// the way out, so markdown is safe to append.
+/// Append prose to an issue's body, stamped with the date and identity. Lines
+/// that would end the issue are indented, so markdown is safe to append.
 ///
 /// # Errors
 ///
@@ -870,22 +847,8 @@ pub struct Ballot {
 }
 
 /// Cast or change one agent's vote, or read the tally when `choice` is `None`.
-///
-/// Consensus among several agents is not the same question as what one agent
-/// concluded, and the tracker had no way to hold the difference: an agent could
-/// append prose saying what it thought, and a reader had to read every append
-/// and count by hand.
-///
-/// One ballot per identity, and casting again replaces it. That is last write
-/// wins *per agent*, which is the right rule here and is not the bug the id
-/// reservation had: an agent changing its mind should not leave two ballots, and
-/// two different agents must never overwrite each other. The first is why a
-/// recast replaces, the second is why the whole read-modify-write runs under the
-/// file lock.
-///
-/// Stored as a `:VOTES:` drawer on the heading rather than in the event log,
-/// because a tally a person can read in the file is worth more than one that
-/// needs a scan, and drawers already survive a rewrite untouched.
+/// One ballot per identity, a recast replaces it, and the read-modify-write
+/// runs under the file lock. Stored as a `:VOTES:` drawer on the heading.
 ///
 /// # Errors
 ///
@@ -911,12 +874,8 @@ pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> 
     if choice.contains('\n') {
         return Err(anyhow!("a vote is one line").into());
     }
-    // A ballot line is `[date] agent: choice` and the choice may hold ": ", which
-    // is the point, so the split takes the first one. An identity holding ": "
-    // would be read back as a shorter name with the rest of itself prepended to
-    // the choice: the ballot filed under the wrong agent, and nothing saying so.
-    // Refused rather than mangled, and the message says what to change, because
-    // an identity is configuration.
+    // A ballot line is `[date] agent: choice`, split at the first ": ", so an
+    // identity holding ": " would be misfiled; refused instead.
     if identity.contains(": ") {
         return Err(anyhow!(
             "the identity {identity:?} contains a colon and a space, which a ballot line \
@@ -960,10 +919,7 @@ pub fn vote(layout: &Layout, id: &str, choice: Option<&str>, identity: &str) -> 
     })
 }
 
-/// The ballots cast on one issue, in the order the drawer holds them.
-///
-/// Exposed because a tally is not the only question worth asking of them:
-/// [`crate::consensus`] weighs the same ballots by who the group listens to.
+/// The ballots cast on one issue, in drawer order; [`crate::consensus`] weighs them.
 ///
 /// # Errors
 ///
@@ -974,11 +930,8 @@ pub fn ballots(layout: &Layout, id: &str) -> Result<Vec<Ballot>> {
     Ok(read_ballots(&h).0)
 }
 
-/// Ballots on a heading, plus any line of the drawer this does not understand.
-///
-/// The foreign lines are carried rather than dropped. The drawer is org a person
-/// can edit, and a rewrite keeping only what the parser recognised would eat a
-/// comment somebody left there, silently, on the next vote.
+/// Ballots on a heading, plus the drawer lines this does not parse, which a
+/// rewrite carries rather than drops.
 fn read_ballots(h: &IssueHeading) -> (Vec<Ballot>, Vec<String>) {
     let Some(drawer) = h
         .extra_drawers
@@ -1001,11 +954,8 @@ fn read_ballots(h: &IssueHeading) -> (Vec<Ballot>, Vec<String>) {
             continue;
         }
         match parse_ballot(trimmed) {
-            // One ballot per agent is the invariant the tally counts on, and a
-            // hand-edited drawer can hold two lines for one name. Collapsed on
-            // read, last line winning, so a duplicate cannot make one agent
-            // count twice and the recast path cannot leave the older line
-            // behind by replacing only the first.
+            // One ballot per agent: a hand-edited duplicate collapses on read,
+            // last line winning.
             Some(b) => match ballots.iter_mut().find(|x| x.agent == b.agent) {
                 Some(existing) => *existing = b,
                 None => ballots.push(b),
@@ -1043,10 +993,8 @@ fn drawer_name_is(drawer: &str, name: &str) -> bool {
         .is_some_and(|n| n.eq_ignore_ascii_case(name))
 }
 
-/// Replace the heading's votes drawer in place, dropping it when it would be empty.
-///
-/// In place, because `retain` then `push` moves the drawer past every other one on
-/// the heading, so each vote would also reorder unrelated org.
+/// Replace the heading's votes drawer in place, so other drawers keep their
+/// order; dropped when it would be empty.
 fn write_ballots(h: &mut IssueHeading, ballots: &[Ballot], foreign: &[String]) {
     let at = h
         .extra_drawers
@@ -1073,11 +1021,7 @@ fn write_ballots(h: &mut IssueHeading, ballots: &[Ballot], foreign: &[String]) {
     }
 }
 
-/// The tally, and whether it is a consensus.
-///
-/// A plurality is reported as a plurality and not as agreement. Two agents for
-/// one option and two for another is the case a tally exists to make visible, so
-/// it says so rather than picking the first.
+/// The tally, and whether it is a consensus; a plurality is reported as one.
 fn tally_text(id: &str, ballots: &[Ballot]) -> String {
     if ballots.is_empty() {
         return format!("{id}: no votes\n");
@@ -1126,18 +1070,10 @@ fn tally_text(id: &str, ballots: &[Ballot]) -> String {
     out
 }
 
-/// Prefixes a deed accession can open with.
-///
-/// deedar mints `deed-<kind>-<slug>` and answers `get` for a `sha256:` of the
-/// canonical deed or of one product path. Those two forms are the whole
-/// vocabulary, so a value in neither is a title, a path, or a note that landed
-/// in the wrong field, and storing it would leave a citation nothing resolves.
+/// Prefixes a deed accession can open with: `deed-<kind>-<slug>` or a `sha256:`.
 const DEED_PREFIXES: &[&str] = &["deed-", "sha256:"];
 
-/// Whether `value` looks like something deedar can be asked for.
-///
-/// The shape rather than the store: vissue cites deeds and never opens one, so
-/// this cannot ask whether the deed exists, only whether the id could name one.
+/// Whether `value` has the shape of a deed accession; the store is not asked.
 #[must_use]
 pub fn is_deed_accession(value: &str) -> bool {
     let value = value.trim();
@@ -1151,18 +1087,9 @@ pub fn is_deed_accession(value: &str) -> bool {
     })
 }
 
-/// Cite, drop, or list the deeds an issue's work produced.
-///
-/// A claim says who is working and a note says what happened; neither says what
-/// the work *made*, so the next unit had to reread a transcript to find out. A
-/// deed is deedar's name for the product, and the accession is the whole handoff:
-/// `deedar get <id>` returns the frozen record, `deedar trail <id>` walks what it
-/// was built from. The tracker stores the id and nothing else, because the deed
-/// store owns the bytes and duplicating them here would give the corpus a second
-/// copy to drift.
-///
-/// With neither `add` nor `remove`, this reads: the citations on the heading, in
-/// the order they were cited.
+/// Cite, drop, or list the deeds an issue's work produced. The tracker stores
+/// the accession only; the deed store owns the bytes. With neither `add` nor
+/// `remove`, this reads the citations in the order they were cited.
 ///
 /// # Errors
 ///
@@ -1378,10 +1305,8 @@ pub fn refile(layout: &Layout, id: &str, to_project: &str) -> Result<String> {
     refile_to(layout, id, layout, to_project)
 }
 
-/// Move one issue's heading onto a destination that may live on another
-/// tracker layout. A router resolves the destination project name before
-/// calling this, so a routed name lands on its own checkout instead of
-/// growing a shadow directory under the source root.
+/// [`refile`] onto a destination the router resolved, which may be another
+/// tracker layout.
 ///
 /// # Errors
 ///
@@ -1405,11 +1330,8 @@ pub fn refile_to(
             .remove(id)
             .ok_or_else(|| Error::IssueNotFound { id: id.to_string() })?;
 
-        // Two files cannot be replaced in one atomic step, so choose which
-        // half-finished state a failure leaves behind. Writing the target
-        // first means a failed source write duplicates the id, which `check`
-        // reports and a person can resolve; the other order deletes the issue
-        // with nothing left naming it.
+        // Target first: a failure then duplicates the id, which `check`
+        // reports, rather than deleting the issue.
         let mut tgt_doc = IssueDoc::parse_file(&to_project, &target_path)?;
         tgt_doc.upsert(heading);
         tgt_doc.write()?;
@@ -2404,10 +2326,8 @@ mod tests {
             .id
             .clone();
 
-        // A twin id the destination file does not hold yet: the successor must
-        // not mint it, because the routed board already uses it. Handed over as
-        // the file that holds it rather than as the id, so the reservation is
-        // read under the lock that guards the write.
+        // The routed board's ids, handed over as the file so they are read
+        // under the write lock.
         let twin_dir = tempfile::tempdir().unwrap();
         let twin_layout = fresh_layout(twin_dir.path());
         let twin_path = twin_layout.project_issues_path("surf");
@@ -2958,10 +2878,8 @@ mod tests {
             .find(|h| h.id != parent)
             .map(|h| h.id.clone())
             .unwrap();
-        // The prose claims a discovery, so the warning would fire on this pair
-        // if the parent edge were not recognised. Without the claim the test
-        // would pass whatever edge_connects does, and asserting the absence of
-        // the old wording would pass even with the fix reverted.
+        // The prose claims a discovery, so the warning fires unless the parent
+        // edge is recognised.
         append_body(
             &layout,
             &parent,
@@ -3092,18 +3010,9 @@ mod tests {
         );
         assert!(after.contains("prev-sibling"), "{after}");
     }
-    /// The reservation has to be read after the lock is taken, not before.
-    ///
-    /// Deterministic rather than a stress test, because a stress test has no
-    /// power here: the suffix space is 36^n and two racing creates almost never
-    /// collide by luck, so a run that passes proves nothing. This forces the
-    /// question instead. With `id_length = 2` the space is 1296 suffixes; the
-    /// twin layout is handed 1295 of them, so exactly one is free and a mint
-    /// that reads the twin has no choice but to return it.
-    ///
-    /// A mint that trusts a caller's snapshot, which is what `extra_ids` is,
-    /// picks from the whole space and returns that one suffix with probability
-    /// 1/1296.
+    /// The reservation is read under the lock: with `id_length = 2` the twin
+    /// holds 1295 of 1296 suffixes, so a mint that reads it returns the one
+    /// free suffix and a mint that trusts the caller's snapshot does not.
     #[test]
     fn the_reservation_is_read_after_the_lock_is_held() {
         let dir = tempfile::tempdir().unwrap();
@@ -3155,10 +3064,7 @@ mod tests {
         );
     }
 
-    /// And the twin being the file under write is ordinary, not a deadlock.
-    /// `extra_id_paths_for` returns every layout for the project including this
-    /// one, so the write path arrives in its own reservation list on every
-    /// routed create.
+    /// The write path in its own reservation list is not a deadlock.
     #[test]
     fn the_written_file_appearing_in_its_own_reservation_is_not_a_deadlock() {
         let dir = tempfile::tempdir().unwrap();
@@ -3355,10 +3261,7 @@ mod tests {
         assert!(out.contains("consensus: ship (2 of 2)"), "{out}");
     }
 
-    /// The ballot line splits on the first ": " so a choice may contain one. An
-    /// identity containing one would therefore come back as a shorter name with
-    /// the rest of itself glued to the choice, filing the vote under an agent
-    /// that never voted. Refused, because silently misattributing is worse.
+    /// An identity holding ": " is refused: the ballot line splits there.
     #[test]
     fn an_identity_that_the_line_format_cannot_hold_is_refused() {
         let dir = tempfile::tempdir().unwrap();
@@ -3409,20 +3312,8 @@ mod tests {
         assert!(after.contains("agent-b: hold"), "{after}");
     }
 
-    /// Two spellings of one file must lock it once. The process mutex is keyed on
-    /// the canonical path, so a second lock on the same mutex is a self-deadlock
-    /// and a second advisory lock on the same file blocks too. A mint locks every
-    /// twin file now, so two roots that are links to one tree reach this.
-    ///
-    /// Written as a create rather than a unit test of the helper because the hang
-    /// is what is being ruled out, and it has to be ruled out on the path callers
-    /// take.
-    ///
-    /// Through a symlink, and that detail is the test. A first attempt used
-    /// `dir/./PREFIX/...` against `dir/PREFIX/...` and passed with the bug still
-    /// in, because `Path` compares by components and drops `.`, so the plain
-    /// dedup already collapsed them. Only a link makes two paths that differ by
-    /// components and name one file.
+    /// Two spellings of one file, through a symlink, lock it once; `Path`
+    /// component comparison alone would not catch this.
     #[cfg(unix)]
     #[test]
     fn one_file_named_two_ways_is_locked_once() {

@@ -52,9 +52,7 @@ pub fn issues_rows(
     issues_rows_in(&recs, project_filter, state_filter, ready_only)
 }
 
-/// [`issues_rows`] over a corpus the caller already holds, so a caller asking
-/// about every project of one tracker loads it once rather than once per
-/// project.
+/// [`issues_rows`] over a corpus the caller already holds.
 ///
 /// # Errors
 ///

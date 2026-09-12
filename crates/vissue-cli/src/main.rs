@@ -1841,23 +1841,14 @@ fn list_routed(
     Ok(out)
 }
 
-/// Every visible project, with its tracker loaded once.
-///
-/// The visible projects of one tracker share one set of files, and a report
-/// that takes a layout loads all of them to answer about one project. Calling
-/// such a report once per project loaded the tracker once per project, which
-/// made every listing quadratic in the number of projects: twenty projects
-/// were four hundred parses of the same twenty files. This loads each distinct
-/// layout once, in the order its first project appears, and hands the corpus
-/// to the caller per project in visible order, so the output is the same
-/// concatenation it always was.
+/// Every visible project, with each distinct layout loaded once and handed
+/// to the caller per project in visible order.
 fn for_each_visible_in(
     router: &Router,
     mut f: impl FnMut(&[vissue_core::views::IssueRec], &str) -> Result<()>,
 ) -> Result<()> {
     let prefs = router.visible_projects()?;
-    // Grouped by layout without a hash on Layout: the count of distinct
-    // trackers a seat routes is small, so a scan is the right structure.
+    // A scan, not a map: a seat routes few distinct trackers.
     let mut groups: Vec<(&vissue_core::config::Layout, Vec<&str>)> = Vec::new();
     for pref in &prefs {
         match groups
@@ -1873,14 +1864,9 @@ fn for_each_visible_in(
         for dir in dirs {
             f(&recs, dir)?;
         }
-        // Not dropped. This is the command line: the answer has been written
-        // and the process is about to end, and the operating system reclaims
-        // the corpus faster than the allocator can walk it. The profile of a
-        // listing over ten thousand issues put forty percent of its time in
-        // freeing headings that were parsed on worker threads and released on
-        // this one, which is the allocator's slow path, for memory nobody was
-        // going to reuse. The library keeps dropping; only the process that
-        // exits next skips it.
+        // Not dropped: this process exits next and the operating system
+        // reclaims the corpus faster than the allocator can walk it. The
+        // library keeps dropping.
         std::mem::forget(recs);
     }
     Ok(())
@@ -1977,8 +1963,7 @@ fn agenda_routed(router: &Router, days: i64, project: Option<&str>) -> Result<St
         let pref = router.route(p);
         return Ok(report::agenda(&pref.layout, days, Some(&pref.dir))?);
     }
-    // The same collapse of the empty-set line concat_project_reports_with
-    // does, over a tracker loaded once rather than once per project.
+    // The empty-set line collapses the way concat_project_reports_with does.
     let mut out = String::new();
     for_each_visible_in(router, |recs, dir| {
         let part = report::agenda_in(recs, days, Some(dir))?;

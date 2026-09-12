@@ -96,13 +96,8 @@ pub fn list(
     list_in(&recs, project_filter, state_filter, ready_only)
 }
 
-/// [`list`] over a corpus the caller already holds.
-///
-/// A caller asking about several projects of one tracker loads it once and
-/// asks this once per project. Asking [`list`] once per project instead loads
-/// the whole tracker each time, which made every verb over a routed tracker
-/// quadratic in the number of projects: twenty projects were four hundred file
-/// parses for one listing.
+/// [`list`] over a corpus the caller already holds, so a caller asking about
+/// several projects of one tracker loads it once.
 ///
 /// # Errors
 ///

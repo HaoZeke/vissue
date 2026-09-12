@@ -521,11 +521,7 @@ fn tree_text_from_ascii_and_dot_name_the_root() {
     assert!(matches!(err, Error::IssueNotFound { .. }));
 }
 
-/// Two issues naming each other as parent.
-///
-/// Nothing stops a person from writing this in an org file, so every walk
-/// over the parent edges has to terminate rather than recurse until the
-/// stack runs out.
+/// Two issues naming each other as parent: every parent walk terminates.
 fn cyclic_corpus() -> Vec<IssueRec> {
     vec![
         with_property(
@@ -720,12 +716,7 @@ fn evidence_for(hits: &[vissue_core::views::RelatedHit], id: &str) -> Vec<String
         .clone()
 }
 
-/// An edge is named from both ends, and differently from each.
-///
-/// `blocks` and `blocked_by` are the same edge read from opposite directions, as are
-/// `parent` and `child`. A reader asking about the blocked issue wants to know it is
-/// waiting, and one asking about the blocker wants to know something waits on it, so
-/// naming both ends the same would lose which.
+/// An edge is named from both ends: `blocks`/`blocked_by`, `parent`/`child`.
 #[test]
 fn related_names_a_declared_edge_from_the_end_it_is_asked_from() {
     let recs = corpus();
@@ -813,11 +804,7 @@ fn related_scores_a_shared_tag_and_a_shared_project() {
     );
 }
 
-/// The shared tag carries weight, not just a label.
-///
-/// Two issues alike in every way the scorer looks at, one of them carrying a tag the
-/// target also carries. Asserting the label alone would pass with the weight set to
-/// zero, which is a scorer that records the reason and ignores it.
+/// A shared tag carries weight, not only a label.
 #[test]
 fn a_shared_tag_is_worth_more_than_the_words_that_come_with_it() {
     let recs = vec![
@@ -879,11 +866,7 @@ fn related_breaks_a_score_tie_on_the_id() {
     );
 }
 
-/// Sharing a project is worth something, and barely anything.
-///
-/// Two issues alike in every way the scorer looks at, one of them in the target's
-/// project. The gap is the whole weight, which is small on purpose: a tracker where
-/// most issues sit in one project would otherwise rank every one of them as related.
+/// Sharing a project carries a small weight.
 #[test]
 fn sharing_a_project_is_worth_a_little_and_not_nothing() {
     let recs = vec![

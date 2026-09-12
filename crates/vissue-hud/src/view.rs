@@ -1057,13 +1057,8 @@ fn related_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     col.into()
 }
 
-/// The working set: the plan above the issue, then each declared input with
-/// what it produced.
-///
-/// One card per input, like the related pane, because the reader is doing the
-/// same thing with both: looking at a row and deciding whether to open it. The
-/// deed accessions sit under their input rather than in a list of their own, so
-/// it stays obvious which piece of work made which product.
+/// The working set: the plan above the issue, then one card per declared
+/// input with the deeds it produced.
 fn recall_list<'a>(palette: &'a Palette, tea: Tokens) -> Element<'a, Message> {
     let Some(set) = palette.recall() else {
         return meta(
@@ -1237,12 +1232,8 @@ fn empty_copy(palette: &Palette) -> &'static str {
 mod tests {
     use crate::palette::DetailTab;
 
-    /// The body of one function in this file, between its name and the next.
-    ///
-    /// A scan of this file's own source, which is not how anything else here is
-    /// checked. There is no widget tree to walk in a headless test: icedtea builds one
-    /// against a running renderer, so what the view is made of can only be read where
-    /// it is written.
+    /// The body of one function in this file; there is no widget tree to walk
+    /// headless.
     fn between<'a>(src: &'a str, from: &str, to: &str) -> &'a str {
         let after = src
             .split(from)
@@ -1254,11 +1245,7 @@ mod tests {
             .unwrap_or_else(|| panic!("no {to} after {from}"))
     }
 
-    /// The board is painted out of icedtea's widgets rather than iced's directly.
-    ///
-    /// Reported together rather than one assertion at a time, because the first widget
-    /// to go missing would otherwise hide the rest, and a port that replaces several at
-    /// once is exactly when the whole list is worth reading.
+    /// The board is painted out of icedtea's widgets, reported as one list.
     #[test]
     fn the_board_paints_through_icedtea_widgets() {
         let src = include_str!("view.rs");
@@ -1305,11 +1292,7 @@ mod tests {
         assert!(gone.is_empty(), "the view no longer defines: {gone:?}");
     }
 
-    /// Every text in a list row wraps inside its pane rather than running off the edge.
-    ///
-    /// Asserted as the absence of the opposite, because a row holds several texts and
-    /// finding one that wraps says nothing about the others: setting a title to clip
-    /// while a badge beside it still wraps would pass a check for the wrapping call.
+    /// No text in a list row clips; asserted as the absence of the clipping call.
     #[test]
     fn a_list_row_wraps_its_text_rather_than_clipping_it() {
         let src = include_str!("view.rs");
@@ -1368,14 +1351,8 @@ mod tests {
         assert!(!crate::view::extra_blocked_mark("TODO", false));
     }
 
-    /// The narrow overlay fits three tab labels and the wide pane fits every
-    /// one. Four labels do not fit 360px under any spelling worth having: the
-    /// strip charges 48px of chrome per tab before a character is drawn, so
-    /// four cost more than the pane has whatever they are called.
-    ///
-    /// Which makes reachability the thing that has to hold instead. A label the
-    /// strip clips is a tab a mouse cannot press, so the keyboard must still
-    /// visit it, and that is what the second half of this asserts.
+    /// The narrow overlay fits three tab labels (48px of chrome per tab in
+    /// 360px), the wide pane fits every one, and the keyboard reaches every tab.
     #[test]
     fn every_side_tab_is_reachable_even_where_the_strip_clips() {
         let titles: Vec<String> = DetailTab::ALL

@@ -5,8 +5,8 @@ directory = "docs/newsfragments"
 filename = "CHANGELOG.md"
 start_string = "<!-- towncrier release notes start -->\n"
 underlines = ["", "", ""]
-title_format = "## [{version}](https://github.com/HaoZeke/vissue/releases/tag/v{version}) - {project_date}"
-issue_format = "[#{issue}](https://github.com/HaoZeke/vissue/issues/{issue})"
+title_format = "## [{version}](https://github.com/leidarljos/vissue/releases/tag/v{version}) - {project_date}"
+issue_format = "[#{issue}](https://github.com/leidarljos/vissue/issues/{issue})"
 
 # Keep a Changelog order, most consequential first.
 [[tool.towncrier.type]]

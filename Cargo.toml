@@ -46,7 +46,7 @@ categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
 vissue-core = { version = "0.10.0", path = "crates/vissue-core" }
-vissue-control = { version = "0.10.0", path = "crates/vissue-control" }
+vissue-control = { version = "0.11.0", path = "crates/vissue-control" }
 vissue-serve = { version = "0.10.0", path = "crates/vissue-serve" }
 vissue-tui = { version = "0.10.0", path = "crates/vissue-tui" }
 anyhow = "1"

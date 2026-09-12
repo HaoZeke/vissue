@@ -123,15 +123,19 @@ enum Command {
     Q {
         /// One-line title
         title: String,
+        /// Project the issue belongs to; the current file's project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
+        /// Issue type, recorded as a tag: task, bug, epic, or any word
         #[arg(short = 't', long = "type")]
         issue_type: Option<String>,
+        /// Parent id, which must already exist
         #[arg(long)]
         parent: Option<String>,
     },
     /// List issues, sorted by priority then state then id.
     List {
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
         /// Filter by state: TODO, STARTED, BLOCKED, DONE, or CANCELLED
@@ -155,8 +159,10 @@ enum Command {
     /// Update state, priority, or blocker edges.
     Update {
         id: String,
+        /// New state: TODO, STARTED, BLOCKED, DONE, or CANCELLED
         #[arg(short, long)]
         state: Option<String>,
+        /// New priority: A, B, or C
         #[arg(long)]
         priority: Option<char>,
         /// Add a blocker edge
@@ -175,6 +181,7 @@ enum Command {
     /// Pick one terminal after a sibling close.
     Resolve {
         id: String,
+        /// The terminal state to pick: DONE or CANCELLED
         #[arg(short, long)]
         state: String,
     },
@@ -203,8 +210,10 @@ enum Command {
     },
     /// Actionable issues: TODO or STARTED with no open blocker.
     Ready {
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
+        /// Emit JSON rows instead of text
         #[arg(long)]
         json: bool,
     },
@@ -333,6 +342,7 @@ enum Command {
         /// Days ahead to include
         #[arg(short, long, default_value = "14")]
         days: i64,
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
         /// Emit a JSON array instead of text
@@ -361,6 +371,7 @@ enum Command {
     /// Substring search over ids, titles, properties, and bodies.
     Search {
         query: String,
+        /// Most hits to print
         #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
         /// Emit a JSON array instead of text
@@ -377,6 +388,7 @@ enum Command {
     /// Blockers transitively required by this issue.
     Ancestors {
         id: String,
+        /// How many blocker hops to follow
         #[arg(short, long, default_value = "3")]
         depth: usize,
         /// Emit a JSON array instead of text
@@ -386,6 +398,7 @@ enum Command {
     /// Issues transitively waiting on this issue.
     Impact {
         id: String,
+        /// How many waiting hops to follow
         #[arg(short, long, default_value = "3")]
         depth: usize,
         /// Emit a JSON array instead of text
@@ -395,8 +408,10 @@ enum Command {
     /// Explain bounded Org and lexical connections around an issue.
     Related {
         id: String,
+        /// How many hops to follow
         #[arg(short, long, default_value = "2")]
         depth: usize,
+        /// Most connections to print
         #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
         /// text or org; org emits links to the source headings.
@@ -405,15 +420,19 @@ enum Command {
     },
     /// Open issues whose `:CREATED:` is older than N days.
     Stale {
+        /// Age in days past which an open issue counts as stale
         #[arg(short, long, default_value = "30")]
         days: i64,
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
     },
     /// Print only the matching issue count.
     Count {
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
+        /// Count only issues in this state: TODO, STARTED, BLOCKED, DONE, or CANCELLED
         #[arg(short, long)]
         state: Option<String>,
         /// Count only actionable issues
@@ -422,6 +441,7 @@ enum Command {
     },
     /// One JSON object per issue per line.
     Export {
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
     },
@@ -439,6 +459,7 @@ enum Command {
     Cycles,
     /// The blocker and parent graph as Graphviz DOT.
     Graph {
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
     },
@@ -485,6 +506,7 @@ enum Command {
     },
     /// A markdown roadmap of active and closed work.
     Roadmap {
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
     },
@@ -492,6 +514,7 @@ enum Command {
     Check,
     /// Rewrite files onto the Org / ELPA / vissue property split.
     Normalize {
+        /// Only this project; every project when omitted
         #[arg(short = 'p', short_alias = 'P', long)]
         project: Option<String>,
         /// Print what would change without writing.
@@ -540,12 +563,14 @@ enum Command {
     },
     /// Append a manual event, waking pollers without editing an issue.
     Ping {
+        /// A line recorded with the event
         #[arg(long)]
         detail: Option<String>,
     },
     /// Block until the generation passes --last, or until an issue is terminal.
     /// Exits 2 on timeout.
     Wait {
+        /// The generation already seen; returns once the counter passes it
         #[arg(long, default_value_t = 0)]
         last: u64,
         /// Issue to watch when --until-terminal is set
@@ -554,8 +579,10 @@ enum Command {
         /// Block until the issue is DONE or CANCELLED
         #[arg(long)]
         until_terminal: bool,
+        /// How often to look, in milliseconds
         #[arg(long, default_value_t = 200)]
         poll_ms: u64,
+        /// Give up after this many milliseconds; exit 2
         #[arg(long, default_value_t = 10_000)]
         timeout_ms: u64,
     },

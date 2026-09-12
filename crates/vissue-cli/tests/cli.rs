@@ -80,13 +80,8 @@ fn check_exits_zero_on_the_fixture() {
     assert!(stdout(&out).contains("0 error(s), 0 warning(s)"));
 }
 
-/// A report written into a body quotes org, and quoted org is not a definition.
-///
-/// The loop this guards is the ordinary one: an agent is handed an issue,
-/// works, and writes its report back with `append`. Reports quote the heading
-/// they were given, ids and all. If a quoted `:ID:` counted, a `:PARENT:` that
-/// points nowhere would resolve against the mention and `check` would go quiet
-/// on the one class of damage it exists to catch.
+/// A quoted `:ID:` inside an appended report is not a definition, so a
+/// dangling `:PARENT:` still fails `check`.
 #[test]
 fn an_id_quoted_in_a_report_does_not_resolve_a_broken_parent() {
     let dir = tempfile::tempdir().unwrap();
@@ -392,12 +387,8 @@ fn the_roadmap_titles_the_document_once_however_many_projects_it_covers() {
     assert!(text.contains("## beacon"), "{text}");
 }
 
-// The ratchet for the whole class. Every machine-readable surface promises a
-// consumer one document (or, for the line-oriented ones, one document per
-// line). Routing a report per project breaks that promise without breaking the
-// exit code, which is how a stream of arrays shipped: the flag worked on a
-// one-project corpus and on any corpus where only the last project had rows.
-// A new `--json` command lands in this table or its output is unparsed.
+// Every machine-readable surface emits one document, or one per line, over a
+// routed corpus. A new `--json` command lands in this table.
 #[test]
 fn every_machine_readable_surface_over_the_corpus_is_parseable() {
     // (args, one document per line rather than one document overall)
@@ -449,11 +440,8 @@ fn a_single_project_claims_json_is_still_a_document() {
     assert!(rows.is_empty(), "{text}");
 }
 
-// `vissue graph | dot -Tsvg` has to draw the corpus. Concatenating a whole DOT
-// document per project gives dot a file of six graphs, all named the same, and
-// it renders the first and exits zero: five projects leave the picture with no
-// error anywhere. Cross-project edges are the other half, pointing at nodes
-// declared inside a different `digraph` block.
+// One `digraph` over the routed corpus: dot renders only the first of several,
+// and cross-project edges need one block.
 #[test]
 fn the_graph_is_one_dot_document_however_many_projects_it_covers() {
     let text = String::from_utf8(vissue(&["graph"]).stdout).unwrap();
@@ -575,11 +563,8 @@ fn a_reader_that_closes_the_pipe_is_not_a_failure() {
     use std::io::Read as _;
     use std::process::Stdio;
 
-    // A pipe holds 64 KiB on Linux by default. The writer has to still be mid-corpus
-    // when the reader vanishes, so the corpus has to out-measure the buffer -- which
-    // is a byte count rather than an issue count. Long bodies reach it in two dozen
-    // writes where short titles need hundreds, and each create re-reads and rewrites
-    // the whole project file, so the count is what the setup costs.
+    // The corpus has to exceed the 64 KiB pipe buffer; long bodies get there in
+    // fewer creates.
     const PIPE_BUFFER: usize = 64 * 1024;
     let body = "b".repeat(8 * 1024);
 
@@ -633,11 +618,7 @@ fn a_reader_that_closes_the_pipe_is_not_a_failure() {
     assert!(stderr.is_empty(), "{stderr}");
 }
 
-/// The one command that replaces reading the file by hand.
-///
-/// Recovering an issue's text used to mean parsing `path:start-end` out of
-/// `show` and running `sed` over the org file, because `show` printed the
-/// range and stopped.
+/// `show --org` prints the issue's own org text.
 #[test]
 fn show_org_writes_the_whole_heading() {
     let out = vissue(&["show", "--org", "atlas-1a2b"]);
@@ -736,11 +717,8 @@ fn append_reads_a_file_and_stdin() {
     assert!(!mk(&["append", &id]).status.success());
 }
 
-/// `vissue keys` in its three shapes, against a chosen overlay.
-///
-/// The overlay path comes from the environment, so each case runs in its own
-/// process with its own value rather than reassigning one the whole suite
-/// shares.
+/// `vissue keys` in its three shapes, each against its own overlay via the
+/// environment of its own process.
 #[test]
 fn keys_prints_the_catalog_and_checks_an_overlay() {
     let dir = tempfile::tempdir().unwrap();
@@ -898,18 +876,8 @@ fn a_body_can_be_piped_in() {
     );
 }
 
-/// The reference documents every subcommand the binary offers, hidden ones included.
-///
-/// The command table is what a reader consults to find out what vissue can do, so a
-/// verb missing from it is a verb that effectively does not exist.
-///
-/// Hidden counts. `--help` not listing a verb is a choice about what a person reading
-/// help is looking for, and says nothing about whether the verb needs writing down:
-/// `surface` is hidden and other tooling is expected to call it, so a reader who finds
-/// it in a script has somewhere to look it up. Reading the parser's own list rather
-/// than its help output is what makes the hidden ones visible here at all.
-///
-/// `help` is clap's, not this binary's.
+/// The reference documents every subcommand the parser lists, hidden ones
+/// included; `help` is clap's.
 #[test]
 fn the_reference_lists_every_subcommand() {
     let reference = fs::read_to_string(
@@ -929,12 +897,8 @@ fn the_reference_lists_every_subcommand() {
     );
 }
 
-/// The change stream a poller lives on: `gen`, `wait`, `events`.
-///
-/// A tool that watches a tracker asks for the generation, blocks until it
-/// moves, then reads what happened. The contract is in the exit code, so a
-/// `wait` that returned the wrong one would send a poller into a spin or
-/// leave it asleep through a change, and neither shows up as an error.
+/// The change stream a poller lives on: `gen`, `wait`, `events`, with the
+/// contract in the exit code.
 #[test]
 fn the_change_stream_reports_and_blocks_the_way_a_poller_needs() {
     use std::time::Instant;
@@ -1033,11 +997,7 @@ fn the_change_stream_reports_and_blocks_the_way_a_poller_needs() {
     assert!(tail.contains("count=0"), "{tail}");
 }
 
-/// `mirror --check` answers by exit code, the part a script reads.
-///
-/// The core comparison is tested elsewhere. What a caller depends on is the
-/// mapping onto an exit status: a stale copy that exits 0 is a shared backlog
-/// everyone trusts and nobody regenerates.
+/// `mirror --check` answers by exit code.
 #[test]
 fn mirror_check_reports_freshness_in_its_exit_code() {
     let dir = tempfile::tempdir().unwrap();
@@ -1140,10 +1100,6 @@ fn mirror_check_reports_freshness_in_its_exit_code() {
 }
 
 /// Naming a project that does not exist creates it, and case folds.
-///
-/// This is what lets a tracker grow without a setup step, and it is also
-/// why a typo files work somewhere real but unwatched, so it is worth
-/// stating in a test as well as in the reference.
 #[test]
 fn a_project_comes_into_being_when_something_is_filed_there() {
     let dir = tempfile::tempdir().unwrap();
@@ -1208,12 +1164,8 @@ fn a_project_comes_into_being_when_something_is_filed_there() {
     assert!(err.contains("Beacon") && err.contains("beacon"), "{err}");
 }
 
-/// The blocker graph stays acyclic, and a corrupt one degrades safely.
-///
-/// `ready` is what a dispatcher takes work from, and it is defined by
-/// walking blocker edges. A ring in that graph could spin it or make it
-/// answer with work nobody can start, so the tracker refuses to write one
-/// and survives finding one that was written by hand.
+/// The tracker refuses to write a blocker cycle and `ready` survives one
+/// written by hand.
 #[test]
 fn a_blocker_ring_is_refused_and_a_planted_one_does_not_spin() {
     let dir = tempfile::tempdir().unwrap();
@@ -1294,15 +1246,7 @@ fn a_blocker_ring_is_refused_and_a_planted_one_does_not_spin() {
     );
 }
 
-/// Concurrent writers do not lose each other's work.
-///
-/// Every mutation is a read-modify-write of a whole `issues.org`, so two
-/// processes that overlap without the advisory lock will each write a file
-/// built from what they read before the other landed. The loser's issue is
-/// gone, and nothing reports it: the tracker stays valid, just smaller.
-///
-/// Separate processes rather than threads, because that is the case the lock
-/// exists for and the only one an in-process mutex cannot cover.
+/// Concurrent processes do not lose each other's writes to one `issues.org`.
 #[test]
 fn concurrent_writers_all_land() {
     use std::process::Stdio;
@@ -1737,13 +1681,8 @@ fn a_user_config_route_wins_over_an_explicit_root() {
     assert!(vault.join("Software/parser/issues.org").exists());
 }
 
-/// The command line carries every verb the schema names.
-///
-/// Together with the socket and tool guards, this is what makes a verb impossible
-/// to add to one surface and forget on the others: the schema states the set once,
-/// and three tests in three crates each fail by name until their surface satisfies
-/// it. Before this the docs tests checked that the reference listed what existed,
-/// which is a different question and stayed green through every gap.
+/// The command line carries every verb the schema names; the socket and tool
+/// crates hold the same check for their surfaces.
 #[test]
 fn the_command_line_offers_every_verb_the_schema_names() {
     let help = vissue(&["--help"]);
@@ -1764,14 +1703,8 @@ fn the_command_line_offers_every_verb_the_schema_names() {
     );
 }
 
-/// The command line's own account of itself, read once.
-///
-/// `vissue surface` walks the built `clap::Command` and prints every subcommand with
-/// its aliases and long flags. Asking the parser is exact where reading its rendered
-/// help is a guess: a flag reaches the JSON because the parser accepts it, not
-/// because a line of help happened to spell it in a way a filter recognised. One
-/// process answers for the whole surface, so the checks below cost one spawn between
-/// them rather than one per verb.
+/// `vissue surface`, read once: every subcommand with its aliases and long
+/// flags, from the parser itself.
 fn cli_surface() -> &'static Vec<CliVerb> {
     static SURFACE: std::sync::OnceLock<Vec<CliVerb>> = std::sync::OnceLock::new();
     SURFACE.get_or_init(|| {
@@ -1801,11 +1734,6 @@ struct CliVerb {
 }
 
 /// Each verb offers the flags the schema names for it.
-///
-/// Naming a verb on each surface stops the verb going missing. It does not stop the
-/// surfaces disagreeing about what to call a field, which is the next way this
-/// drifts: a socket method taking `body` where the subcommand takes `--text` is two
-/// spellings of one idea and nothing would notice.
 #[test]
 fn each_verb_offers_the_flags_the_schema_names() {
     let surface = cli_surface();
@@ -1832,18 +1760,8 @@ fn each_verb_offers_the_flags_the_schema_names() {
     );
 }
 
-/// Every subcommand appears in the schema.
-///
-/// This is the check that makes a *new* verb impossible to add unnoticed. Without
-/// it the schema constrains only the verbs it already mentions: a brand-new
-/// subcommand fails nothing, because nothing asks whether the schema knows about it,
-/// which is how the earlier gaps arrived. `vote` reached the command line and no
-/// test anywhere had an opinion.
-///
-/// Shell-completion variants are excluded because clap generates one subcommand per
-/// shell from a single `completions` verb, and they are not separate operations.
-/// Hidden subcommands describe the binary rather than the tracker, so a schema of
-/// tracker operations is the wrong place to enumerate them.
+/// Every subcommand appears in the schema, except clap's per-shell completion
+/// variants and the hidden verbs that describe the binary.
 #[test]
 fn every_subcommand_appears_in_the_schema() {
     const SHELLS: &[&str] = &["bash", "zsh", "fish", "elvish", "powershell"];
@@ -1861,17 +1779,8 @@ fn every_subcommand_appears_in_the_schema() {
     );
 }
 
-/// The schema and the parser agree about which names are aliases.
-///
-/// An alias is one verb under two names, so it takes the flags of the verb it
-/// aliases. A separate subcommand that merely does a similar job takes its own, and
-/// calling it an alias overstates what a caller can pass: the schema recorded `q` as
-/// an alias of `create`, and `q` rejects `--body` and `--priority`, so a row that
-/// listed create's ten fields answered for a verb that accepts three.
-///
-/// Both directions matter. An alias the parser accepts and the schema omits is a
-/// verb no surface check can see; a name the schema calls an alias and the parser
-/// treats as its own subcommand needs its own row.
+/// The schema and the parser agree about which names are aliases, in both
+/// directions: an alias takes the flags of the verb it aliases.
 #[test]
 fn the_schema_and_the_parser_agree_about_aliases() {
     let surface = cli_surface();
@@ -1919,16 +1828,7 @@ fn the_schema_and_the_parser_agree_about_aliases() {
     );
 }
 
-/// Every flag a verb takes is in the schema.
-///
-/// The flag checks run schema to surface: a flag the schema names has to exist. A
-/// flag that exists and the schema omits is the same asymmetry as at the verb level,
-/// one level down, and this is the direction that catches it.
-///
-/// Global flags are subtracted from `globalFlags` in the schema rather than repeated
-/// on forty rows, so a per-verb row stays about what the verb actually takes. A verb
-/// with no schema row at all is caught by `every_subcommand_appears_in_the_schema`,
-/// so this only reports flags on verbs the schema knows.
+/// Every flag a verb takes is in the schema, global flags aside.
 #[test]
 fn every_flag_a_verb_takes_is_in_the_schema() {
     let globals = vissue_core::surface::global_flags();
